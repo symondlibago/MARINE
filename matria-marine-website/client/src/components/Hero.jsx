@@ -90,7 +90,7 @@ export default function Hero() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
               <button
                 onClick={() => scrollToSection('services')}
-                className="bg-[#cebd88] text-gray-900 font-bold px-8 py-3 rounded-lg hover:bg-white transition-all duration-300 transform hover:scale-105 font-raleway"
+                className="bg-[#cebd88] text-gray-900 font-bold px-8 py-3 rounded-lg hover:bg-[#28364b] hover:text-[#cebd88] transition-all duration-300 transform hover:scale-105 font-raleway"
               >
                 Explore Services
               </button>

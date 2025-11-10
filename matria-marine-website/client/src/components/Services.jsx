@@ -1,125 +1,172 @@
-import { Wrench, Anchor, Shield, Radio, Droplets, Truck } from 'lucide-react';
+import React from 'react';
+// Import a variety of thematic icons
+import {
+  Wrench,
+  Package,
+  LifeBuoy,
+  Radio,
+  Scan,
+  Waves,
+  Ship,
+  Anchor,
+  Truck,
+  Droplets,
+  Trash,
+  Paintbrush, // Changed from 'Paint' to 'Paintbrush'
+  Container,
+  Sailboat
+} from 'lucide-react';
+
+// This list is now an array of objects, pairing text with an icon
+const servicesList = [
+  { 
+    icon: Wrench, 
+    text: "ME / AE Mechanical components repair and reconditioning" 
+  },
+  { 
+    icon: Package, 
+    text: "Ship Spares Supply (OEM, GENUINE)" 
+  },
+  { 
+    icon: LifeBuoy, 
+    text: "Safety Equipment Servicing and Load Test" 
+  },
+  { 
+    icon: Radio, 
+    text: "Radio Survey" 
+  },
+  { 
+    icon: Scan, 
+    text: "UTM (Pre-docking Survey)" 
+  },
+  { 
+    icon: Waves, 
+    text: "Underwater Diving and Inspection" 
+  },
+  { 
+    icon: Wrench, 
+    text: "In-water Stern Tube Seal Repair" 
+  },
+  { 
+    icon: Paintbrush, // Changed from 'Paint' to 'Paintbrush'
+    text: "Vessel renaming (rope access)" 
+  },
+  { 
+    icon: Anchor, 
+    text: "Crane Load Testing" 
+  },
+  { 
+    icon: Truck, 
+    text: "Complete Logistics" 
+  },
+  { 
+    icon: Droplets, 
+    text: "Fresh Water Supply" 
+  },
+  { 
+    icon: Container, 
+    text: "De-slopping" 
+  },
+  { 
+    icon: Trash, 
+    text: "Garbage Disposal" 
+  },
+  { 
+    icon: Sailboat, 
+    text: "OPL Services" 
+  }
+];
 
 export default function Services() {
-  const services = [
-    {
-      icon: Wrench,
-      title: 'Mechanical Repairs',
-      description: 'ME/AE mechanical components repair and reconditioning with precision engineering',
-    },
-    {
-      icon: Anchor,
-      title: 'Ship Spares Supply',
-      description: 'OEM and genuine spare parts delivery with complete logistics support',
-    },
-    {
-      icon: Shield,
-      title: 'Safety Equipment',
-      description: 'Safety equipment servicing and load testing to ensure compliance',
-    },
-    {
-      icon: Radio,
-      title: 'Radio & Surveys',
-      description: 'Radio survey and UTM pre-docking surveys for vessel certification',
-    },
-    {
-      icon: Droplets,
-      title: 'Underwater Services',
-      description: 'Underwater diving, inspection, and in-water stern tube seal repair',
-    },
-    {
-      icon: Truck,
-      title: 'Logistics & Supply',
-      description: 'Fresh water supply, de-slopping, garbage disposal, and OPL services',
-    },
-  ];
-
-  const additionalServices = [
-    'Vessel Renaming (Rope Access)',
-    'Crane Load Testing',
-    'Complete Logistics Management',
-    'Crew Changes',
-    'Bunker Optimization',
-    'Spares Reconditioning',
-  ];
-
   return (
-    <section id="services" className="section-padding bg-gray-50 dark:bg-gray-800">
-      <div className="container mx-auto px-4">
-        {/* Section Header */}
-        <div className="text-center mb-16">
-          <h2 className="section-title text-black dark:text-white">
-            Our Services
-          </h2>
-          <p className="section-subtitle text-gray-600 dark:text-gray-400">
-            Comprehensive maritime solutions for all your vessel needs
-          </p>
-        </div>
+    <>
+      {/* Import the Playfair Display and Raleway fonts */}
+      <style>
+        {`
+          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Raleway:wght@400&display=swap');
+          
+          .font-playfair {
+            font-family: 'Playfair Display', serif;
+          }
+          
+          .font-raleway {
+            font-family: 'Raleway', sans-serif;
+          }
+        `}
+      </style>
 
-        {/* Main Services Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-          {services.map((service, index) => {
-            const Icon = service.icon;
-            return (
-              <div
-                key={index}
-                className="group card-light dark:card-dark hover:shadow-xl dark:hover:shadow-electric-blue/20"
-              >
-                <div className="flex items-start space-x-4">
-                  <div className="flex-shrink-0">
-                    <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-[#00D9FF]/20 group-hover:bg-[#00D9FF]/40 transition-colors">
-                      <Icon className="h-6 w-6 text-[#00D9FF]" />
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-black dark:text-white mb-2">
-                      {service.title}
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
-                      {service.description}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {/* Set a clean white background for this section */}
+      <section id="services" className="py-24 bg-white">
+        {/* Container with responsive horizontal margins */}
+        <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
 
-        {/* Additional Services */}
-        <div className="bg-gradient-to-r from-black to-gray-900 rounded-2xl p-12 text-white">
-          <h3 className="text-3xl font-bold mb-8 text-center">
-            And Much More...
-          </h3>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {additionalServices.map((service, index) => (
-              <div
-                key={index}
-                className="flex items-center space-x-3 p-4 bg-white/5 rounded-lg hover:bg-[#00D9FF]/20 transition-colors"
-              >
-                <div className="w-2 h-2 bg-[#00D9FF] rounded-full" />
-                <span className="font-semibold">{service}</span>
-              </div>
-            ))}
+          {/* Main Section Header */}
+          <div className="text-center mb-16">
+            <h2 
+              className="text-3xl md:text-4xl lg:text-5xl font-bold font-playfair"
+              style={{ color: '#28364b' }} // Use the requested color
+            >
+              Our Services
+            </h2>
           </div>
-          <p className="text-center text-[#00D9FF] font-bold text-lg mt-8">
-            "Name it - We can do it!"
-          </p>
-        </div>
 
-        {/* Service Guarantee */}
-        <div className="mt-16 bg-[#00D9FF]/10 border border-[#00D9FF]/30 rounded-2xl p-8 md:p-12">
-          <div className="max-w-3xl mx-auto">
-            <h3 className="text-2xl font-bold text-black dark:text-white mb-4 text-center">
-              Our Service Guarantee
+          {/* Content Card: A nice container for the service list */}
+          <div className="max-w-4xl mx-auto bg-[#F1F0E8]/50 rounded-lg shadow-xl p-8 md:p-12">
+            
+            {/* Main Quote */}
+            <h3 
+              className="text-2xl md:text-3xl font-bold font-playfair text-center"
+              style={{ color: '#28364b' }}
+            >
+              "Marine Services Simplified. One Partner, Total Solutions."
             </h3>
-            <p className="text-gray-700 dark:text-gray-300 text-lg text-center leading-relaxed">
-              Through rigorous standards in environment, safety, and workload management, we
-              provide a service that is not only highly effective but also responsible and
-              reliable. Your vessel's welfare is our priority, managed with precision and care.
+
+            {/* Main Paragraph */}
+            <p 
+              className="font-raleway text-base text-center mt-6"
+              style={{ color: '#28364b' }}
+            >
+              Matria Marine Services: Your single, expert source for precision mechanical
+              repairs, vital surveys, and comprehensive marine solutions, guaranteeing optimal
+              vessel performance and seamless operations.
             </p>
+
+            {/* Separator Line */}
+            <hr className="my-8 md:my-10 border-gray-300" />
+
+            {/* Services Grid: 2 columns on desktop, 1 on mobile */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+              {servicesList.map((service, index) => {
+                // Dynamically assign the icon component
+                const Icon = service.icon; 
+                return (
+                  <div key={index} className="flex items-center gap-3">
+                    <Icon 
+                      className="w-5 h-5 flex-shrink-0" 
+                      style={{ color: '#cebd88' }} // Use accent color
+                    />
+                    <span 
+                      className="font-raleway text-base"
+                      style={{ color: '#28364b' }}
+                    >
+                      {service.text}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer Quote */}
+            <p 
+              className="font-raleway text-base text-center italic font-semibold mt-10"
+              style={{ color: '#28364b' }}
+            >
+              "Name it - We can do it!"
+            </p>
+
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }

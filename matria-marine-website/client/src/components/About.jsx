@@ -76,7 +76,7 @@ function ValueItem({ item, isMobile }) {
       {/* Container for text and button */}
       <div className={`flex-1 ${isMobile ? 'text-center' : 'text-left'}`}>
         <p className={`
-          font-raleway text-gray-700 text-lg leading-relaxed 
+          font-raleway text-[#28364b] text-base leading-relaxed 
         `}>
           {displayText}
         </p>
@@ -123,7 +123,7 @@ export default function About() {
           
           {/* --- ADDED THIS SECTION HEADER --- */}
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 font-playfair">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-[#28364b] font-playfair">
               About Us
             </h2>
           </div>
@@ -135,32 +135,32 @@ export default function About() {
             {/* Left Content (Text) */}
             <div className="space-y-6">
               {/* Responsive font size for mobile */}
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 font-playfair">
+              <h2 className="text-3xl md:text-4xl font-bold text-[#28364b] font-playfair">
                 Passionately Delivering Your Peace of Mind at Sea
               </h2>
               {/* Responsive font size for mobile */}
-              <h3 className="text-xl md:text-2xl font-semibold text-gray-800 font-playfair">
+              <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair">
                 Driven by Excellence: Your Guarantee of Unrivaled Marine Service.
               </h3>
-              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
                 At Matria Marine, our commitment to your success begins with
                 our exceptional team. We cultivate a highly professional and
                 collaborative environment, empowering our dedicated experts
                 to deliver consistent, top-tier service.
               </p>
-              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
                 Our specialists work with unparalleled efficiency and precision,
                 ensuring every task is executed with the highest degree of
                 accuracy. This technological advantage translates directly into
                 smoother operations and optimized outcomes for your vessels.
               </p>
-              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
                 We don't just aim for satisfaction; we guarantee it. Through
                 rigorous standards in <strong>environment, safety, and workload
                 management</strong>, we provide a service that is not only highly
                 effective but also responsible and reliable.
               </p>
-              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
                 Partner with Matria Marine and experience the confidence that
                 comes from working with a team committed to your absolute
                 satisfaction.
@@ -175,7 +175,7 @@ export default function About() {
                 className="rounded-lg mb-6 shadow-md max-w-lg mx-auto w-full"
               />
               {/* Responsive font size for mobile */}
-              <h3 className="text-xl md:text-2xl font-semibold text-gray-900 font-playfair">
+              <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair">
                 Elevate Your Maritime Operations with Matria Marine Services.
               </h3>
             </div>
@@ -184,7 +184,7 @@ export default function About() {
           {/* Key Values Section - UPDATED */}
           <div className="text-center mb-16">
             {/* Responsive font size for mobile */}
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 font-playfair">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-[#28364b] font-playfair">
               Our Key Values
             </h2>
           </div>

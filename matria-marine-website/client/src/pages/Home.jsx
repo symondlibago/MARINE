@@ -2,7 +2,7 @@ import Navigation from '@/components/Navigation';
 import Hero from '@/components/Hero';
 import About from '@/components/About';
 import Services from '@/components/Services';
-import Projects from '@/components/Projects';
+import Agency from '@/components/Agency';
 import Team from '@/components/Team';
 import Testimonials from '@/components/Testimonials';
 import FAQ from '@/components/FAQ';
@@ -17,10 +17,10 @@ export default function Home() {
         <Hero />
         <About />
         <Services />
-        <Projects />
-        <Team />
-        <Testimonials />
-        <FAQ />
+        <Agency />
+        {/* <Team /> */}
+        {/* <Testimonials /> */}
+        {/* <FAQ /> */}
         <Contact />
       </main>
       <Footer />
