@@ -3,8 +3,8 @@ import { Mail, Phone, MapPin, Send, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function Contact() {
   const [formData, setFormData] = useState({
-    name: 'Symond Libago', // Pre-filled as requested
-    email: 'symondlibago@gmail.com', // Pre-filled as requested
+    name: '',
+    email: '',
     message: '',
   });
 
