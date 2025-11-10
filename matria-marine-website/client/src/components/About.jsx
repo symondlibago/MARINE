@@ -1,123 +1,203 @@
-import { Quote } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 
-export default function About() {
-  const quotes = [
-    {
-      text: 'Marine Services Simplified. One Partner, Total Solutions.',
-      author: 'Matria Marine Philosophy',
-    },
-    {
-      text: 'Passionately Delivering Your Peace of Mind at Sea',
-      author: 'Our Commitment',
-    },
-    {
-      text: 'We don\'t just aim for satisfaction; we guarantee it.',
-      author: 'Service Promise',
-    },
-  ];
+// New data for the Key Values section based on your image
+const newKeyValues = [
+  {
+    image: "/key1.png",
+    text: "Streamline your vessel's needs and unlock peak efficiency with Matria Marine's enhanced, comprehensive Full-Style Husbandry Service. We provide owners and clients with unparalleled support designed to minimize downtime and maximize peace of mind."
+  },
+  {
+    image: "/key2.png",
+    text: "From seamless crew changes and swift spare part deliveries to optimized bunker calls and expert spares reconditioning, our dedicated team of experienced agents ensures every aspect of your ship's welfare is meticulously managed."
+  },
+  {
+    image: "/key3.png",
+    text: "Experience the Matria Advantage: Our single point of contact guarantees smooth, hassle-free operations, unmatched responsiveness, and the shortest possible turnaround times."
+  },
+  {
+    image: "/key4.png",
+    text: "Let Matria Marine be your trusted partner for a flawlessly managed fleet."
+  }
+];
+
+// --- useIsMobile hook logic moved here ---
+const MOBILE_BREAKPOINT = 768;
+
+function useIsMobile() {
+  // CORRECTION: Initialized state to `false` instead of using TypeScript types
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    
+    const onChange = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+
+    mql.addEventListener("change", onChange);
+    
+    // Set initial state on mount
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return isMobile; // Return the boolean
+}
+// ------------------------------------------
+
+// --- NEW ValueItem COMPONENT ---
+// This component manages its own state for expanding/collapsing text
+function ValueItem({ item, isMobile }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const toggleExpand = () => setIsExpanded(!isExpanded);
+
+  // Check if text is long enough to truncate
+  const isLongText = item.text.length > 150; // Truncate after 150 chars
+  
+  // Generate truncated text
+  const shortText = isLongText ? item.text.substring(0, 150) + "..." : item.text;
+  
+  // Determine which text to display
+  const displayText = isExpanded ? item.text : shortText;
 
   return (
-    <section id="about" className="section-padding bg-white dark:bg-gray-900">
-      <div className="container mx-auto px-4">
-        {/* Section Header */}
-        <div className="text-center mb-16">
-          <h2 className="section-title text-black dark:text-white">
-            About Matria Marine
-          </h2>
-          <p className="section-subtitle text-gray-600 dark:text-gray-400">
-            Driven by excellence and commitment to your success
-          </p>
-        </div>
+    <div
+      className={`
+        bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow duration-300 
+        flex ${isMobile ? 'flex-col' : 'flex-row'} items-center gap-6
+      `}
+    >
+      <img 
+        src={item.image} 
+        alt={item.text.substring(0, 30)}
+        className="rounded-full w-24 h-24 object-cover shadow-md flex-shrink-0" 
+      />
+      {/* Container for text and button */}
+      <div className={`flex-1 ${isMobile ? 'text-center' : 'text-left'}`}>
+        <p className={`
+          font-raleway text-gray-700 text-lg leading-relaxed 
+        `}>
+          {displayText}
+        </p>
+        
+        {/* Only show the button if the text is long enough to be truncated */}
+        {isLongText && (
+          <button
+            onClick={toggleExpand}
+            className="font-raleway text-[#cebd88] font-normal text-sm underline hover:text-[#bca971] transition-colors mt-4"
+          >
+            {isExpanded ? "See Less" : "See More"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+// -------------------------------
 
-        {/* Main Content */}
-        <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
-          {/* Left Content */}
-          <div className="space-y-6">
-            <h3 className="text-3xl font-bold text-black dark:text-white">
-              Your Trusted Maritime Partner
-            </h3>
-            <p className="text-gray-700 dark:text-gray-300 text-lg leading-relaxed">
-              At Matria Marine, our commitment to your success begins with our exceptional
-              team. We cultivate a highly professional and collaborative environment,
-              empowering our dedicated experts to deliver consistent, top-tier service.
-            </p>
-            <p className="text-gray-700 dark:text-gray-300 text-lg leading-relaxed">
-              Our specialists work with unparalleled efficiency and precision, ensuring
-              every task is executed with the highest degree of accuracy. This technological
-              advantage translates directly into smoother operations and optimized outcomes
-              for your vessels.
-            </p>
-            <p className="text-gray-700 dark:text-gray-300 text-lg leading-relaxed">
-              From seamless crew changes and swift spare part deliveries to optimized bunker
-              calls and expert spares reconditioning, our dedicated team of experienced agents
-              ensures every aspect of your ship's welfare is meticulously managed.
-            </p>
+export default function About() {
+  // Call the hook (now defined in this file)
+  const isMobile = useIsMobile();
+
+  return (
+    <>
+      {/* Import the Playfair Display and Raleway fonts */}
+      <style>
+        {`
+          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Raleway:wght@400&display=swap');
+          
+          .font-playfair {
+            font-family: 'Playfair Display', serif;
+          }
+          
+          .font-raleway {
+            font-family: 'Raleway', sans-serif;
+          }
+        `}
+      </style>
+
+      <section id="about" className="py-24 bg-[#F1F0E8]">
+        {/* Adjusted horizontal padding for mobile */}
+        <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
+          
+          {/* --- ADDED THIS SECTION HEADER --- */}
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 font-playfair">
+              About Us
+            </h2>
           </div>
+          {/* ---------------------------------- */}
 
-          {/* Right Visual */}
-          <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-br from-electric-blue/20 to-deep-red/20 rounded-2xl blur-2xl" />
-            <div className="relative bg-gradient-to-br from-electric-blue/10 to-deep-red/10 rounded-2xl p-8 border border-[#00D9FF]/30">
-              <div className="space-y-6">
-                <div className="text-5xl font-bold text-[#00D9FF]">
-                  20+
-                </div>
-                <p className="text-xl font-semibold text-black dark:text-white">
-                  Years of Maritime Excellence
-                </p>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Trusted by vessel owners and operators worldwide for comprehensive
-                  husbandry services and port operations.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quotes Section */}
-        <div className="bg-gradient-to-r from-black via-gray-900 to-black rounded-2xl p-12 md:p-16">
-          <h3 className="text-3xl font-bold text-white text-center mb-12">
-            What Drives Us
-          </h3>
-          <div className="grid md:grid-cols-3 gap-8">
-            {quotes.map((quote, index) => (
-              <div
-                key={index}
-                className="bg-white/5 backdrop-blur border border-[#00D9FF]/30 rounded-xl p-8 hover:border-[#00D9FF]/60 transition-all duration-300"
-              >
-                <Quote className="text-[#00D9FF] mb-4" size={32} />
-                <p className="text-white text-lg font-semibold mb-4 leading-relaxed">
-                  "{quote.text}"
-                </p>
-                <p className="text-[#00D9FF] font-semibold">— {quote.author}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Key Values */}
-        <div className="grid md:grid-cols-4 gap-6 mt-16">
-          {[
-            { icon: '⚡', title: 'Efficiency', desc: 'Swift turnaround times' },
-            { icon: '🛡️', title: 'Reliability', desc: 'Consistent quality service' },
-            { icon: '🌍', title: 'Global Reach', desc: '50+ strategic ports' },
-            { icon: '👥', title: 'Expert Team', desc: 'Highly trained professionals' },
-          ].map((value, index) => (
-            <div
-              key={index}
-              className="text-center p-6 rounded-xl bg-gray-50 dark:bg-gray-800 hover:shadow-lg transition-all duration-300"
-            >
-              <div className="text-4xl mb-3">{value.icon}</div>
-              <h4 className="font-bold text-lg text-black dark:text-white mb-2">
-                {value.title}
-              </h4>
-              <p className="text-gray-600 dark:text-gray-400 text-sm">
-                {value.desc}
+          {/* Main About Section */}
+          <div className="grid md:grid-cols-2 gap-16 items-center mb-24">
+            
+            {/* Left Content (Text) */}
+            <div className="space-y-6">
+              {/* Responsive font size for mobile */}
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 font-playfair">
+                Passionately Delivering Your Peace of Mind at Sea
+              </h2>
+              {/* Responsive font size for mobile */}
+              <h3 className="text-xl md:text-2xl font-semibold text-gray-800 font-playfair">
+                Driven by Excellence: Your Guarantee of Unrivaled Marine Service.
+              </h3>
+              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+                At Matria Marine, our commitment to your success begins with
+                our exceptional team. We cultivate a highly professional and
+                collaborative environment, empowering our dedicated experts
+                to deliver consistent, top-tier service.
+              </p>
+              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+                Our specialists work with unparalleled efficiency and precision,
+                ensuring every task is executed with the highest degree of
+                accuracy. This technological advantage translates directly into
+                smoother operations and optimized outcomes for your vessels.
+              </p>
+              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+                We don't just aim for satisfaction; we guarantee it. Through
+                rigorous standards in <strong>environment, safety, and workload
+                management</strong>, we provide a service that is not only highly
+                effective but also responsible and reliable.
+              </p>
+              <p className="text-gray-700 text-lg leading-relaxed font-raleway">
+                Partner with Matria Marine and experience the confidence that
+                comes from working with a team committed to your absolute
+                satisfaction.
               </p>
             </div>
-          ))}
+
+            {/* Right Content (Image) */}
+            <div className="bg-white/70 rounded-lg p-6 md:p-8 border border-gray-300/50 shadow-lg text-center">
+              <img 
+                src="/about1.png" 
+                alt="Matria Marine Services" 
+                className="rounded-lg mb-6 shadow-md max-w-lg mx-auto w-full"
+              />
+              {/* Responsive font size for mobile */}
+              <h3 className="text-xl md:text-2xl font-semibold text-gray-900 font-playfair">
+                Elevate Your Maritime Operations with Matria Marine Services.
+              </h3>
+            </div>
+          </div>
+
+          {/* Key Values Section - UPDATED */}
+          <div className="text-center mb-16">
+            {/* Responsive font size for mobile */}
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 font-playfair">
+              Our Key Values
+            </h2>
+          </div>
+
+          {/* New List Layout - Using isMobile hook */}
+          <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
+            {newKeyValues.map((value, index) => (
+              <ValueItem key={index} item={value} isMobile={isMobile} />
+            ))}
+          </div>
+          
         </div>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
