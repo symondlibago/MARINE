@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { Mail, Phone, MapPin, Send, CheckCircle2 } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, CheckCircle2, Loader2 } from 'lucide-react'; // Added Loader2
 
 export default function Contact() {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
+    name: 'Symond Libago', // Pre-filled as requested
+    email: 'symondlibago@gmail.com', // Pre-filled as requested
     message: '',
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false); // Added loading state
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -19,15 +19,46 @@ export default function Contact() {
     }));
   };
 
-  const handleSubmit = (e) => {
+  // UPDATED: This is now a real submit function
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
-    // In a real app, you'd send this data to a server or email service
-    setSubmitted(true);
-    setTimeout(() => {
-      setFormData({ name: '', email: '', phone: '', message: '' });
-      setSubmitted(false);
-    }, 4000);
+    setLoading(true); // Start loading spinner
+
+    // This is the URL you get from Formspree
+    const FORM_ENDPOINT = 'https://formspree.io/f/mzzypqkb'; // <-- PASTE YOUR URL HERE
+
+    try {
+      const response = await fetch(FORM_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (response.ok) {
+        // Show the "Thank You" message
+        setSubmitted(true);
+        setTimeout(() => {
+          setFormData({
+            name: '',
+            email: '',
+            message: ''
+          });
+          setSubmitted(false);
+        }, 4000);
+      } else {
+        // Handle server errors
+        alert('There was an error sending your message. Please try again.');
+      }
+    } catch (error) {
+      // Handle network errors
+      console.error('Form submission error:', error);
+      alert('There was an error sending your message. Please try again.');
+    } finally {
+      setLoading(false); // Stop loading spinner
+    }
   };
 
   const contactInfo = [
@@ -44,7 +75,7 @@ export default function Contact() {
     {
       icon: Mail,
       title: 'Email',
-      content: 'sales@matriamarine.com',
+      content: 'libago.symond1@gmail.com', // Updated as requested
     },
   ];
 
@@ -70,22 +101,20 @@ export default function Contact() {
         className="relative py-24 bg-cover bg-center bg-no-repeat"
         style={{ backgroundImage: "url('/matria3.jpg')" }}
       >
-        {/* Dark Overlay - REMOVED */}
-        
-        {/* Container - REMOVED text-shadow */}
+        {/* Container */}
         <div className="container relative z-10 mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
           
           {/* Section Header */}
           <div className="text-center mb-16">
             <h2 
               className="text-3xl md:text-4xl lg:text-5xl font-bold font-playfair"
-              style={{ color: '#28364b' }} // Changed to dark color
+              style={{ color: '#28364b' }}
             >
               Get In Touch
             </h2>
             <p 
               className="font-raleway text-base mt-4 max-w-xl mx-auto"
-              style={{ color: '#28364b' }} // Changed to dark color
+              style={{ color: '#28364b' }}
             >
               Let's discuss how we can support your maritime operations.
               We're available 24/7 for all your needs.
@@ -94,20 +123,20 @@ export default function Contact() {
 
           <div className="grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto">
             
-            {/* Left Column: Contact Form (MOVED) */}
+            {/* Left Column: Contact Form */}
             <div className="bg-white/80 backdrop-blur-sm p-8 rounded-lg shadow-2xl">
               {submitted ? (
                 <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
                   <CheckCircle2 className="w-16 h-16 text-[#cebd88]" />
                   <h3 
                     className="font-playfair text-2xl font-bold mt-4"
-                    style={{ color: '#28364b' }} // Changed to dark color
+                    style={{ color: '#28364b' }}
                   >
                     Thank You!
                   </h3>
                   <p 
                     className="font-raleway text-base mt-2"
-                    style={{ color: '#28364b' }} // Changed to dark color
+                    style={{ color: '#28364b' }}
                   >
                     Your message has been sent. We'll be in touch soon.
                   </p>
@@ -117,7 +146,7 @@ export default function Contact() {
                   <div>
                     <label 
                       className="block text-sm font-bold mb-2 font-raleway"
-                      style={{ color: '#28364b' }} // Changed to dark color
+                      style={{ color: '#28364b' }}
                     >
                       Full Name
                     </label>
@@ -135,7 +164,7 @@ export default function Contact() {
                   <div>
                     <label 
                       className="block text-sm font-bold mb-2 font-raleway"
-                      style={{ color: '#28364b' }} // Changed to dark color
+                      style={{ color: '#28364b' }}
                     >
                       Email Address
                     </label>
@@ -153,7 +182,7 @@ export default function Contact() {
                   <div>
                     <label 
                       className="block text-sm font-bold mb-2 font-raleway"
-                      style={{ color: '#28364b' }} // Changed to dark color
+                      style={{ color: '#28364b' }}
                     >
                       Message
                     </label>
@@ -170,20 +199,25 @@ export default function Contact() {
 
                   <button
                     type="submit"
-                    className="w-full bg-[#cebd88] text-gray-900 font-bold px-8 py-3 rounded-lg hover:bg-[#bca971] transition-all duration-300 transform hover:scale-105 font-raleway flex items-center justify-center gap-2"
+                    disabled={loading} // Disable button while loading
+                    className="w-full bg-[#cebd88] text-gray-900 font-bold px-8 py-3 rounded-lg hover:bg-[#bca971] transition-all duration-300 transform hover:scale-105 font-raleway flex items-center justify-center gap-2 disabled:opacity-70"
                   >
-                    <Send size={18} />
-                    <span>Send Message</span>
+                    {loading ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Send size={18} />
+                    )}
+                    <span>{loading ? 'Sending...' : 'Send Message'}</span>
                   </button>
                 </form>
               )}
             </div>
 
-            {/* Right Column: Contact Info (MOVED) */}
+            {/* Right Column: Contact Info */}
             <div className="space-y-8 flex flex-col justify-center">
               <h3 
                 className="text-3xl font-bold font-playfair"
-                style={{ color: '#28364b' }} // Changed to dark color
+                style={{ color: '#28364b' }}
               >
                 Contact Details
               </h3>
@@ -198,13 +232,13 @@ export default function Contact() {
                     <div>
                       <h4 
                         className="font-playfair text-xl font-bold"
-                        style={{ color: '#28364b' }} // Changed to dark color
+                        style={{ color: '#28364b' }}
                       >
                         {info.title}
                       </h4>
                       <p 
                         className="font-raleway text-base mt-1"
-                        style={{ color: '#28364b' }} // Changed to dark color
+                        style={{ color: '#28364b' }}
                       >
                         {info.content}
                       </p>
