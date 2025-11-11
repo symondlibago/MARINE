@@ -87,7 +87,7 @@ export default function Navigation() {
             {/* CTA Button */}
             <div className="hidden lg:block">
               <button
-                onClick={() => scrollToSection('contact')}
+                onClick={() => scrollToSection('about')}
                 className="bg-[#cebd88] text-gray-900 font-bold px-6 py-2 rounded-lg hover:bg-[#bca971] transition-all font-raleway text-sm"
               >
                 Get Started

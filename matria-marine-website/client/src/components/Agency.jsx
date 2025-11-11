@@ -6,8 +6,7 @@ import {
   Waves, Utensils, Leaf, Feather, MapPin // Kept MapPin as the default icon
 } from 'lucide-react'; // Thematic icons
 
-// Icon mapping component
-// This lets us dynamically choose an icon based on a string name
+
 const ICONS = {
   Landmark, Building2, MountainSnow, Mountain, Building, TowerControl, 
   Palmtree, Circle, Sunrise, Ship, Globe, Waves, Utensils, Leaf, Feather,
@@ -19,7 +18,6 @@ const Icon = ({ name, ...props }) => {
   return <LucideIcon {...props} />;
 };
 
-// Removed the 'networkLocations' array as the map grid is gone.
 
 // Data for the lists
 const asiaPacific = [
@@ -113,7 +111,7 @@ export default function Agency() {
             </div>
 
             {/* Right Column: Lists */}
-            <div className="space-y-8 lg:pt-16"> {/* Added padding-top to align better */}
+            <div className="space-y-8">
               {/* Asia Pacific List */}
               <div className="space-y-4">
                 <h3 
