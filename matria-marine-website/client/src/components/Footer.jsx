@@ -1,4 +1,4 @@
-import { ArrowUp, Mail, Phone, MapPin } from 'lucide-react';
+import { ArrowUp, Mail, Phone, MapPin, Star } from 'lucide-react'; // Added Star
 
 export default function Footer() {
   const scrollToTop = () => {
@@ -45,17 +45,34 @@ export default function Footer() {
         <div className="relative z-10 container mx-auto px-4 py-16 text-white">
           <div className="grid md:grid-cols-4 gap-8 mb-12">
             
-            {/* Company Info */}
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: '#cebd88' }} // Changed to gold
-                >
-                  <span className="text-gray-900 font-bold">MM</span>
+            {/* Company Info - UPDATED */}
+            <div className="space-y-4">
+              <div className="flex items-center space-x-3">
+                {/* Logo Image */}
+                <img 
+                  src="/logo.png" 
+                  alt="Matria Marine Logo" 
+                  className="w-12 h-12"
+                />
+                
+                {/* New text styling */}
+                <div className="flex-col flex items-center">
+                  <span className="text-white font-bold text-2xl font-playfair tracking-wide leading-none">
+                    MATRIA
+                  </span>
+                  <span className="text-white font-raleway text-[10px] tracking-[0.2em] -mt-0.5">
+                    MARINE SERVICES
+                  </span>
+                  <div className="flex space-x-0.5 text-[#cebd88] mt-1"> 
+                    <Star size={12} fill="#cebd88" strokeWidth={0} />
+                    <Star size={12} fill="#cebd88" strokeWidth={0} />
+                    <Star size={12} fill="#cebd88" strokeWidth={0} />
+                    <Star size={12} fill="#cebd88" strokeWidth={0} />
+                    <Star size={12} fill="#cebd88" strokeWidth={0} />
+                  </div>
                 </div>
-                <span className="font-bold text-xl font-playfair text-white">Matria Marine</span>
               </div>
+
               <p className="font-raleway text-base leading-relaxed text-gray-300">
                 Your trusted partner for comprehensive maritime solutions and global port operations.
               </p>

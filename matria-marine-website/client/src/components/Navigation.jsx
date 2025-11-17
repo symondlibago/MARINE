@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Star } from 'lucide-react'; // Added Star icon
 
 export default function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -50,23 +50,43 @@ export default function Navigation() {
       <nav
         className={`sticky top-0 z-50 transition-all duration-300 ${
           isScrolled
-            ? 'bg-[#28364b] backdrop-blur-md shadow-lg' // Changed to dark blue
-            : 'bg-[#28364b] backdrop-blur-sm' // Changed to dark blue
+            ? 'bg-white backdrop-blur-md shadow-lg' // CHANGED: White background
+            : 'bg-white/95 backdrop-blur-sm shadow-sm' // CHANGED: White background
         }`}
       >
         <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
           <div className="flex justify-between items-center h-20">
-            {/* Logo */}
+            {/* Logo - UPDATED */}
             <div className="flex items-center space-x-3">
-              <div 
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: '#cebd88' }} // Use gold accent
-              >
-                <span className="text-gray-900 font-bold text-lg">MM</span>
+              {/* Replaced MM box with logo.png */}
+              <img 
+                src="/logo.png" 
+                alt="Matria Marine Logo" 
+                className="w-12 h-12" // Made it slightly larger
+              />
+              
+              {/* New text styling - ADDED items-center */}
+              <div className="flex-col hidden sm:flex items-center">
+                <span 
+                  className="font-bold text-2xl font-raleway tracking-wide leading-none"
+                  style={{ color: '#28364b' }} // CHANGED: Dark blue text
+                >
+                  M A T R I A
+                </span>
+                <span 
+                  className="font-raleway text-[10.5px] tracking-[0.2em] -mt-0.5"
+                  style={{ color: '#28364b' }} // CHANGED: Dark blue text
+                >
+                  MARINE SERVICES
+                </span>
+                <div className="flex space-x-0.5 text-[#cebd88]"> 
+                  <Star size={12} fill="#cebd88" strokeWidth={0} />
+                  <Star size={12} fill="#cebd88" strokeWidth={0} />
+                  <Star size={12} fill="#cebd88" strokeWidth={0} />
+                  <Star size={12} fill="#cebd88" strokeWidth={0} />
+                  <Star size={12} fill="#cebd88" strokeWidth={0} />
+                </div>
               </div>
-              <span className="text-white font-bold text-xl hidden sm:inline font-playfair">
-                Matria Marine
-              </span>
             </div>
 
             {/* Desktop Navigation */}
@@ -75,7 +95,8 @@ export default function Navigation() {
                 <button
                   key={item.id}
                   onClick={() => scrollToSection(item.id)}
-                  className="relative text-white hover:text-[#cebd88] transition-colors duration-300 font-medium font-raleway group py-2"
+                  className="relative hover:text-[#cebd88] transition-colors duration-300 font-medium font-raleway group py-2"
+                  style={{ color: '#28364b' }} // CHANGED: Dark blue text
                 >
                   {item.label}
                   {/* Underline hover effect */}
@@ -87,8 +108,9 @@ export default function Navigation() {
             {/* CTA Button */}
             <div className="hidden lg:block">
               <button
-                onClick={() => scrollToSection('about')}
-                className="bg-[#cebd88] text-gray-900 font-bold px-6 py-2 rounded-lg hover:bg-[#bca971] transition-all font-raleway text-sm"
+                onClick={() => scrollToSection('contact')}
+                // CHANGED: New button style for better contrast
+                className="bg-[#28364b] text-white font-bold px-6 py-2 rounded-lg hover:bg-[#3c4a63] transition-all font-raleway text-sm"
               >
                 Get Started
               </button>
@@ -96,7 +118,8 @@ export default function Navigation() {
 
             {/* Mobile Menu Button */}
             <button
-              className="lg:hidden text-white"
+              className="lg:hidden" // CHANGED: Dark blue text
+              style={{ color: '#28364b' }}
               onClick={() => setIsOpen(!isOpen)}
             >
               {isOpen ? <X size={28} /> : <Menu size={28} />}
@@ -106,7 +129,7 @@ export default function Navigation() {
           {/* Mobile Navigation */}
           {isOpen && (
             <div 
-              className="lg:hidden bg-[#28364b] border-t" // Changed from bg-black/95
+              className="lg:hidden bg-white border-t" // CHANGED: White background
               style={{ borderColor: 'rgba(206, 189, 136, 0.3)' }} // Gold border
             >
               <div className="flex flex-col space-y-4 px-4 py-6">
@@ -114,14 +137,16 @@ export default function Navigation() {
                   <button
                     key={item.id}
                     onClick={() => scrollToSection(item.id)}
-                    className="text-white hover:text-[#cebd88] transition-colors duration-300 text-left font-medium font-raleway py-2"
+                    className="hover:text-[#cebd88] transition-colors duration-300 text-left font-medium font-raleway py-2"
+                    style={{ color: '#28364b' }} // CHANGED: Dark blue text
                   >
                     {item.label}
                   </button>
                 ))}
                 <button
-                  onClick={() => scrollToSection('about')}
-                  className="bg-[#cebd88] text-gray-900 font-bold px-6 py-3 rounded-lg hover:bg-[#bca971] transition-all font-raleway w-full mt-4"
+                  onClick={() => scrollToSection('contact')}
+                  // CHANGED: New button style for better contrast
+                  className="bg-[#28364b] text-white font-bold px-6 py-3 rounded-lg hover:bg-[#3c4a63] transition-all font-raleway w-full mt-4"
                 >
                   Get Started
                 </button>

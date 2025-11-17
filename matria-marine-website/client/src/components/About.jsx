@@ -76,7 +76,7 @@ function ValueItem({ item, isMobile }) {
       {/* Container for text and button */}
       <div className={`flex-1 ${isMobile ? 'text-center' : 'text-left'}`}>
         <p className={`
-          font-raleway text-[#28364b] text-base leading-relaxed 
+          font-raleway text-[#28364b] text-base leading-relaxed text-justify
         `}>
           {displayText}
         </p>
@@ -142,25 +142,25 @@ export default function About() {
               <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair">
                 Driven by Excellence: Your Guarantee of Unrivaled Marine Service.
               </h3>
-              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway text-justify">
                 At Matria Marine, our commitment to your success begins with
                 our exceptional team. We cultivate a highly professional and
                 collaborative environment, empowering our dedicated experts
                 to deliver consistent, top-tier service.
               </p>
-              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway text-justify">
                 Our specialists work with unparalleled efficiency and precision,
                 ensuring every task is executed with the highest degree of
                 accuracy. This technological advantage translates directly into
                 smoother operations and optimized outcomes for your vessels.
               </p>
-              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway text-justify">
                 We don't just aim for satisfaction; we guarantee it. Through
                 rigorous standards in <strong>environment, safety, and workload
                 management</strong>, we provide a service that is not only highly
                 effective but also responsible and reliable.
               </p>
-              <p className="text-[#28364b] text-base leading-relaxed font-raleway">
+              <p className="text-[#28364b] text-base leading-relaxed font-raleway text-justify">
                 Partner with Matria Marine and experience the confidence that
                 comes from working with a team committed to your absolute
                 satisfaction.

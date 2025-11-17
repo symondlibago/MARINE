@@ -90,20 +90,20 @@ export default function Agency() {
               </h2>
               
               <p 
-                className="font-raleway text-base"
+                className="font-raleway text-base text-justify"
                 style={{ color: '#28364b' }}
               >
                 Navigate the complexities of international maritime operations with confidence. Matria Marine offers an extensive network of husbandry agency services, ensuring consistent quality and unparalleled support for your vessels at strategic ports across the globe.
               </p>
               <p 
-                className="font-raleway text-base"
+                className="font-raleway text-base text-justify"
                 style={{ color: '#28364b' }}
               >
                 Our expertise spans key maritime hubs, providing you with a single, reliable point of contact for all your port call needs:
               </p>
 
               <p 
-                className="font-raleway text-base"
+                className="font-raleway text-base text-justify"
                 style={{ color: '#28364b' }}
               >
                 With Matria Marine, you gain the advantage of a truly global presence, simplifying your operations, minimizing downtime, and ensuring efficient, hassle-free port calls, no matter where your journey takes you.
