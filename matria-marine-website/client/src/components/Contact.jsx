@@ -25,41 +25,46 @@ export default function Contact() {
     setLoading(true); // Start loading spinner
 
     // This is the URL you get from Formspree
-    const FORM_ENDPOINT = 'https://formspree.io/f/mzzypqkb'; // <-- PASTE YOUR URL HERE
+    const WEB3FORMS_ENDPOINT = "https://api.web3forms.com/submit";
 
-    try {
-      const response = await fetch(FORM_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
+  try {
+    const response = await fetch(WEB3FORMS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        access_key: "d9a17273-d253-42e7-a156-decc699f0766",
+        name: formData.name,
+        email: formData.email,
+        message: formData.message,
+      }),
+    });
 
-      if (response.ok) {
-        // Show the "Thank You" message
-        setSubmitted(true);
-        setTimeout(() => {
-          setFormData({
-            name: '',
-            email: '',
-            message: ''
-          });
-          setSubmitted(false);
-        }, 4000);
-      } else {
-        // Handle server errors
-        alert('There was an error sending your message. Please try again.');
-      }
-    } catch (error) {
-      // Handle network errors
-      console.error('Form submission error:', error);
-      alert('There was an error sending your message. Please try again.');
-    } finally {
-      setLoading(false); // Stop loading spinner
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+      setSubmitted(true);
+
+      setTimeout(() => {
+        setFormData({
+          name: "",
+          email: "",
+          message: "",
+        });
+        setSubmitted(false);
+      }, 4000);
+    } else {
+      alert("There was an error sending your message. Please try again.");
     }
-  };
+  } catch (error) {
+    console.error("Form submission error:", error);
+    alert("There was an error sending your message. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const contactInfo = [
     {

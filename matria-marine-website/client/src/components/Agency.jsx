@@ -1,11 +1,11 @@
-import React from 'react';
-// Import all the icons we need
+import React, { useState } from 'react';
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch"; // <-- ADDED
 import { 
   Globe, Landmark, Building2, MountainSnow, Mountain, 
   Building, TowerControl, Palmtree, Circle, Sunrise, Ship,
-  Waves, Utensils, Leaf, Feather, MapPin // Kept MapPin as the default icon
-} from 'lucide-react'; // Thematic icons
-
+  Waves, Utensils, Leaf, Feather, MapPin
+} from 'lucide-react';
+import WorldMap from '/src/asset/world.svg?react';
 
 const ICONS = {
   Landmark, Building2, MountainSnow, Mountain, Building, TowerControl, 
@@ -18,38 +18,141 @@ const Icon = ({ name, ...props }) => {
   return <LucideIcon {...props} />;
 };
 
-
-// Data for the lists
+// Asia Pacific Countries
 const asiaPacific = [
-  { name: "Singapore", icon: "Ship" }, // Busiest port
-  { name: "Malaysia", icon: "Building2" }, // Petronas Towers
-  { name: "Indonesia", icon: "Waves" }, // Island nation
-  { name: "Vietnam", icon: "Mountain" }, // Ha Long Bay
-  { name: "Hong Kong", icon: "Building" }, // Skyline
-  { name: "China", icon: "TowerControl" }, // Pagoda
-  { name: "Thailand", icon: "Utensils" }, // Famous cuisine
-  { name: "South Korea", icon: "Circle" }, // Taegeuk
-  { name: "Japan", icon: "Sunrise" }, // Land of the Rising Sun
-  { name: "Philippines", icon: "Waves" }, // Island nation
-  { name: "Sri Lanka", icon: "Leaf" }, // Tea
+  { name: "Singapore", icon: "Ship" },
+  { name: "Malaysia", icon: "Building2" },
+  { name: "Indonesia", icon: "Waves" },
+  { name: "Vietnam", icon: "Mountain" },
+  { name: "Hong Kong", icon: "Building" },
+  { name: "China", icon: "TowerControl" },
+  { name: "Thailand", icon: "Utensils" },
+  { name: "South Korea", icon: "Circle" },
+  { name: "Japan", icon: "Sunrise" },
+  { name: "Philippines", icon: "Waves" },
+  { name: "Sri Lanka", icon: "Leaf" },
 ];
 
+// Global Footprint
 const globalFootprint = [
-  { name: "South Africa", icon: "Globe" }, // Global
-  { name: "USA", icon: "Landmark" }, // Statue of Liberty
-  { name: "Panama", icon: "Ship" }, // Panama Canal
-  { name: "Costa Rica", icon: "Feather" }, // Quetzal (biodiversity)
-  { name: "Chile", icon: "MountainSnow" }, // Andes
-  { name: "Peru", icon: "MountainSnow" }, // Andes
-  { name: "Brazil", icon: "Palmtree" }, // Amazon
-  { name: "Honduras", icon: "Palmtree" }, // Tropical
+  { name: "South Africa", icon: "Globe" },
+  { name: "USA", icon: "Landmark" },
+  { name: "Panama", icon: "Ship" },
+  { name: "Costa Rica", icon: "Feather" },
+  { name: "Chile", icon: "MountainSnow" },
+  { name: "Peru", icon: "MountainSnow" },
+  { name: "Brazil", icon: "Palmtree" },
+  { name: "Honduras", icon: "Palmtree" },
 ];
+
+// --- STEP 1: Full Country Name to SVG ID (Code) Map ---
+const countryNameToCode = {
+  "Singapore": "SG",
+  "Malaysia": "MY",
+  "Indonesia": "ID",
+  "Vietnam": "VN",
+  "Hong Kong": "HK",
+  "China": "CN",
+  "Thailand": "TH",
+  "South Korea": "KR",
+  "Japan": "JP",
+  "Philippines": "PH",
+  "Sri Lanka": "LK",
+  "South Africa": "ZA",
+  "USA": "US",
+  "Panama": "PA",
+  "Costa Rica": "CR",
+  "Chile": "CL",
+  "Peru": "PE",
+  "Brazil": "BR",
+  "Honduras": "HN",
+};
+
+// --- STEP 2: Create a REVERSE map for our tooltip ---
+const codeToCountryName = Object.fromEntries(
+  Object.entries(countryNameToCode).map(([name, code]) => [code, name])
+);
+
 
 export default function Agency() {
 
+  // --- STEP 3: Add State for the Tooltip ---
+  const [tooltip, setTooltip] = useState({
+    visible: false,
+    content: '',
+    x: 0,
+    y: 0,
+  });
+
+  // --- STEP 4: Generate Dynamic CSS for the Map ---
+  const allActiveCountryNames = [
+    ...asiaPacific.map(c => c.name),
+    ...globalFootprint.map(c => c.name)
+  ];
+
+  const activeCountryCodes = allActiveCountryNames
+    .map(name => countryNameToCode[name])
+    .filter(Boolean);
+
+  const activeCountrySelector = activeCountryCodes
+    .map(code => `.world-map-svg #${code}`) 
+    .join(', ');
+
+  // --- UPDATED MAP STYLES ---
+  const mapStyles = `
+    /* --- FIX for Responsiveness --- */
+    .world-map-svg {
+      width: 100%;
+      height: auto; /* Maintains aspect ratio */
+    }
+
+    /* Default style for all countries */
+    .world-map-svg path {
+      fill: #e0e0e0; /* Light gray for non-active countries */
+      stroke: #ffffff; /* White border */
+      stroke-width: 0.5;
+      transition: fill 0.2s ease;
+    }
+
+    /* Style for all countries on hover */
+    .world-map-svg path:hover {
+      fill: #cccccc; /* Slightly darker gray on hover */
+    }
+
+    /* --- Style for ONLY our active countries --- */
+    ${activeCountrySelector} {
+      fill: #cebd88; /* Your brand's gold color */
+    }
+
+    /* Style for active countries on hover */
+    ${activeCountrySelector}:hover {
+      fill: #b9a979; /* A slightly darker gold for hover */
+    }
+  `;
+
+  // --- STEP 5: Create Event Handlers for the Map ---
+  const handleMouseOver = (e) => {
+    const path = e.target;
+    if (path.tagName === 'path' && path.id) {
+      const countryName = codeToCountryName[path.id];
+      if (countryName) {
+        setTooltip(prev => ({ ...prev, visible: true, content: countryName }));
+      }
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setTooltip(prev => ({ ...prev, visible: false, content: '' }));
+  };
+
+  const handleMouseMove = (e) => {
+    setTooltip(prev => ({ ...prev, x: e.clientX, y: e.clientY }));
+  };
+
+
   return (
     <>
-      {/* Import the Playfair Display and Raleway fonts */}
+      {/* Fonts */}
       <style>
         {`
           @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Raleway:wght@400&display=swap');
@@ -64,12 +167,30 @@ export default function Agency() {
         `}
       </style>
 
-      {/* Set a clean white background */}
-      <section id="agency" className="py-24 bg-white">
-        {/* Container with responsive horizontal margins */}
-        <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
+      {/* Inject our dynamic map styles */}
+      <style>{mapStyles}</style>
 
-          {/* SECTION HEADER */}
+      {/* --- STEP 6: Render the Tooltip --- */}
+      {tooltip.visible && (
+        <div
+          className="font-playfair text-sm px-3 py-1 bg-white/80 backdrop-blur-sm rounded shadow-lg"
+          style={{
+            position: 'fixed',
+            top: tooltip.y + 15, // Offset from cursor
+            left: tooltip.x + 15, // Offset from cursor
+            pointerEvents: 'none', // Lets mouse events pass through
+            color: '#28364b',
+            zIndex: 9999,
+          }}
+        >
+          {tooltip.content}
+        </div>
+      )}
+
+      <section id="agency" className="py-24 bg-white">
+        <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
+          {/* ... (Your Agency content is unchanged) ... */}
+          {/* Header */}
           <h1 
             className="text-4xl md:text-5xl font-bold font-playfair text-center mb-16"
             style={{ color: '#28364b' }}
@@ -77,10 +198,10 @@ export default function Agency() {
             Agency
           </h1>
 
-          {/* Main Grid: Back to 2 columns on large screens */}
+          {/* 2-Column Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-start">
             
-            {/* Left Column: Text Content */}
+            {/* LEFT */}
             <div className="space-y-6">
               <h2 
                 className="text-3xl md:text-4xl font-bold font-playfair"
@@ -89,43 +210,37 @@ export default function Agency() {
                 Matria Marine: Your Global Partner for Seamless Port Operations
               </h2>
               
-              <p 
-                className="font-raleway text-base text-justify"
-                style={{ color: '#28364b' }}
-              >
-                Navigate the complexities of international maritime operations with confidence. Matria Marine offers an extensive network of husbandry agency services, ensuring consistent quality and unparalleled support for your vessels at strategic ports across the globe.
-              </p>
-              <p 
-                className="font-raleway text-base text-justify"
-                style={{ color: '#28364b' }}
-              >
-                Our expertise spans key maritime hubs, providing you with a single, reliable point of contact for all your port call needs:
+              <p className="font-raleway text-base text-justify" style={{ color: '#28364b' }}>
+                Navigate the complexities of international maritime operations with confidence. 
+                Matria Marine offers an extensive network of husbandry agency services, ensuring 
+                consistent quality and unparalleled support for your vessels at strategic ports 
+                across the globe.
               </p>
 
-              <p 
-                className="font-raleway text-base text-justify"
-                style={{ color: '#28364b' }}
-              >
-                With Matria Marine, you gain the advantage of a truly global presence, simplifying your operations, minimizing downtime, and ensuring efficient, hassle-free port calls, no matter where your journey takes you.
+              <p className="font-raleway text-base text-justify" style={{ color: '#28364b' }}>
+                Our expertise spans key maritime hubs, providing you with a single, reliable 
+                point of contact for all your port call needs:
+              </p>
+
+              <p className="font-raleway text-base text-justify" style={{ color: '#28364b' }}>
+                With Matria Marine, you gain the advantage of a truly global presence, 
+                simplifying your operations, minimizing downtime, and ensuring efficient, 
+                hassle-free port calls, no matter where your journey takes you.
               </p>
             </div>
 
-            {/* Right Column: Lists */}
+            {/* RIGHT - Lists */}
             <div className="space-y-8">
-              {/* Asia Pacific List */}
+              {/* Asia Pacific */}
               <div className="space-y-4">
-                <h3 
-                  className="text-2xl font-bold font-playfair"
-                  style={{ color: '#28364b' }}
-                >
-                  Asia Pacific Powerhouse
+                <h3 className="text-2xl font-bold font-playfair" style={{ color: '#28364b' }}>
+                  Asia Pacific
                 </h3>
-                {/* This grid will remain left-aligned within its column */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
                   {asiaPacific.map((item, index) => (
                     <div key={index} className="flex items-center gap-3">
-                      <Icon name={item.icon} className="w-5 h-5 flex-shrink-0 text-[#cebd88]" />
-                      <span className="font-raleway text-base" style={{ color: '#28364b' }}>
+                      <Icon name={item.icon} className="w-5 h-5 text-[#cebd88]" />
+                      <span className="font-raleway" style={{ color: '#28364b' }}>
                         {item.name}
                       </span>
                     </div>
@@ -133,20 +248,16 @@ export default function Agency() {
                 </div>
               </div>
 
-              {/* Global Footprint List */}
+              {/* Global */}
               <div className="space-y-4">
-                <h3 
-                  className="text-2xl font-bold font-playfair"
-                  style={{ color: '#28364b' }}
-                >
+                <h3 className="text-2xl font-bold font-playfair" style={{ color: '#28364b' }}>
                   Expanding Global Footprint
                 </h3>
-                {/* This grid will also remain left-aligned */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
                   {globalFootprint.map((item, index) => (
                     <div key={index} className="flex items-center gap-3">
-                      <Icon name={item.icon} className="w-5 h-5 flex-shrink-0 text-[#cebd88]" />
-                      <span className="font-raleway text-base" style={{ color: '#28364b' }}>
+                      <Icon name={item.icon} className="w-5 h-5 text-[#cebd88]" />
+                      <span className="font-raleway" style={{ color: '#28364b' }}>
                         {item.name}
                       </span>
                     </div>
@@ -159,100 +270,43 @@ export default function Agency() {
         </div>
       </section>
 
-      {/* NEW SVG MAP SECTION */}
-      <section id="agency-maps" className="pb-24 bg-white">
+      
+      
         <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
-          
-          {/* MAP SECTION HEADER */}
           <h2 
-            className="text-4xl md:text-5xl font-bold font-playfair text-center mb-16"
+            className="text-4xl md:text-5xl font-bold font-playfair text-center mb-12" // mb-12 provides space *above* map
             style={{ color: '#28364b' }}
           >
             Global Networks
           </h2>
 
-          {/* Grid for the maps - REMOVED GAP */}
-          <div className="grid grid-cols-1 md:grid-cols-4">
+
+          <div className="relative w-full overflow-hidden cursor-grab active:cursor-grabbing">
             
-            {/* Peru Map - Added relative positioning */}
-            <div className="relative flex flex-col items-center">
-              <img 
-                src="/peru.svg" 
-                alt="Map of Peru" 
-                className="w-full h-auto max-h-80 object-contain"
-              />
-              {/* New Pin Icon and Label - Absolute Positioned - CENTERED */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/70 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg">
-                <MapPin className="w-5 h-5 flex-shrink-0 text-[#cebd88]" />
-                <span 
-                  className="text-lg font-bold font-playfair"
-                  style={{ color: '#28364b' }}
-                >
-                  Peru
-                </span>
-              </div>
-            </div>
-
-            {/* South Africa Map - Added relative positioning */}
-            <div className="relative flex flex-col items-center">
-              <img 
-                src="/southafrica.svg" 
-                alt="Map of South Africa" 
-                className="w-full h-auto max-h-80 object-contain"
-              />
-              {/* New Pin Icon and Label - Absolute Positioned - CENTERED */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/70 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg">
-                <MapPin className="w-5 h-5 flex-shrink-0 text-[#cebd88]" />
-                <span 
-                  className="text-lg font-bold font-playfair"
-                  style={{ color: '#28364b' }}
-                >
-                  South Africa
-                </span>
-              </div>
-            </div>
-
-            {/* Costa Rica Map - Added relative positioning */}
-            <div className="relative flex flex-col items-center">
-              <img 
-                src="/costarica.svg" 
-                alt="Map of Costa Rica" 
-                className="w-full h-auto max-h-80 object-contain"
-              />
-              {/* New Pin Icon and Label - Absolute Positioned - CENTERED */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/70 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg">
-                <MapPin className="w-5 h-5 flex-shrink-0 text-[#cebd88]" />
-                <span 
-                  className="text-lg font-bold font-playfair"
-                  style={{ color: '#28364b' }}
-                >
-                  Costa Rica
-                </span>
-              </div>
-            </div>
-
-            {/* Honduras Map - Added relative positioning */}
-            <div className="relative flex flex-col items-center">
-              <img 
-                src="/honduras.svg" 
-                alt="Map of Honduras" 
-                className="w-full h-auto max-h-80 object-contain"
-              />
-              {/* New Pin Icon and Label - Absolute Positioned - CENTERED */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 bg-white/70 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg">
-                <MapPin className="w-5 h-5 flex-shrink-0 text-[#cebd88]" />
-                <span 
-                  className="text-lg font-bold font-playfair"
-                  style={{ color: '#28364b' }}
-                >
-                  Honduras
-                </span>
-              </div>
-            </div>
+            <TransformWrapper
+              panning={{ velocityDisabled: true }} // Disables the "fling" effect for a smoother drag
+              zooming={{ disabled: true }}
+              wheel={{ disabled: true }}
+              doubleClick={{ disabled: true }}
+            >
+              <TransformComponent
+                wrapperStyle={{ width: "100%", height: "100%" }}
+              >
+                <div className="min-w-[1200px] min-h-[500px] lg:min-w-0 lg:min-h-0">
+                  <WorldMap 
+                    className="world-map-svg w-full max-w-6xl" // Your original classes
+                    onMouseOver={handleMouseOver}
+                    onMouseLeave={handleMouseLeave}
+                    onMouseMove={handleMouseMove}
+                  />
+                </div>
+              </TransformComponent>
+            </TransformWrapper>
 
           </div>
+          {/* --- END OF MAP WRAPPER (UPDATED) --- */}
+
         </div>
-      </section>
     </>
   );
 }

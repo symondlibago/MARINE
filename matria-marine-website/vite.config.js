@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { defineConfig } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import svgr from 'vite-plugin-svgr'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const plugins = [react({
   // Use .jsx for file extension
   include: "**/*.{js,jsx}",
-}), tailwindcss(), vitePluginManusRuntime()];
+}), tailwindcss(), vitePluginManusRuntime(), svgr()];
 
 export default defineConfig({
   plugins,
