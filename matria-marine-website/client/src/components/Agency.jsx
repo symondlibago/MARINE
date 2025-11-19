@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch"; // <-- ADDED
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { 
   Globe, Landmark, Building2, MountainSnow, Mountain, 
   Building, TowerControl, Palmtree, Circle, Sunrise, Ship,
-  Waves, Utensils, Leaf, Feather, MapPin
+  Waves, Utensils, Leaf, Feather, MapPin,
+  // NEW: Icons for zoom controls
+  Plus, Minus 
 } from 'lucide-react';
 import WorldMap from '/src/asset/world.svg?react';
 
@@ -73,6 +75,9 @@ const codeToCountryName = Object.fromEntries(
   Object.entries(countryNameToCode).map(([name, code]) => [code, name])
 );
 
+// MODIFICATION: Separate SG and MY for pin/country hover, and map new Pin ID
+codeToCountryName["MY"] = "Malaysia & Singapore"; 
+
 
 export default function Agency() {
 
@@ -94,11 +99,13 @@ export default function Agency() {
     .map(name => countryNameToCode[name])
     .filter(Boolean);
 
+  // Add the new pin ID to active selectors for styling the pin
+  activeCountryCodes.push('SG_PIN');
+
   const activeCountrySelector = activeCountryCodes
     .map(code => `.world-map-svg #${code}`) 
     .join(', ');
 
-  // --- UPDATED MAP STYLES ---
   const mapStyles = `
     /* --- FIX for Responsiveness --- */
     .world-map-svg {
@@ -132,9 +139,10 @@ export default function Agency() {
 
   // --- STEP 5: Create Event Handlers for the Map ---
   const handleMouseOver = (e) => {
-    const path = e.target;
-    if (path.tagName === 'path' && path.id) {
-      const countryName = codeToCountryName[path.id];
+    const target = e.target;
+    // Check for both path (countries) and circle (pin) elements
+    if ((target.tagName === 'path' || target.tagName === 'circle') && target.id) {
+      const countryName = codeToCountryName[target.id];
       if (countryName) {
         setTooltip(prev => ({ ...prev, visible: true, content: countryName }));
       }
@@ -189,8 +197,6 @@ export default function Agency() {
 
       <section id="agency" className="py-24 bg-white">
         <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
-          {/* ... (Your Agency content is unchanged) ... */}
-          {/* Header */}
           <h1 
             className="text-4xl md:text-5xl font-bold font-playfair text-center mb-16"
             style={{ color: '#28364b' }}
@@ -265,7 +271,6 @@ export default function Agency() {
                 </div>
               </div>
             </div>
-
           </div>
         </div>
       </section>
@@ -281,31 +286,54 @@ export default function Agency() {
           </h2>
 
 
-          <div className="relative w-full overflow-hidden cursor-grab active:cursor-grabbing">
-            
+          {/* MODIFIED: Enabled zooming and changed cursor for better UX */}
+          <div className="relative w-full overflow-hidden cursor-pointer active:cursor-grabbing">
             <TransformWrapper
-              panning={{ velocityDisabled: true }} // Disables the "fling" effect for a smoother drag
-              zooming={{ disabled: true }}
-              wheel={{ disabled: true }}
-              doubleClick={{ disabled: true }}
+              panning={{ velocityDisabled: true }} 
+              zooming={{ disabled: false }} // Enabled zooming
+              wheel={{ disabled: false }}   // Enabled mouse wheel zoom
+              doubleClick={{ disabled: false }} // Enabled double-click zoom
+              // Default scale, limits, and step are usually fine, but you can add them here if needed
             >
-              <TransformComponent
-                wrapperStyle={{ width: "100%", height: "100%" }}
-              >
-                <div className="min-w-[1200px] min-h-[500px] lg:min-w-0 lg:min-h-0">
-                  <WorldMap 
-                    className="world-map-svg w-full max-w-6xl" // Your original classes
-                    onMouseOver={handleMouseOver}
-                    onMouseLeave={handleMouseLeave}
-                    onMouseMove={handleMouseMove}
-                  />
+              {/* Using render props to access zoom functions */}
+              {({ zoomIn, zoomOut, resetTransform, instance }) => (
+                <div className="relative">
+                  <TransformComponent
+                    wrapperStyle={{ width: "100%", height: "100%" }}
+                  >
+                    {/* Map and Pin Container */}
+                    <div className="min-w-[1200px] min-h-[500px] lg:min-w-0 lg:min-h-0 relative">
+                        <WorldMap 
+                            className="world-map-svg w-full max-w-6xl"
+                            onMouseOver={handleMouseOver}
+                            onMouseLeave={handleMouseLeave}
+                            onMouseMove={handleMouseMove}
+                        />
+                        
+                    </div>
+                  </TransformComponent>
+
+                  {/* Zoom Controls Overlay */}
+                  <div className="absolute bottom-4 right-4 z-10 flex flex-col space-y-2">
+                      <button
+                          onClick={() => zoomIn(0.2, 300)} // Zoom in by 20% over 300ms
+                          className="p-2 bg-white rounded-full shadow-lg text-[#28364b] border border-gray-200 hover:bg-gray-100 transition-colors"
+                          aria-label="Zoom In"
+                      >
+                          <Plus className="w-5 h-5" />
+                      </button>
+                      <button
+                          onClick={() => zoomOut(0.2, 300)} // Zoom out by 20% over 300ms
+                          className="p-2 bg-white rounded-full shadow-lg text-[#28364b] border border-gray-200 hover:bg-gray-100 transition-colors"
+                          aria-label="Zoom Out"
+                      >
+                          <Minus className="w-5 h-5" />
+                      </button>
+                  </div>
                 </div>
-              </TransformComponent>
+              )}
             </TransformWrapper>
-
           </div>
-          {/* --- END OF MAP WRAPPER (UPDATED) --- */}
-
         </div>
     </>
   );

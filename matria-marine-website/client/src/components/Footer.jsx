@@ -57,10 +57,10 @@ export default function Footer() {
                 
                 {/* New text styling */}
                 <div className="flex-col flex items-center">
-                  <span className="text-white font-bold text-2xl font-playfair tracking-wide leading-none">
-                    MATRIA
+                  <span className="text-white font-bold text-2xl font-raleway tracking-wide leading-none">
+                    M A T R I A
                   </span>
-                  <span className="text-white font-raleway text-[10px] tracking-[0.2em] -mt-0.5">
+                  <span className="text-white font-raleway text-[10.5px] tracking-[0.2em] -mt-0.5">
                     MARINE SERVICES
                   </span>
                   <div className="flex space-x-0.5 text-[#cebd88] mt-1"> 

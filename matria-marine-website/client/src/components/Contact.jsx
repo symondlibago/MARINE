@@ -218,7 +218,7 @@ export default function Contact() {
               )}
             </div>
 
-            {/* Right Column: Contact Info */}
+            {/* Right Column: Contact Info (MODIFIED) */}
             <div className="space-y-8 flex flex-col justify-center">
               <h3 
                 className="text-3xl font-bold font-playfair"
@@ -229,6 +229,9 @@ export default function Contact() {
               
               {contactInfo.map((info) => {
                 const Icon = info.icon;
+                // Check if the current item is the Email entry
+                const isEmail = info.title === 'Email'; 
+
                 return (
                   <div key={info.title} className="flex items-start gap-4">
                     <div className="flex-shrink-0">
@@ -241,12 +244,24 @@ export default function Contact() {
                       >
                         {info.title}
                       </h4>
-                      <p 
-                        className="font-raleway text-base mt-1"
-                        style={{ color: '#28364b' }}
-                      >
-                        {info.content}
-                      </p>
+                      
+                      {/* Conditional rendering for Email as a hyperlink */}
+                      {isEmail ? (
+                        <a 
+                          href={`mailto:${info.content}`} 
+                          className="font-raleway text-base mt-1 text-[#28364b] hover:text-[#cebd88] transition-colors"
+                          style={{ color: '#28364b' }}
+                        >
+                          {info.content}
+                        </a>
+                      ) : (
+                        <p 
+                          className="font-raleway text-base mt-1"
+                          style={{ color: '#28364b' }}
+                        >
+                          {info.content}
+                        </p>
+                      )}
                     </div>
                   </div>
                 );
