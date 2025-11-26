@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-// List of background images
+// UPDATED: List of background images
 const images = [
-  '/home.jpg',
-  '/home2.png',
-  '/home3.jpg',
-  '/home4.jpg',
-  '/home5.jpg',
+  '/newhome1.jpeg',
+  '/newhome2.jpeg',
+  '/newhome3.jpeg',
+  '/newhome4.jpeg',
+  '/newhome5.jpeg',
+  '/newhome6.jpeg',
+  '/newhome7.jpeg',
 ];
 
 export default function Hero() {
@@ -63,7 +65,7 @@ export default function Hero() {
               style={{ backgroundImage: `url(${image})` }}
             />
           ))}
-          {/* Dark overlay for text readability - reduced opacity slightly */}
+          {/* Dark overlay for text readability */}
           <div className="absolute inset-0 bg-black/40 z-10" />
         </div>
 
@@ -71,7 +73,7 @@ export default function Hero() {
         <div className="relative z-20 container mx-auto px-4 text-center">
           <div className="space-y-6 animate-fade-in">
 
-            {/* Main Headline - Reduced font size */}
+            {/* Main Headline */}
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white leading-tight font-playfair">
               Elevate Your
               <span className="block">
@@ -79,14 +81,14 @@ export default function Hero() {
               </span>
             </h1>
 
-            {/* Subtitle - Updated with .font-raleway */}
+            {/* Subtitle */}
             <p className="text-lg md:text-lg text-white/90 max-w-3xl mx-auto leading-relaxed font-raleway">
               Streamline your vessel's needs and unlock peak efficiency with Matria Marine's
               comprehensive full-service husbandry solutions. Your trusted partner for seamless
               global port operations.
             </p>
 
-            {/* CTA Buttons - Styled with #f1f0e8 */}
+            {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
               <button
                 onClick={() => scrollToSection('services')}
@@ -102,7 +104,7 @@ export default function Hero() {
               </button>
             </div>
 
-            {/* Stats - Reduced font size */}
+            {/* Stats */}
             <div className="grid grid-cols-3 gap-4 md:gap-8 pt-12 max-w-2xl mx-auto">
               <div className="space-y-2">
                 <p className="text-2xl md:text-3xl font-bold text-white">50+</p>
@@ -132,12 +134,12 @@ export default function Hero() {
 
         {/* Rope Separator */}
         <div
-          className="absolute bottom-0 left-0 w-full h-5 z-20" // h-5 is 1.25rem / 20px
+          className="absolute bottom-0 left-0 w-full h-5 z-20"
           style={{
             backgroundImage: "url('/matria4.jpg')",
             backgroundRepeat: 'repeat-x',
             backgroundPosition: 'center',
-            backgroundSize: 'auto 100%', // Ensure the rope's height fits the div
+            backgroundSize: 'auto 100%',
           }}
         />
       </section>

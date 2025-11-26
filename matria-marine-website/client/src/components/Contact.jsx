@@ -245,12 +245,12 @@ export default function Contact() {
                         {info.title}
                       </h4>
                       
-                      {/* Conditional rendering for Email as a hyperlink */}
+                      {/* Conditional rendering for Email as a hyperlink with underline */}
                       {isEmail ? (
                         <a 
                           href={`mailto:${info.content}`} 
-                          className="font-raleway text-base mt-1 text-[#28364b] hover:text-[#cebd88] transition-colors"
-                          style={{ color: '#28364b' }}
+                          className="font-raleway text-base mt-1 text-[#28364b] underline hover:text-[#cebd88] transition-colors"
+                          style={{ color: '#8E44AD' }}
                         >
                           {info.content}
                         </a>

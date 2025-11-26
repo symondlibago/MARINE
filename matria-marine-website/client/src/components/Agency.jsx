@@ -1,50 +1,35 @@
 import React, { useState } from 'react';
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { 
-  Globe, Landmark, Building2, MountainSnow, Mountain, 
-  Building, TowerControl, Palmtree, Circle, Sunrise, Ship,
-  Waves, Utensils, Leaf, Feather, MapPin,
-  // NEW: Icons for zoom controls
   Plus, Minus 
 } from 'lucide-react';
 import WorldMap from '/src/asset/world.svg?react';
 
-const ICONS = {
-  Landmark, Building2, MountainSnow, Mountain, Building, TowerControl, 
-  Palmtree, Circle, Sunrise, Ship, Globe, Waves, Utensils, Leaf, Feather,
-  Default: MapPin
-};
+// --- Configuration ---
 
-const Icon = ({ name, ...props }) => {
-  const LucideIcon = ICONS[name] || ICONS.Default;
-  return <LucideIcon {...props} />;
-};
-
-// Asia Pacific Countries
-const asiaPacific = [
-  { name: "Singapore", icon: "Ship" },
-  { name: "Malaysia", icon: "Building2" },
-  { name: "Indonesia", icon: "Waves" },
-  { name: "Vietnam", icon: "Mountain" },
-  { name: "Hong Kong", icon: "Building" },
-  { name: "China", icon: "TowerControl" },
-  { name: "Thailand", icon: "Utensils" },
-  { name: "South Korea", icon: "Circle" },
-  { name: "Japan", icon: "Sunrise" },
-  { name: "Philippines", icon: "Waves" },
-  { name: "Sri Lanka", icon: "Leaf" },
-];
-
-// Global Footprint
-const globalFootprint = [
-  { name: "South Africa", icon: "Globe" },
-  { name: "USA", icon: "Landmark" },
-  { name: "Panama", icon: "Ship" },
-  { name: "Costa Rica", icon: "Feather" },
-  { name: "Chile", icon: "MountainSnow" },
-  { name: "Peru", icon: "MountainSnow" },
-  { name: "Brazil", icon: "Palmtree" },
-  { name: "Honduras", icon: "Palmtree" },
+// Merged List: Global Networks
+const globalNetworks = [
+  // Former Asia Pacific
+  { name: "Singapore" },
+  { name: "Malaysia" },
+  { name: "Indonesia" },
+  { name: "Vietnam" },
+  { name: "Hong Kong" },
+  { name: "China" },
+  { name: "Thailand" },
+  { name: "South Korea" },
+  { name: "Japan" },
+  { name: "Philippines" },
+  { name: "Sri Lanka" },
+  // Former Global Footprint
+  { name: "South Africa" },
+  { name: "USA" },
+  { name: "Panama" },
+  { name: "Costa Rica" },
+  { name: "Chile" },
+  { name: "Peru" },
+  { name: "Brazil" },
+  { name: "Honduras" },
 ];
 
 // --- STEP 1: Full Country Name to SVG ID (Code) Map ---
@@ -75,7 +60,7 @@ const codeToCountryName = Object.fromEntries(
   Object.entries(countryNameToCode).map(([name, code]) => [code, name])
 );
 
-// MODIFICATION: Separate SG and MY for pin/country hover, and map new Pin ID
+// Separate SG and MY for pin/country hover
 codeToCountryName["MY"] = "Malaysia & Singapore"; 
 
 
@@ -90,10 +75,7 @@ export default function Agency() {
   });
 
   // --- STEP 4: Generate Dynamic CSS for the Map ---
-  const allActiveCountryNames = [
-    ...asiaPacific.map(c => c.name),
-    ...globalFootprint.map(c => c.name)
-  ];
+  const allActiveCountryNames = globalNetworks.map(c => c.name);
 
   const activeCountryCodes = allActiveCountryNames
     .map(name => countryNameToCode[name])
@@ -207,7 +189,7 @@ export default function Agency() {
           {/* 2-Column Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-start">
             
-            {/* LEFT */}
+            {/* LEFT - Text Content */}
             <div className="space-y-6">
               <h2 
                 className="text-3xl md:text-4xl font-bold font-playfair"
@@ -235,17 +217,20 @@ export default function Agency() {
               </p>
             </div>
 
-            {/* RIGHT - Lists */}
+            {/* RIGHT - List */}
             <div className="space-y-8">
-              {/* Asia Pacific */}
+              
+              {/* MERGED: All countries in one list - CENTERED */}
               <div className="space-y-4">
-                <h3 className="text-2xl font-bold font-playfair" style={{ color: '#28364b' }}>
-                  Asia Pacific
+                <h3 className="text-4xl font-bold font-playfair text-center" style={{ color: '#28364b' }}>
+                  Global Networks
                 </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
-                  {asiaPacific.map((item, index) => (
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-30 gap-y-5 justify-items-start w-fit mx-auto">
+                  {globalNetworks.map((item, index) => (
                     <div key={index} className="flex items-center gap-3">
-                      <Icon name={item.icon} className="w-5 h-5 text-[#cebd88]" />
+                      {/* Bullet Point */}
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#cebd88] flex-shrink-0" />
                       <span className="font-raleway" style={{ color: '#28364b' }}>
                         {item.name}
                       </span>
@@ -254,54 +239,33 @@ export default function Agency() {
                 </div>
               </div>
 
-              {/* Global */}
-              <div className="space-y-4">
-                <h3 className="text-2xl font-bold font-playfair" style={{ color: '#28364b' }}>
-                  Expanding Global Footprint
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
-                  {globalFootprint.map((item, index) => (
-                    <div key={index} className="flex items-center gap-3">
-                      <Icon name={item.icon} className="w-5 h-5 text-[#cebd88]" />
-                      <span className="font-raleway" style={{ color: '#28364b' }}>
-                        {item.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         </div>
       </section>
 
       
-      
+      {/* Map Section */}
         <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
           <h2 
-            className="text-4xl md:text-5xl font-bold font-playfair text-center mb-12" // mb-12 provides space *above* map
+            className="text-4xl md:text-5xl font-bold font-playfair text-center mb-12"
             style={{ color: '#28364b' }}
           >
             Global Networks
           </h2>
 
-
-          {/* MODIFIED: Enabled zooming and changed cursor for better UX */}
           <div className="relative w-full overflow-hidden cursor-pointer active:cursor-grabbing">
             <TransformWrapper
               panning={{ velocityDisabled: true }} 
-              zooming={{ disabled: false }} // Enabled zooming
-              wheel={{ disabled: false }}   // Enabled mouse wheel zoom
-              doubleClick={{ disabled: false }} // Enabled double-click zoom
-              // Default scale, limits, and step are usually fine, but you can add them here if needed
+              zooming={{ disabled: false }}
+              wheel={{ disabled: false }}
+              doubleClick={{ disabled: false }}
             >
-              {/* Using render props to access zoom functions */}
               {({ zoomIn, zoomOut, resetTransform, instance }) => (
                 <div className="relative">
                   <TransformComponent
                     wrapperStyle={{ width: "100%", height: "100%" }}
                   >
-                    {/* Map and Pin Container */}
                     <div className="min-w-[1200px] min-h-[500px] lg:min-w-0 lg:min-h-0 relative">
                         <WorldMap 
                             className="world-map-svg w-full max-w-6xl"
@@ -309,21 +273,19 @@ export default function Agency() {
                             onMouseLeave={handleMouseLeave}
                             onMouseMove={handleMouseMove}
                         />
-                        
                     </div>
                   </TransformComponent>
 
-                  {/* Zoom Controls Overlay */}
                   <div className="absolute bottom-4 right-4 z-10 flex flex-col space-y-2">
                       <button
-                          onClick={() => zoomIn(0.2, 300)} // Zoom in by 20% over 300ms
+                          onClick={() => zoomIn(0.2, 300)}
                           className="p-2 bg-white rounded-full shadow-lg text-[#28364b] border border-gray-200 hover:bg-gray-100 transition-colors"
                           aria-label="Zoom In"
                       >
                           <Plus className="w-5 h-5" />
                       </button>
                       <button
-                          onClick={() => zoomOut(0.2, 300)} // Zoom out by 20% over 300ms
+                          onClick={() => zoomOut(0.2, 300)}
                           className="p-2 bg-white rounded-full shadow-lg text-[#28364b] border border-gray-200 hover:bg-gray-100 transition-colors"
                           aria-label="Zoom Out"
                       >

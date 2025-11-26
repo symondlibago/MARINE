@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
 
-// New data for the Key Values section based on your image
+// UPDATED: New data for the Key Values section with about1.jpeg - about4.jpeg
 const newKeyValues = [
   {
-    image: "/key1.png",
+    image: "/about1.jpeg",
     text: "Streamline your vessel's needs and unlock peak efficiency with Matria Marine's enhanced, comprehensive Full-Style Husbandry Service. We provide owners and clients with unparalleled support designed to minimize downtime and maximize peace of mind."
   },
   {
-    image: "/key2.png",
+    image: "/about2.jpeg",
     text: "From seamless crew changes and swift spare part deliveries to optimized bunker calls and expert spares reconditioning, our dedicated team of experienced agents ensures every aspect of your ship's welfare is meticulously managed."
   },
   {
-    image: "/key3.png",
+    image: "/about3.jpeg",
     text: "Experience the Matria Advantage: Our single point of contact guarantees smooth, hassle-free operations, unmatched responsiveness, and the shortest possible turnaround times."
   },
   {
-    image: "/key4.png",
+    image: "/about4.jpeg",
     text: "Let Matria Marine be your trusted partner for a flawlessly managed fleet."
   }
 ];
@@ -24,7 +24,6 @@ const newKeyValues = [
 const MOBILE_BREAKPOINT = 768;
 
 function useIsMobile() {
-  // CORRECTION: Initialized state to `false` instead of using TypeScript types
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -42,39 +41,55 @@ function useIsMobile() {
     return () => mql.removeEventListener("change", onChange);
   }, []);
 
-  return isMobile; // Return the boolean
+  return isMobile; 
 }
 // ------------------------------------------
 
-// --- NEW ValueItem COMPONENT ---
-// This component manages its own state for expanding/collapsing text
-function ValueItem({ item, isMobile }) {
+// --- Fading Separator Line Component ---
+const FadingSeparator = () => (
+    <div className="flex justify-center items-center py-4">
+        <div 
+            className="w-full h-px" 
+            style={{
+                background: 'linear-gradient(to right, rgba(40, 54, 75, 0) 0%, rgba(40, 54, 75, 0.5) 50%, rgba(40, 54, 75, 0) 100%)',
+                maxWidth: '80%', 
+            }}
+        />
+    </div>
+);
+// ---------------------------------------------
+
+
+// --- ValueItem COMPONENT ---
+function ValueItem({ item }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const toggleExpand = () => setIsExpanded(!isExpanded);
 
-  // Check if text is long enough to truncate
-  const isLongText = item.text.length > 150; // Truncate after 150 chars
-  
-  // Generate truncated text
+  const isLongText = item.text.length > 150; 
   const shortText = isLongText ? item.text.substring(0, 150) + "..." : item.text;
-  
-  // Determine which text to display
   const displayText = isExpanded ? item.text : shortText;
 
   return (
     <div
       className={`
-        bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-shadow duration-300 
-        flex ${isMobile ? 'flex-col' : 'flex-row'} items-center gap-6
+        bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 
+        flex flex-col overflow-hidden
       `}
     >
-      <img 
-        src={item.image} 
-        alt={item.text.substring(0, 30)}
-        className="rounded-full w-24 h-24 object-cover shadow-md flex-shrink-0" 
-      />
-      {/* Container for text and button */}
-      <div className={`flex-1 ${isMobile ? 'text-center' : 'text-left'}`}>
+      {/* IMAGE CONTAINER with padding */}
+      <div className="p-4"> 
+        <img 
+          src={item.image} 
+          alt={item.text.substring(0, 30)}
+          className="w-full h-48 object-cover shadow-md rounded-md" 
+        />
+      </div>
+      
+      {/* Separator Line */}
+      <FadingSeparator />
+      
+      {/* Container for text and button (with padding) */}
+      <div className="flex-1 p-6 pt-0 text-center"> 
         <p className={`
           font-raleway text-[#28364b] text-base leading-relaxed text-justify
         `}>
@@ -97,8 +112,7 @@ function ValueItem({ item, isMobile }) {
 // -------------------------------
 
 export default function About() {
-  // Call the hook (now defined in this file)
-  const isMobile = useIsMobile();
+  const isMobile = useIsMobile(); 
 
   return (
     <>
@@ -117,12 +131,13 @@ export default function About() {
         `}
       </style>
 
-      <section id="about" className="py-24 bg-[#F1F0E8]">
-        {/* Adjusted horizontal padding for mobile */}
-        <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
+      {/* UPDATED: Reduced padding from py-24 to py-16 */}
+      <section id="about" className="py-16 bg-[#F1F0E8]">
+        <div className="container mx-auto px-4 md:px-6 lg:px-12 xl:px-24">
           
-          {/* --- ADDED THIS SECTION HEADER --- */}
-          <div className="text-center mb-16">
+          {/* --- SECTION HEADER --- */}
+          {/* UPDATED: Reduced margin from mb-16 to mb-12 */}
+          <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-[#28364b] font-playfair">
               About Us
             </h2>
@@ -130,15 +145,14 @@ export default function About() {
           {/* ---------------------------------- */}
 
           {/* Main About Section */}
-          <div className="grid md:grid-cols-2 gap-16 items-center mb-24">
+          {/* UPDATED: Reduced gap from gap-16 to gap-12 and margin from mb-24 to mb-16 */}
+          <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
             
             {/* Left Content (Text) */}
             <div className="space-y-6">
-              {/* Responsive font size for mobile */}
               <h2 className="text-3xl md:text-4xl font-bold text-[#28364b] font-playfair">
                 Passionately Delivering Your Peace of Mind at Sea
               </h2>
-              {/* Responsive font size for mobile */}
               <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair">
                 Driven by Excellence: Your Guarantee of Unrivaled Marine Service.
               </h3>
@@ -167,32 +181,41 @@ export default function About() {
               </p>
             </div>
 
-            {/* Right Content (Image) */}
-            <div className="bg-white/70 rounded-lg p-6 md:p-8 border border-gray-300/50 shadow-lg text-center">
-              <img 
-                src="/about1.png" 
-                alt="Matria Marine Services" 
-                className="rounded-lg mb-6 shadow-md max-w-lg mx-auto w-full"
-              />
-              {/* Responsive font size for mobile */}
+            {/* Right Content (Video) */}
+            {/* UPDATED: Reduced padding from p-6 md:p-8 to p-4 md:p-6 */}
+            <div className="bg-white/70 rounded-lg p-4 md:p-6 border border-gray-300/50 shadow-lg text-center">
+              
+              {/* UPDATED: Added aspect ratio container to constrain height */}
+              <div className="relative w-full h-0 pb-[70%] rounded-lg mb-6 shadow-md overflow-hidden">
+                <video 
+                  className="absolute top-0 left-0 w-full h-full object-cover"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                >
+                  <source src="/aboutvid.mp4" type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+              
               <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair">
                 Elevate Your Maritime Operations with Matria Marine Services.
               </h3>
             </div>
           </div>
 
-          {/* Key Values Section - UPDATED */}
+          {/* Key Values Section */}
           <div className="text-center mb-16">
-            {/* Responsive font size for mobile */}
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-[#28364b] font-playfair">
               Our Key Values
             </h2>
           </div>
 
-          {/* New List Layout - Using isMobile hook */}
-          <div className="grid grid-cols-1 gap-8 max-w-4xl mx-auto">
+          {/* Key Values Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto"> 
             {newKeyValues.map((value, index) => (
-              <ValueItem key={index} item={value} isMobile={isMobile} />
+              <ValueItem key={index} item={value} />
             ))}
           </div>
           
