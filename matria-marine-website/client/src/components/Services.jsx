@@ -260,7 +260,7 @@ export default function Services() {
               className="font-raleway text-xl italic font-bold"
               style={{ color: '#28364b' }}
             >
-              "Whatever your vision, whatever your need, we've got the skills to bring it to life. Big or small, complex or simple—Name it, we can do it!"
+              From basic services to comprehensive logistics solutions—whatever you need, we’ll deliver. Name it, We can do it!
             </p>
           </div>
 
