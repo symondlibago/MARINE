@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-// UPDATED: List of background images
-const images = [
+// UPDATED: List of background assets (images and video)
+const assets = [
   '/newhome1.jpeg',
   '/newhome2.jpeg',
   '/newhome3.jpeg',
@@ -10,20 +10,26 @@ const images = [
   '/newhome5.jpeg',
   '/newhome6.jpeg',
   '/newhome7.jpeg',
+  '/newhome8.jpg',
+  '/newhome9.jpg',
+  '/newhome10.mp4', // Video file
+  '/newhome11.jpg',
+  '/newhome12.jpg',
+  '/newhome13.jpg',
 ];
 
 export default function Hero() {
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [currentAssetIndex, setCurrentAssetIndex] = useState(0);
 
-  // Effect to handle the image carousel transition
+  // Effect to handle the carousel transition
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentImageIndex((prevIndex) =>
-        prevIndex === images.length - 1 ? 0 : prevIndex + 1
+      setCurrentAssetIndex((prevIndex) =>
+        prevIndex === assets.length - 1 ? 0 : prevIndex + 1
       );
-    }, 5000); // Change image every 5 seconds
+    }, 5000); // Change asset every 5 seconds
 
-    return () => clearInterval(interval); // Clean up on component unmount
+    return () => clearInterval(interval);
   }, []);
 
   const scrollToSection = (id) => {
@@ -53,18 +59,38 @@ export default function Hero() {
         id="home"
         className="relative h-screen flex items-center justify-center overflow-hidden"
       >
-        {/* Background Image Carousel */}
+        {/* Background Asset Carousel */}
         <div className="absolute inset-0 z-0">
-          {images.map((image, index) => (
-            <div
-              key={image}
-              className={`
-              absolute inset-0 w-full h-full bg-cover bg-center transition-opacity duration-1000 ease-in-out
-              ${index === currentImageIndex ? 'opacity-100' : 'opacity-0'}
-            `}
-              style={{ backgroundImage: `url(${image})` }}
-            />
-          ))}
+          {assets.map((asset, index) => {
+            const isVideo = asset.endsWith('.mp4');
+            const isActive = index === currentAssetIndex;
+
+            return (
+              <div
+                key={asset}
+                className={`
+                  absolute inset-0 w-full h-full transition-opacity duration-1000 ease-in-out
+                  ${isActive ? 'opacity-100' : 'opacity-0'}
+                `}
+              >
+                {isVideo ? (
+                  <video
+                    src={asset}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div
+                    className="w-full h-full bg-cover bg-center"
+                    style={{ backgroundImage: `url(${asset})` }}
+                  />
+                )}
+              </div>
+            );
+          })}
           {/* Dark overlay for text readability */}
           <div className="absolute inset-0 bg-black/40 z-10" />
         </div>

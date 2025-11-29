@@ -251,7 +251,7 @@ export default function Agency() {
             className="text-4xl md:text-5xl font-bold font-playfair text-center mb-12"
             style={{ color: '#28364b' }}
           >
-            Global Networks
+            Global Presence
           </h2>
 
           <div className="relative w-full overflow-hidden cursor-pointer active:cursor-grabbing">

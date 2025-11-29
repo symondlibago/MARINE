@@ -17,7 +17,9 @@ const serviceCategories = [
       "/services2.jpeg",
       "/services3.jpeg",
       "/services4.jpeg",
-      "/services6.jpeg"
+      "/services6.jpeg",
+      "/services7.jpg",
+      "/services8.jpg",
     ], 
     items: [
       "ME / AE Mechanical components",
