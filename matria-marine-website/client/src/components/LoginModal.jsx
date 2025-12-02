@@ -1,13 +1,50 @@
-import React from 'react';
-import { X, ShipWheel, Lock, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, ShipWheel, Lock, User, Loader2, AlertCircle } from 'lucide-react';
+import { authAPI } from '../pages/api'; // Import your new API file
 
 export default function LoginModal({ isOpen, onClose }) {
+  // Form State
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
+  // UI State
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Add your Backend/API Login logic here
-    console.log("Login submitted");
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // 1. Call the API
+      const response = await authAPI.login(email, password);
+      
+      // 2. On Success: Save Token & User Data
+      const { token, user } = response.data.data;
+      localStorage.setItem('admin_token', token);
+      localStorage.setItem('user_info', JSON.stringify(user));
+
+      // 3. Optional: Redirect to a dashboard page
+      // window.location.href = '/dashboard'; 
+      
+      console.log("Login Success:", user);
+      onClose(); // Close modal
+      alert(`Welcome back, ${user.name}!`); // Temporary success feedback
+
+    } catch (err) {
+      // 4. Handle Errors
+      console.error("Login Failed", err);
+      if (err.response && err.response.data) {
+        setError(err.response.data.message || 'Invalid credentials');
+      } else {
+        setError('Server error. Is the backend running?');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -33,16 +70,27 @@ export default function LoginModal({ isOpen, onClose }) {
           <p className="font-raleway text-gray-500 text-sm mt-2">Authorized Personnel Only</p>
         </div>
 
+        {/* Error Message Display */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-600 text-sm font-raleway">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Username</label>
+            <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Email Address</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
-                type="text" 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] transition-all font-raleway"
-                placeholder="Enter ID"
+                placeholder="admin@matriamarine.com"
+                required
               />
             </div>
           </div>
@@ -53,17 +101,27 @@ export default function LoginModal({ isOpen, onClose }) {
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
                 type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] transition-all font-raleway"
                 placeholder="Enter Password"
+                required
               />
             </div>
           </div>
 
           <button 
             type="submit"
-            className="w-full bg-[#28364b] text-white font-bold py-3 rounded-lg hover:bg-[#3c4a63] transition-all font-raleway shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            disabled={isLoading}
+            className="w-full bg-[#28364b] text-white font-bold py-3 rounded-lg hover:bg-[#3c4a63] transition-all font-raleway shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            Access Dashboard
+            {isLoading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" /> Verifying...
+              </>
+            ) : (
+              'Access Dashboard'
+            )}
           </button>
         </form>
       </div>

@@ -23,7 +23,6 @@ const mediaCategories = [
     items: [
       { type: 'img', src: '/hydraulic1.JPG' },
       { type: 'img', src: '/hydraulic2.JPG' },
-      { type: 'img', src: '/hydraulic3.JPG' },
       { type: 'img', src: '/hydraulic4.JPG' },
       { type: 'img', src: '/hydraulic5.JPG' },
       { type: 'vid', src: '/hydraulic6.MP4' },
