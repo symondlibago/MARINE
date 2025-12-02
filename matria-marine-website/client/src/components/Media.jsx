@@ -99,7 +99,6 @@ export default function Media() {
                 {/* Category Text */}
                 <div className="mb-8">
                   <h2 className="text-2xl md:text-3xl font-bold font-playfair text-[#28364b] mb-4 flex items-center gap-3">
-                    <span className="w-3 h-3 bg-[#cebd88] rounded-full"></span>
                     {cat.title}
                   </h2>
                   <p className="font-raleway text-[#28364b] text-lg leading-relaxed max-w-4xl">

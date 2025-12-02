@@ -90,7 +90,7 @@ export default function MMSUpdates() {
                   </p>
 
                   {/* Date Footer - Reduced top padding */}
-                  <div className="pt-4 border-t border-gray-100 flex text-[#28364b] items-center font-raleway text-xs font-semibold">
+                  <div className="pt-4 border-t border-gray-100 flex text-[#28364b] items-center font-raleway text-xs font-bold">
                     <Calendar size={14} className="mr-2" />
                     {item.date}
                   </div>
