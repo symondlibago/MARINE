@@ -1,14 +1,13 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 
-// Public Routes
-Route::post('/login', [AuthController::class, 'login']);
+// Remove 'api' prefix middleware and use 'web' instead for CSRF
+Route::post('/login', [AuthController::class, 'login'])->middleware('web');
+Route::post('/logout', [AuthController::class, 'logout'])->middleware(['web', 'auth:sanctum']);
 
-// Protected Routes (Require Login)
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/logout', [AuthController::class, 'logout']);
+// Protected Routes
+Route::middleware(['web', 'auth:sanctum'])->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
 });
