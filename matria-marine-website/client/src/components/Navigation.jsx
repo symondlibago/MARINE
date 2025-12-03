@@ -1,12 +1,56 @@
 import { useState, useEffect } from 'react';
 import { Menu, X, Star, ShipWheel } from 'lucide-react'; 
-import LoginModal from './LoginModal'; // Import the new file
+import LoginModal from './LoginModal'; 
+import ProfileModal from './ProfileModal'; // Import the new Profile Modal
 
 export default function Navigation({ currentPage, onPageChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
+  
+  // Modal States
   const [isLoginOpen, setIsLoginOpen] = useState(false); 
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Check login status on mount
+  useEffect(() => {
+    const checkLoginStatus = () => {
+      const user = sessionStorage.getItem('user_name');
+      setIsLoggedIn(!!user);
+    };
+    checkLoginStatus();
+    // Listen for storage events (optional, useful if multiple tabs)
+    window.addEventListener('storage', checkLoginStatus);
+    return () => window.removeEventListener('storage', checkLoginStatus);
+  }, []);
+
+  // Handle Steering Wheel Click
+  const handleAdminClick = () => {
+    setIsOpen(false); // Close mobile menu if open
+    if (isLoggedIn) {
+      setIsProfileOpen(true);
+    } else {
+      setIsLoginOpen(true);
+    }
+  };
+
+  // Callback when login is successful
+  const handleLoginSuccess = () => {
+    setIsLoggedIn(true);
+    setIsLoginOpen(false);
+  };
+
+  // Callback when logout is successful
+  const handleLogoutSuccess = () => {
+    sessionStorage.removeItem('user_name');
+    setIsLoggedIn(false);
+    setIsProfileOpen(false);
+    alert('You have been logged out.');
+  };
+
+  // ... (Keep existing navItems, useEffect for scroll, handleNavClick, etc.) ...
+  // ... (Keep existing style logic) ...
 
   const navItems = [
     { label: 'Home', id: 'home', isPage: false },
@@ -18,9 +62,11 @@ export default function Navigation({ currentPage, onPageChange }) {
     { label: 'MMS Updates', id: 'mms-updates', isPage: true },
   ];
 
-  // Logic to determine if Admin Icon should show
   const showAdminIcon = currentPage === 'media' || currentPage === 'mms-updates';
-
+  const darkBlue = '#28364b';
+  const accentGold = '#cebd88';
+  
+  // Logic to determine if Admin Icon should show
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
@@ -73,8 +119,6 @@ export default function Navigation({ currentPage, onPageChange }) {
     }
   };
 
-  const darkBlue = '#28364b';
-  const accentGold = '#cebd88';
 
   const isLinkActive = (item) => {
     if (!item.isPage) {
@@ -98,8 +142,19 @@ export default function Navigation({ currentPage, onPageChange }) {
         `}
       </style>
 
-      {/* Render the External Login Modal */}
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
+      {/* Login Modal */}
+      <LoginModal 
+        isOpen={isLoginOpen} 
+        onClose={() => setIsLoginOpen(false)} 
+        onLoginSuccess={handleLoginSuccess} 
+      />
+
+      {/* Profile Modal */}
+      <ProfileModal 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        onLogout={handleLogoutSuccess}
+      />
 
       <nav
         className={`sticky top-0 z-50 transition-all duration-300 ${
@@ -109,7 +164,8 @@ export default function Navigation({ currentPage, onPageChange }) {
         }`}
       >
         <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
-          <div className="flex justify-between items-center h-20 relative"> 
+            {/* ... (Keep existing Logo and Desktop Navigation) ... */}
+            <div className="flex justify-between items-center h-20 relative"> 
             
             {/* Logo */}
             <div 
@@ -179,18 +235,20 @@ export default function Navigation({ currentPage, onPageChange }) {
                 Get Started
               </button>
 
-              {/* Admin Icon - Only shows on Media or Updates page */}
+              {/* Admin Icon */}
               {showAdminIcon && (
                 <button 
-                  onClick={() => setIsLoginOpen(true)}
-                  className="group text-[#28364b] hover:text-[#cebd88] transition-colors p-1"
-                  title="Admin Login"
+                  onClick={handleAdminClick} // Updated Handler
+                  className={`group text-[#28364b] hover:text-[#cebd88] transition-colors p-1 ${isLoggedIn ? 'text-[#cebd88]' : ''}`}
+                  title={isLoggedIn ? "My Profile" : "Admin Login"}
                 >
                   <ShipWheel 
                     size={28} 
                     strokeWidth={1.5}
                     className="transition-transform duration-700 ease-in-out group-hover:rotate-180"
                   />
+                  {/* Small dot to indicate logged in status */}
+                  {isLoggedIn && <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border border-white"></span>}
                 </button>
               )}
             </div>
@@ -222,10 +280,10 @@ export default function Navigation({ currentPage, onPageChange }) {
                 })}
                 {showAdminIcon && (
                    <button 
-                    onClick={() => { setIsOpen(false); setIsLoginOpen(true); }}
+                    onClick={handleAdminClick} // Updated Handler
                     className="flex items-center justify-center gap-2 text-[#28364b] font-raleway font-bold pt-4 border-t border-gray-100"
                    >
-                     <ShipWheel size={20} /> Admin Login
+                     <ShipWheel size={20} /> {isLoggedIn ? 'My Profile' : 'Admin Login'}
                    </button>
                 )}
               </div>

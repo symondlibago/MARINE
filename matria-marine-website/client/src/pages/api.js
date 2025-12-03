@@ -1,16 +1,15 @@
 import axios from 'axios';
 
-// 1. Setup Axios
+// ... (Keep existing axios instance setup and interceptors) ...
 const api = axios.create({
-  baseURL: 'http://localhost:8000', // Note: removed /api from base to hit /sanctum/csrf-cookie
+  baseURL: 'http://localhost:8000',
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  withCredentials: true, // REQUIRED: Sends the secure cookies
+  withCredentials: true,
 });
 
-// Add after creating the api instance
 api.interceptors.request.use(
     (config) => {
       // Get XSRF token from cookie
@@ -32,28 +31,37 @@ api.interceptors.request.use(
   
   api.interceptors.response.use(
     (response) => {
-      console.log('Response:', response.status, response.config.url);
+      // console.log('Response:', response.status, response.config.url);
       return response;
     },
     (error) => {
-      console.error('Response Error:', error.response?.status, error.config?.url);
+      // console.error('Response Error:', error.response?.status, error.config?.url);
       return Promise.reject(error);
     }
   );
 
-// 2. Helper to get the API URL easily
 const apiUrl = (path) => `/api${path}`;
 
-// 3. Define API calls
 export const authAPI = {
-  // First, get the CSRF cookie protection
   getCsrf: () => api.get('/sanctum/csrf-cookie'),
-  
-  // Then login (no token needed, cookie handles it)
   login: (email, password) => api.post(apiUrl('/login'), { email, password }),
-  
   logout: () => api.post(apiUrl('/logout')),
   getUser: () => api.get(apiUrl('/user')),
+  
+  updateProfile: (name) => api.post(apiUrl('/user/update-profile'), { name }),
+  updatePassword: (current_password, password, password_confirmation) => 
+    api.post(apiUrl('/user/update-password'), { 
+      current_password, 
+      password, 
+      password_confirmation 
+    }),
+
+  // New Methods for Email Update
+  initiateEmailUpdate: (new_email, password) => 
+    api.post(apiUrl('/user/email/initiate'), { new_email, password }),
+    
+  completeEmailUpdate: (otp) => 
+    api.post(apiUrl('/user/email/complete'), { otp }),
 };
 
 export default api;

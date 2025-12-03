@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, ShipWheel, Lock, User, Loader2, AlertCircle } from 'lucide-react';
 import { authAPI } from '../pages/api'; // Ensure this path matches your file structure
 
-export default function LoginModal({ isOpen, onClose }) {
+export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -31,10 +31,19 @@ export default function LoginModal({ isOpen, onClose }) {
       const response = await authAPI.login(email, password);
       
       const user = response.data.user;
-      localStorage.setItem('user_name', user.name);
+      sessionStorage.setItem('user_name', user.name);
   
       console.log("Login Success:", user);
-      onClose();
+      
+      // --- UPDATE START ---
+      // Notify parent component (Navigation) that login succeeded
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      } else {
+        onClose(); // Fallback if prop isn't passed
+      }
+      // --- UPDATE END ---
+
       alert(`Welcome back, ${user.name}!`);
   
     } catch (err) {

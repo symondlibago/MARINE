@@ -1,14 +1,15 @@
 <x-mail::message>
-# Verify Your New Email
+# Email Change Request
 
-Please use the following One-Time Password (OTP) to confirm your email address change.
+We received a request to change your account email address.
 
-Your OTP is:
+Use the OTP below to verify this change. This code is valid for 10 minutes.
+
 <x-mail::panel>
-**{{ $otp }}**
+# {{ $otp }}
 </x-mail::panel>
 
-This OTP will expire in 10 minutes. If you did not request this change, please secure your account immediately.
+If you did not request this change, please ignore this email. Your email address will remain unchanged.
 
 Thanks,<br>
 {{ config('app.name') }}
