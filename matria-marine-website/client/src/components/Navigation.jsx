@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Menu, X, Star, ShipWheel } from 'lucide-react'; 
 import LoginModal from './LoginModal'; 
-import ProfileModal from './ProfileModal'; // Import the new Profile Modal
+import ProfileModal from './ProfileModal';
 
 export default function Navigation({ currentPage, onPageChange }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -20,14 +20,13 @@ export default function Navigation({ currentPage, onPageChange }) {
       setIsLoggedIn(!!user);
     };
     checkLoginStatus();
-    // Listen for storage events (optional, useful if multiple tabs)
     window.addEventListener('storage', checkLoginStatus);
     return () => window.removeEventListener('storage', checkLoginStatus);
   }, []);
 
   // Handle Steering Wheel Click
   const handleAdminClick = () => {
-    setIsOpen(false); // Close mobile menu if open
+    setIsOpen(false);
     if (isLoggedIn) {
       setIsProfileOpen(true);
     } else {
@@ -35,22 +34,17 @@ export default function Navigation({ currentPage, onPageChange }) {
     }
   };
 
-  // Callback when login is successful
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
     setIsLoginOpen(false);
   };
 
-  // Callback when logout is successful
   const handleLogoutSuccess = () => {
     sessionStorage.removeItem('user_name');
     setIsLoggedIn(false);
     setIsProfileOpen(false);
     alert('You have been logged out.');
   };
-
-  // ... (Keep existing navItems, useEffect for scroll, handleNavClick, etc.) ...
-  // ... (Keep existing style logic) ...
 
   const navItems = [
     { label: 'Home', id: 'home', isPage: false },
@@ -66,7 +60,6 @@ export default function Navigation({ currentPage, onPageChange }) {
   const darkBlue = '#28364b';
   const accentGold = '#cebd88';
   
-  // Logic to determine if Admin Icon should show
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
@@ -101,7 +94,6 @@ export default function Navigation({ currentPage, onPageChange }) {
 
   const handleNavClick = (item) => {
     setIsOpen(false);
-
     if (item.isPage) {
       if (currentPage !== item.id) {
         onPageChange(item.id);
@@ -118,7 +110,6 @@ export default function Navigation({ currentPage, onPageChange }) {
       }
     }
   };
-
 
   const isLinkActive = (item) => {
     if (!item.isPage) {
@@ -164,20 +155,23 @@ export default function Navigation({ currentPage, onPageChange }) {
         }`}
       >
         <div className="container mx-auto px-4 md:px-8 sm:px-12 lg:px-16">
-            {/* ... (Keep existing Logo and Desktop Navigation) ... */}
             <div className="flex justify-between items-center h-20 relative"> 
             
-            {/* Logo */}
+            {/* 1. LEFT SIDE: Logo Image (Always Visible) + Desktop Text */}
             <div 
-              className="flex items-center space-x-3 cursor-pointer"
+              className="flex items-center space-x-3 cursor-pointer shrink-0" 
               onClick={() => handleNavClick({ id: 'home', isPage: false })}
             >
+              {/* Image is ALWAYS here on the left */}
               <img src="/logo.png" alt="Matria Marine Logo" className="w-12 h-12"/>
-              <div className="flex-col hidden sm:flex items-center">
-                <span className="font-bold text-2xl font-raleway tracking-wide leading-none" style={{ color: darkBlue }}>
+              
+              {/* Text: HIDDEN on Mobile, VISIBLE on Desktop (lg and up) */}
+              {/* Added 'whitespace-nowrap' so it never breaks into two lines */}
+              <div className="hidden lg:flex flex-col items-center">
+                <span className="font-bold text-2xl font-raleway tracking-wide leading-none whitespace-nowrap" style={{ color: darkBlue }}>
                   M A T R I A
                 </span>
-                <span className="font-raleway text-[10.5px] tracking-[0.2em] -mt-0.5" style={{ color: darkBlue }}>
+                <span className="font-raleway text-[10.5px] tracking-[0.2em] -mt-0.5 whitespace-nowrap" style={{ color: darkBlue }}>
                   MARINE SERVICES
                 </span>
                 <div className="flex space-x-0.5" style={{ color: accentGold }}> 
@@ -186,15 +180,16 @@ export default function Navigation({ currentPage, onPageChange }) {
               </div>
             </div>
 
-            {/* Logo Mobile Center */}
+            {/* 2. CENTER: Text Only (Mobile Only) */}
             <div 
               className="lg:hidden absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center" 
               style={{ color: darkBlue }}
+              onClick={() => handleNavClick({ id: 'home', isPage: false })}
             >
-              <span className="font-bold text-xl font-raleway tracking-wide leading-none">
+              <span className="font-bold text-xl font-raleway tracking-wide leading-none whitespace-nowrap">
                 M A T R I A
               </span>
-              <span className="font-raleway text-[9px] tracking-[0.2em] -mt-0.5">
+              <span className="font-raleway text-[9px] tracking-[0.2em] -mt-0.5 whitespace-nowrap">
                 MARINE SERVICES
               </span>
               <div className="flex space-x-0.5" style={{ color: accentGold }}> 
@@ -202,7 +197,7 @@ export default function Navigation({ currentPage, onPageChange }) {
               </div>
             </div>
 
-            {/* Desktop Navigation */}
+            {/* Desktop Navigation Links */}
             <div className="hidden lg:flex items-center space-x-8">
               {navItems.map((item) => {
                 const active = isLinkActive(item);
@@ -226,19 +221,18 @@ export default function Navigation({ currentPage, onPageChange }) {
               })}
             </div>
 
-            {/* CTA Button & Admin Icon Container */}
+            {/* CTA Button & Admin Icon (Desktop) */}
             <div className="hidden lg:flex items-center gap-4">
               <button
                 onClick={() => handleNavClick({ id: 'contact', isPage: false })}
-                className="bg-[#28364b] text-white font-bold px-6 py-2 rounded-lg hover:bg-[#3c4a63] transition-all font-raleway text-sm"
+                className="bg-[#28364b] text-white font-bold px-6 py-2 rounded-lg hover:bg-[#3c4a63] transition-all font-raleway text-sm whitespace-nowrap"
               >
                 Get Started
               </button>
 
-              {/* Admin Icon */}
               {showAdminIcon && (
                 <button 
-                  onClick={handleAdminClick} // Updated Handler
+                  onClick={handleAdminClick} 
                   className={`group text-[#28364b] hover:text-[#cebd88] transition-colors p-1 ${isLoggedIn ? 'text-[#cebd88]' : ''}`}
                   title={isLoggedIn ? "My Profile" : "Admin Login"}
                 >
@@ -247,14 +241,13 @@ export default function Navigation({ currentPage, onPageChange }) {
                     strokeWidth={1.5}
                     className="transition-transform duration-700 ease-in-out group-hover:rotate-180"
                   />
-                  {/* Small dot to indicate logged in status */}
                   {isLoggedIn && <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full border border-white"></span>}
                 </button>
               )}
             </div>
 
             {/* Mobile Menu Button */}
-            <button className="lg:hidden" style={{ color: darkBlue }} onClick={() => setIsOpen(!isOpen)}>
+            <button className="lg:hidden ml-auto" style={{ color: darkBlue }} onClick={() => setIsOpen(!isOpen)}>
               {isOpen ? <X size={28} /> : <Menu size={28} />}
             </button>
           </div>
@@ -280,7 +273,7 @@ export default function Navigation({ currentPage, onPageChange }) {
                 })}
                 {showAdminIcon && (
                    <button 
-                    onClick={handleAdminClick} // Updated Handler
+                    onClick={handleAdminClick} 
                     className="flex items-center justify-center gap-2 text-[#28364b] font-raleway font-bold pt-4 border-t border-gray-100"
                    >
                      <ShipWheel size={20} /> {isLoggedIn ? 'My Profile' : 'Admin Login'}

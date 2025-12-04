@@ -53,7 +53,13 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            'throw' => true,
+            
+            // ADD THESE LINES:
+            'scheme'  => 'https', 
+            'http'    => [
+                'verify' => false, // <--- This forces the bypass
+            ],
         ],
 
     ],

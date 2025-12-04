@@ -262,7 +262,13 @@ export default function Services() {
               className="font-raleway text-xl italic font-bold"
               style={{ color: '#28364b' }}
             >
-              From basic services to comprehensive logistics solutions—whatever you need, we’ll deliver. Name it, We can do it!
+              From basic services to comprehensive logistics solutions—whatever you need, we’ll deliver.
+            </p>
+            <p 
+              className="font-raleway text-xl italic font-bold"
+              style={{ color: '#28364b' }}
+            >
+              Name it, We can do it!
             </p>
           </div>
 

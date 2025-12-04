@@ -64,4 +64,17 @@ export const authAPI = {
     api.post(apiUrl('/user/email/complete'), { otp }),
 };
 
+export const mediaAPI = {
+  getAll: () => api.get(apiUrl('/media')),
+  uploadItem: (formData) => api.post(apiUrl('/media/upload'), formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }),
+
+  updateCategory: (id, data) => api.put(apiUrl(`/media/category/${id}`), data),
+  deleteItem: (id) => api.delete(apiUrl(`/media/item/${id}`)),
+  deleteCategory: (id) => api.delete(apiUrl(`/media/category/${id}`)),
+};
+
 export default api;
