@@ -13,28 +13,22 @@ use App\Mail\EmailUpdateOtpMail;
 
 class AuthController extends Controller
 {
-    // ... (Keep existing login, logout, user methods) ...
-
     public function login(Request $request) 
     {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|string',
-        ]);
-
+        $request->validate(['email' => 'required|email', 'password' => 'required|string']);
+    
         if (!Auth::attempt($request->only('email', 'password'))) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid credentials provided.'
-            ], 401);
+            return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
         }
-
-        $request->session()->regenerate();
-
+    
+        $user = Auth::user();
+        // Create a new token for the user
+        $token = $user->createToken('auth_token')->plainTextToken;
+    
         return response()->json([
             'success' => true,
-            'message' => 'Login successful',
-            'user' => Auth::user()
+            'token' => $token, // Send this to frontend
+            'user' => $user
         ]);
     }
 
