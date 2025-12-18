@@ -1,21 +1,15 @@
 import axios from 'axios';
 
-// ... (Keep existing axios instance setup and interceptors) ...
 const api = axios.create({
-  baseURL: 'https://marine-production.up.railway.app', // Remove trailing slash
+  baseURL: 'https://marine-production.up.railway.app', 
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
-  withCredentials: true, // This is mandatory for cookies
+  withCredentials: true, 
 });
 
-// Simplified interceptor: Axios handles XSRF-TOKEN automatically
-api.interceptors.request.use(
-    (config) => config,
-    (error) => Promise.reject(error)
-);
-
+// Help Axios find the CSRF token from Laravel's cookie
 api.interceptors.request.use(config => {
   const token = document.cookie
       .split('; ')
@@ -27,11 +21,12 @@ api.interceptors.request.use(config => {
   }
   return config;
 });
+
 const apiUrl = (path) => `/api${path}`;
 
 export const authAPI = {
   getCsrf: () => api.get('/sanctum/csrf-cookie'),
-  login: (email, password) => api.post('/login', { email, password }),
+  login: (email, password) => api.post(apiUrl('/login'), { email, password }),
   logout: () => api.post(apiUrl('/logout')),
   getUser: () => api.get(apiUrl('/user')),
   
@@ -43,7 +38,6 @@ export const authAPI = {
       password_confirmation 
     }),
 
-  // New Methods for Email Update
   initiateEmailUpdate: (new_email, password) => 
     api.post(apiUrl('/user/email/initiate'), { new_email, password }),
     
@@ -54,11 +48,8 @@ export const authAPI = {
 export const mediaAPI = {
   getAll: () => api.get(apiUrl('/media')),
   uploadItem: (formData) => api.post(apiUrl('/media/upload'), formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    headers: { 'Content-Type': 'multipart/form-data' },
   }),
-
   updateCategory: (id, data) => api.put(apiUrl(`/media/category/${id}`), data),
   deleteItem: (id) => api.delete(apiUrl(`/media/item/${id}`)),
   deleteCategory: (id) => api.delete(apiUrl(`/media/category/${id}`)),
@@ -75,7 +66,6 @@ export const updatesAPI = {
         headers: { 'Content-Type': 'multipart/form-data' }
     });
   },
-  
   delete: (id) => api.delete(apiUrl(`/updates/${id}`)),
 };
 
