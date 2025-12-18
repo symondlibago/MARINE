@@ -14,23 +14,25 @@ use App\Mail\EmailUpdateOtpMail;
 class AuthController extends Controller
 {
     public function login(Request $request) 
-    {
-        $request->validate(['email' => 'required|email', 'password' => 'required|string']);
-    
-        if (!Auth::attempt($request->only('email', 'password'))) {
-            return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
-        }
-    
-        $user = Auth::user();
-        // Create a new token for the user
-        $token = $user->createToken('auth_token')->plainTextToken;
-    
-        return response()->json([
-            'success' => true,
-            'token' => $token, // Send this to frontend
-            'user' => $user
-        ]);
+{
+    $request->validate([
+        'email' => 'required|email',
+        'password' => 'required|string',
+    ]);
+
+    // This manually attempts to log the user into the 'web' session
+    if (!Auth::attempt($request->only('email', 'password'))) {
+        return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
     }
+
+    // Regenerate session to prevent fixation attacks
+    $request->session()->regenerate();
+
+    return response()->json([
+        'success' => true,
+        'user' => Auth::user()
+    ]);
+}
 
     public function logout(Request $request)
     {
