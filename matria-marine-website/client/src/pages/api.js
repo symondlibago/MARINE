@@ -2,11 +2,9 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: 'https://marine-production.up.railway.app', 
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  },
   withCredentials: true, 
+  xsrfCookieName: 'XSRF-TOKEN', // Laravel's default
+  xsrfHeaderName: 'X-XSRF-TOKEN', // Laravel's default
 });
 
 // Help Axios find the CSRF token from Laravel's cookie
