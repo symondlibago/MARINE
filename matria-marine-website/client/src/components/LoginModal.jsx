@@ -21,22 +21,17 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     setIsLoading(true);
   
     try {
-      await authAPI.getCsrf();
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      // Direct login - no CSRF call needed anymore
       const response = await authAPI.login(email, password);
       const user = response.data.user;
       
       sessionStorage.setItem('user_name', user.name);
       
-      // Show Success View instead of Alert
       setUserName(user.name);
       setIsSuccess(true); 
 
-      // Wait 2 seconds, then close modal and update parent
       setTimeout(() => {
         if (onLoginSuccess) onLoginSuccess();
-        // Reset states after closing
         setTimeout(() => {
             setIsSuccess(false);
             setEmail('');
@@ -46,11 +41,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   
     } catch (err) {
       console.error("Login Failed", err);
-      if (err.response && err.response.data) {
-        setError(err.response.data.message || 'Invalid credentials');
-      } else {
-        setError('Server error. Ensure Backend is running.');
-      }
+      setError(err.response?.data?.message || 'Invalid credentials');
     } finally {
       setIsLoading(false);
     }

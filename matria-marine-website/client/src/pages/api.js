@@ -2,20 +2,13 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: 'https://marine-production.up.railway.app', 
-  withCredentials: true, 
-  xsrfCookieName: 'XSRF-TOKEN', // Laravel's default
-  xsrfHeaderName: 'X-XSRF-TOKEN', // Laravel's default
 });
 
-// Help Axios find the CSRF token from Laravel's cookie
+// Interceptor to attach the token from LocalStorage to every request
 api.interceptors.request.use(config => {
-  const token = document.cookie
-      .split('; ')
-      .find(row => row.startsWith('XSRF-TOKEN='))
-      ?.split('=')[1];
-
+  const token = localStorage.getItem('auth_token');
   if (token) {
-      config.headers['X-XSRF-TOKEN'] = decodeURIComponent(token);
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -23,22 +16,31 @@ api.interceptors.request.use(config => {
 const apiUrl = (path) => `/api${path}`;
 
 export const authAPI = {
-  getCsrf: () => api.get('/sanctum/csrf-cookie'),
-  login: (email, password) => api.post(apiUrl('/login'), { email, password }),
-  logout: () => api.post(apiUrl('/logout')),
-  getUser: () => api.get(apiUrl('/user')),
+  // getCsrf is no longer required for Token Auth
+  getCsrf: () => Promise.resolve(), 
   
+  login: async (email, password) => {
+    const response = await api.post(apiUrl('/login'), { email, password });
+    if (response.data.access_token) {
+        // Store token in LocalStorage
+        localStorage.setItem('auth_token', response.data.access_token);
+    }
+    return response;
+  },
+
+  logout: async () => {
+    const response = await api.post(apiUrl('/logout'));
+    localStorage.removeItem('auth_token');
+    sessionStorage.removeItem('user_name');
+    return response;
+  },
+
+  getUser: () => api.get(apiUrl('/user')),
   updateProfile: (name) => api.post(apiUrl('/user/update-profile'), { name }),
   updatePassword: (current_password, password, password_confirmation) => 
-    api.post(apiUrl('/user/update-password'), { 
-      current_password, 
-      password, 
-      password_confirmation 
-    }),
-
+    api.post(apiUrl('/user/update-password'), { current_password, password, password_confirmation }),
   initiateEmailUpdate: (new_email, password) => 
     api.post(apiUrl('/user/email/initiate'), { new_email, password }),
-    
   completeEmailUpdate: (otp) => 
     api.post(apiUrl('/user/email/complete'), { otp }),
 };

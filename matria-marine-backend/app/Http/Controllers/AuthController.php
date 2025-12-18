@@ -14,32 +14,36 @@ use App\Mail\EmailUpdateOtpMail;
 class AuthController extends Controller
 {
     public function login(Request $request) 
-{
-    $request->validate([
-        'email' => 'required|email',
-        'password' => 'required|string',
-    ]);
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
+        ]);
 
-    // This manually attempts to log the user into the 'web' session
-    if (!Auth::attempt($request->only('email', 'password'))) {
-        return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
+        // Attempt login
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
+        }
+
+        $user = Auth::user();
+        
+        // Generate the token for LocalStorage
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'user' => $user,
+            'access_token' => $token,
+            'token_type' => 'Bearer',
+        ]);
     }
-
-    // Regenerate session to prevent fixation attacks
-    $request->session()->regenerate();
-
-    return response()->json([
-        'success' => true,
-        'user' => Auth::user()
-    ]);
-}
 
     public function logout(Request $request)
     {
-        Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-        return response()->json(['message' => 'Logged out successfully']);
+        // Revoke the token that was used to authenticate the current request
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['success' => true, 'message' => 'Logged out successfully']);
     }
 
     public function user(Request $request)
