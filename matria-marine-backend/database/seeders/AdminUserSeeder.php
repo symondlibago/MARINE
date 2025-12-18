@@ -11,11 +11,11 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         // Check if admin exists to avoid duplicates
-        if (!User::where('email', 'admin@matriamarine.com')->exists()) {
+        if (!User::where('email', 'sales@matriamarine.com')->exists()) {
             User::create([
                 'name' => 'Matria Admin',
-                'email' => 'admin@matriamarine.com', // Login Email
-                'password' => Hash::make('Matria@2025'), // Login Password
+                'email' => 'sales@matriamarine.com', // Login Email
+                'password' => Hash::make('M@tria_2025'), // Login Password
                 'role' => 'admin'
             ]);
         }
