@@ -80,7 +80,7 @@ export default function Contact() {
     {
       icon: Mail,
       title: 'Email',
-      content: 'libago.symond1@gmail.com', // Updated as requested
+      content: 'sales@matriamarine.com', // Updated as requested
     },
   ];
 

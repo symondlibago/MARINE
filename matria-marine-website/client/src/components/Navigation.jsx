@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, X, Star, ShipWheel } from 'lucide-react'; 
+import { Menu, X, Star, ShipWheel, LogOut } from 'lucide-react'; 
 import LoginModal from './LoginModal'; 
 import ProfileModal from './ProfileModal';
 
@@ -12,6 +12,9 @@ export default function Navigation({ currentPage, onPageChange }) {
   const [isLoginOpen, setIsLoginOpen] = useState(false); 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // New State for Logout Modal
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Check login status on mount
   useEffect(() => {
@@ -37,13 +40,17 @@ export default function Navigation({ currentPage, onPageChange }) {
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
     setIsLoginOpen(false);
+    // Success modal is now handled inside LoginModal.jsx
   };
 
   const handleLogoutSuccess = () => {
     sessionStorage.removeItem('user_name');
     setIsLoggedIn(false);
     setIsProfileOpen(false);
-    alert('You have been logged out.');
+    // Show custom modal instead of alert
+    setShowLogoutModal(true);
+    // Auto close after 2 seconds
+    setTimeout(() => setShowLogoutModal(false), 2000);
   };
 
   const navItems = [
@@ -147,6 +154,21 @@ export default function Navigation({ currentPage, onPageChange }) {
         onLogout={handleLogoutSuccess}
       />
 
+      {/* NEW: Logout Success Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
+           <div className="bg-white rounded-xl shadow-2xl p-8 flex flex-col items-center max-w-sm w-full mx-4 border border-[#cebd88]">
+              <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <LogOut className="h-8 w-8 text-gray-600" />
+              </div>
+              <h3 className="text-xl font-bold font-playfair text-[#28364b] mb-2">Logged Out</h3>
+              <p className="text-sm font-raleway text-gray-500 text-center">
+                You have been securely logged out of the admin session.
+              </p>
+           </div>
+        </div>
+      )}
+
       <nav
         className={`sticky top-0 z-50 transition-all duration-300 ${
           isScrolled || currentPage !== 'home'
@@ -162,11 +184,7 @@ export default function Navigation({ currentPage, onPageChange }) {
               className="flex items-center space-x-3 cursor-pointer shrink-0" 
               onClick={() => handleNavClick({ id: 'home', isPage: false })}
             >
-              {/* Image is ALWAYS here on the left */}
               <img src="/logo.png" alt="Matria Marine Logo" className="w-12 h-12"/>
-              
-              {/* Text: HIDDEN on Mobile, VISIBLE on Desktop (lg and up) */}
-              {/* Added 'whitespace-nowrap' so it never breaks into two lines */}
               <div className="hidden lg:flex flex-col items-center">
                 <span className="font-bold text-2xl font-raleway tracking-wide leading-none whitespace-nowrap" style={{ color: darkBlue }}>
                   M A T R I A

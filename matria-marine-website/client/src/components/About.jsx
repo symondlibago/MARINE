@@ -111,7 +111,8 @@ function ValueItem({ item }) {
 }
 // -------------------------------
 
-export default function About() {
+// UPDATED: Added prop `onPageChange` to handle navigation
+export default function About({ onPageChange }) {
   const isMobile = useIsMobile(); 
 
   return (
@@ -181,9 +182,13 @@ export default function About() {
               </p>
             </div>
 
-            {/* Right Content (Video) */}
-            {/* UPDATED: Reduced padding from p-6 md:p-8 to p-4 md:p-6 */}
-            <div className="bg-white/70 rounded-lg p-4 md:p-6 border border-gray-300/50 shadow-lg text-center">
+            {/* Right Content (Video) - NOW CLICKABLE */}
+            <div 
+                // NEW: Click handler to navigate to 'media'
+                onClick={() => onPageChange && onPageChange('media')}
+                className="bg-white/70 rounded-lg p-4 md:p-6 border border-gray-300/50 shadow-lg text-center cursor-pointer group transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:bg-white"
+                title="Click to view full Media Gallery"
+            >
               
               {/* UPDATED: Added aspect ratio container to constrain height */}
               <div className="relative w-full h-0 pb-[70%] rounded-lg mb-6 shadow-md overflow-hidden">
@@ -197,9 +202,14 @@ export default function About() {
                   <source src="/aboutvid.mp4" type="video/mp4" />
                   Your browser does not support the video tag.
                 </video>
+                
+                {/* Optional: Overlay on hover to make it obvious */}
+                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="bg-[#28364b]/80 text-white px-4 py-2 rounded-full font-raleway text-sm font-bold backdrop-blur-sm">View Gallery</span>
+                </div>
               </div>
               
-              <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair">
+              <h3 className="text-xl md:text-2xl font-semibold text-[#28364b] font-playfair group-hover:text-[#cebd88] transition-colors">
                 Elevate Your Maritime Operations with Matria Marine Services.
               </h3>
             </div>

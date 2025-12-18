@@ -77,4 +77,19 @@ export const mediaAPI = {
   deleteCategory: (id) => api.delete(apiUrl(`/media/category/${id}`)),
 };
 
+export const updatesAPI = {
+  getAll: () => api.get(apiUrl('/updates')),
+  create: (formData) => api.post(apiUrl('/updates'), formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  update: (id, formData) => {
+    formData.append('_method', 'PUT'); 
+    return api.post(apiUrl(`/updates/${id}`), formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  
+  delete: (id) => api.delete(apiUrl(`/updates/${id}`)),
+};
+
 export default api;

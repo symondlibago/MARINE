@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound } from 'lucide-react';
+import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { authAPI } from '../pages/api'; 
 
 export default function ProfileModal({ isOpen, onClose, onLogout }) {
@@ -12,6 +12,12 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
   const [newName, setNewName] = useState('');
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   
+  // Password Visibility States
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [showEmailPass, setShowEmailPass] = useState(false); // For email update password
+
   // Email Update States
   const [emailStep, setEmailStep] = useState(1); // 1 = Request, 2 = Verify
   const [emailForm, setEmailForm] = useState({ newEmail: '', password: '', otp: '' });
@@ -23,6 +29,11 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
       setMessage({ type: '', text: '' });
       setEmailStep(1);
       setEmailForm({ newEmail: '', password: '', otp: '' });
+      // Reset visibility
+      setShowCurrentPass(false);
+      setShowNewPass(false);
+      setShowConfirmPass(false);
+      setShowEmailPass(false);
     }
   }, [isOpen]);
 
@@ -32,7 +43,6 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
           setUser(res.data.data || res.data);
           setNewName(res.data.data?.name || res.data?.name || '');
       } catch (error) {
-          // MODIFIED: Use sessionStorage
           const storedName = sessionStorage.getItem('user_name');
           setUser({ name: storedName || 'Admin', email: '...' });
           setNewName(storedName || '');
@@ -50,7 +60,6 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
     resetMessage();
     try {
       await authAPI.updateProfile(newName);
-      // MODIFIED: Use sessionStorage so it clears on browser close
       sessionStorage.setItem('user_name', newName);
       setUser(prev => ({ ...prev, name: newName }));
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
@@ -74,15 +83,18 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
     try {
       await authAPI.updatePassword(passwords.current, passwords.new, passwords.confirm);
       
-      // --- MODIFIED: Auto Logout Logic ---
-      alert('Password changed successfully. You will be logged out.');
-      await handleLogout(); 
+      // --- UPDATED: No Alert, Show Message then Logout ---
+      setMessage({ type: 'success', text: 'Password changed successfully. Logging out...' });
+      
+      setTimeout(async () => {
+        await handleLogout(); 
+      }, 2000); // Wait 2 seconds so user sees the message
       // -----------------------------------
 
     } catch (error) {
        const msg = error.response?.data?.message || 'Failed to update password.';
       setMessage({ type: 'error', text: msg });
-      setLoading(false); // Only stop loading if we fail (if success, logout handles it)
+      setLoading(false);
     }
   };
 
@@ -111,9 +123,12 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
       try {
           await authAPI.completeEmailUpdate(emailForm.otp);
           
-          // --- MODIFIED: Auto Logout Logic ---
-          alert('Email updated successfully. You will be logged out.');
-          await handleLogout();
+          // --- UPDATED: No Alert, Show Message then Logout ---
+          setMessage({ type: 'success', text: 'Email updated successfully. Logging out...' });
+          
+          setTimeout(async () => {
+            await handleLogout();
+          }, 2000); // Wait 2 seconds so user sees the message
           // -----------------------------------
 
       } catch (error) {
@@ -127,8 +142,7 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
     setLoading(true);
     try {
       await authAPI.logout();
-      // Ensure these run even if API fails
-      onLogout();
+      onLogout(); // This triggers the nice logout modal in Navigation
       onClose();
     } catch (error) {
       console.error("Logout failed", error);
@@ -141,7 +155,8 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
 
   const MessageDisplay = () => (
     message.text && (
-      <div className={`mb-4 p-3 rounded-lg text-sm font-raleway ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+      <div className={`mb-4 p-3 rounded-lg text-sm font-raleway flex items-center gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+        {message.type === 'success' && <ShieldCheck size={16} />}
         {message.text}
       </div>
     )
@@ -248,16 +263,23 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
                                     required
                                 />
                             </div>
-                            <div>
+                            <div className="relative">
                                 <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Current Password</label>
                                 <input 
-                                    type="password" 
+                                    type={showEmailPass ? "text" : "password"}
                                     value={emailForm.password}
                                     onChange={(e) => setEmailForm({...emailForm, password: e.target.value})}
-                                    className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway"
+                                    className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway pr-10"
                                     placeholder="Confirm identity"
                                     required
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEmailPass(!showEmailPass)}
+                                    className="absolute right-3 top-8 text-gray-400 hover:text-[#28364b]"
+                                >
+                                    {showEmailPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
                             </div>
                             <button type="submit" disabled={loading} className="w-full bg-[#28364b] text-white py-2 rounded-lg font-raleway font-bold hover:bg-[#3c4a63] transition-colors flex justify-center items-center gap-2">
                                 {loading ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />} Send OTP
@@ -294,33 +316,61 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
                      <div className="flex items-center gap-2 mb-4 text-[#28364b] cursor-pointer" onClick={() => setView('menu')}>
                         <ArrowLeft size={16} /> <span className="text-sm font-bold font-raleway">Back</span>
                     </div>
-                    <div>
+                    
+                    {/* Current Password */}
+                    <div className="relative">
                         <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Current Password</label>
                         <input 
-                            type="password" 
+                            type={showCurrentPass ? "text" : "password"} 
                             value={passwords.current}
                             onChange={(e) => setPasswords({...passwords, current: e.target.value})}
-                            className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway"
+                            className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway pr-10"
                         />
+                         <button
+                            type="button"
+                            onClick={() => setShowCurrentPass(!showCurrentPass)}
+                            className="absolute right-3 top-8 text-gray-400 hover:text-[#28364b]"
+                        >
+                            {showCurrentPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
                     </div>
-                    <div>
+
+                    {/* New Password */}
+                    <div className="relative">
                         <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">New Password</label>
                         <input 
-                            type="password" 
+                            type={showNewPass ? "text" : "password"} 
                             value={passwords.new}
                             onChange={(e) => setPasswords({...passwords, new: e.target.value})}
-                            className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway"
+                            className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway pr-10"
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowNewPass(!showNewPass)}
+                            className="absolute right-3 top-8 text-gray-400 hover:text-[#28364b]"
+                        >
+                            {showNewPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
                     </div>
-                    <div>
+
+                    {/* Confirm Password */}
+                    <div className="relative">
                         <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Confirm New Password</label>
                         <input 
-                            type="password" 
+                            type={showConfirmPass ? "text" : "password"} 
                             value={passwords.confirm}
                             onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
-                            className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway"
+                            className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] font-raleway pr-10"
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowConfirmPass(!showConfirmPass)}
+                            className="absolute right-3 top-8 text-gray-400 hover:text-[#28364b]"
+                        >
+                            {showConfirmPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
                     </div>
+
                     <button type="submit" disabled={loading} className="w-full bg-[#28364b] text-white py-2 rounded-lg font-raleway font-bold hover:bg-[#3c4a63] transition-colors flex justify-center items-center gap-2">
                         {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Update Password
                     </button>

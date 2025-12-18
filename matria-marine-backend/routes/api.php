@@ -3,10 +3,12 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MediaController;
+use App\Http\Controllers\MmsUpdateController;
 
 // Public Routes
 Route::post('/login', [AuthController::class, 'login'])->middleware('web');
 Route::get('/media', [MediaController::class, 'index']);
+Route::get('/updates', [MmsUpdateController::class, 'index']);
 
 // Protected Routes (Requires Auth)
 Route::middleware(['web', 'auth:sanctum'])->group(function () {
@@ -26,4 +28,9 @@ Route::middleware(['web', 'auth:sanctum'])->group(function () {
     Route::put('/media/category/{id}', [MediaController::class, 'updateCategory']);
     Route::delete('/media/item/{id}', [MediaController::class, 'deleteItem']);
     Route::delete('/media/category/{id}', [MediaController::class, 'deleteCategory']);
+
+    // MMS Updates Management
+    Route::post('/updates', [MmsUpdateController::class, 'store']);
+    Route::put('/updates/{id}', [MmsUpdateController::class, 'update']);
+    Route::delete('/updates/{id}', [MmsUpdateController::class, 'destroy']);
 });

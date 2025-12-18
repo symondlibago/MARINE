@@ -118,7 +118,10 @@ export default function Media() {
         dbCategories.forEach(dbCat => {
           const existingIndex = finalCats.findIndex(c => c.title.toLowerCase() === dbCat.title.toLowerCase());
           
-          const dbItemsFormatted = dbCat.items.map(item => ({
+          // --- UPDATED: Sort items by ID descending (newest first) before mapping ---
+          const sortedItems = dbCat.items.sort((a, b) => b.id - a.id);
+
+          const dbItemsFormatted = sortedItems.map(item => ({
               id: item.id,
               type: item.type,
               src: item.src 
@@ -129,10 +132,13 @@ export default function Media() {
                 ...finalCats[existingIndex],
                 id: dbCat.id,
                 description: dbCat.description,
-                items: [...finalCats[existingIndex].items, ...dbItemsFormatted],
+                // --- UPDATED: Put new DB items BEFORE hardcoded items ---
+                items: [...dbItemsFormatted, ...finalCats[existingIndex].items],
                 isHardcoded: false 
             };
           } else {
+            // For new categories, since we loop through dbCategories (usually sorted by created_at desc in backend),
+            // simply using unshift ensures the newest category is at top.
             finalCats.unshift({ 
               id: dbCat.id,
               title: dbCat.title,

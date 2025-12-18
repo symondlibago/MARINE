@@ -55,7 +55,7 @@ export default function Home() {
         return (
           <>
             <Hero />
-            <About />
+            <About onPageChange={handlePageChange} />
             <Services />
             <Agency />
             <Contact />
