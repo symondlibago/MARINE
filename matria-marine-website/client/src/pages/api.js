@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // ... (Keep existing axios instance setup and interceptors) ...
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: 'https://marine-production.up.railway.app/',
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
