@@ -191,7 +191,7 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
                     <button onClick={() => setView('edit')} className="w-full flex items-center justify-between p-4 rounded-lg hover:bg-gray-50 group transition-colors border border-transparent hover:border-gray-200">
                         <div className="flex items-center gap-3 text-[#28364b]">
                             <User size={18} />
-                            <span className="font-raleway font-semibold">Edit Details</span>
+                            <span className="font-raleway font-semibold">Edit Name</span>
                         </div>
                         <ChevronRight size={16} className="text-gray-400 group-hover:text-[#cebd88]" />
                     </button>
