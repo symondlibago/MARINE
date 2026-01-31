@@ -5,7 +5,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import NotFound from "@/pages/NotFound";
-
+import { Analytics } from '@vercel/analytics/react';
 function Router() {
   return (
     <Switch>
@@ -23,6 +23,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <Router />
+          <Analytics /> 
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
