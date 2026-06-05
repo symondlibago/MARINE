@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Menu, X, Star, ShipWheel, LogOut } from 'lucide-react'; 
-import LoginModal from './LoginModal'; 
+import { Menu, X, Star, ShipWheel, LogOut, LayoutDashboard } from 'lucide-react';
+import LoginModal from './LoginModal';
 import ProfileModal from './ProfileModal';
+import { authAPI } from '@/pages/api';
 
 export default function Navigation({ currentPage, onPageChange }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,6 +13,7 @@ export default function Navigation({ currentPage, onPageChange }) {
   const [isLoginOpen, setIsLoginOpen] = useState(false); 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isStaff, setIsStaff] = useState(false);
 
   // New State for Logout Modal
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -26,6 +28,33 @@ export default function Navigation({ currentPage, onPageChange }) {
     window.addEventListener('storage', checkLoginStatus);
     return () => window.removeEventListener('storage', checkLoginStatus);
   }, []);
+
+  // When logged in, check whether this account is staff (admin/staff) so we
+  // can offer a quick link into the procurement portal.
+  useEffect(() => {
+    let cancelled = false;
+    if (!isLoggedIn) {
+      setIsStaff(false);
+      return;
+    }
+    authAPI
+      .getUser()
+      .then((res) => {
+        const u = res.data?.data ?? res.data?.user ?? res.data;
+        if (!cancelled) setIsStaff(['admin', 'staff'].includes(u?.role));
+      })
+      .catch(() => {
+        if (!cancelled) setIsStaff(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
+
+  const goToPortal = () => {
+    setIsOpen(false);
+    window.location.assign('/portal');
+  };
 
   // Handle Steering Wheel Click
   const handleAdminClick = () => {
@@ -248,9 +277,23 @@ export default function Navigation({ currentPage, onPageChange }) {
                 Get Started
               </button>
 
+              {isStaff && (
+                <button
+                  onClick={goToPortal}
+                  title="Open Staff Portal"
+                  className="group text-[#28364b] hover:text-[#cebd88] transition-colors p-1"
+                >
+                  <LayoutDashboard
+                    size={26}
+                    strokeWidth={1.5}
+                    className="transition-transform duration-300 group-hover:scale-110"
+                  />
+                </button>
+              )}
+
               {showAdminIcon && (
-                <button 
-                  onClick={handleAdminClick} 
+                <button
+                  onClick={handleAdminClick}
                   className={`group text-[#28364b] hover:text-[#cebd88] transition-colors p-1 ${isLoggedIn ? 'text-[#cebd88]' : ''}`}
                   title={isLoggedIn ? "My Profile" : "Admin Login"}
                 >
@@ -289,9 +332,17 @@ export default function Navigation({ currentPage, onPageChange }) {
                     </button>
                   );
                 })}
+                {isStaff && (
+                  <button
+                    onClick={goToPortal}
+                    className="flex items-center justify-center gap-2 text-[#28364b] font-raleway font-bold pt-4 border-t border-gray-100"
+                  >
+                    <LayoutDashboard size={20} /> Staff Portal
+                  </button>
+                )}
                 {showAdminIcon && (
-                   <button 
-                    onClick={handleAdminClick} 
+                   <button
+                    onClick={handleAdminClick}
                     className="flex items-center justify-center gap-2 text-[#28364b] font-raleway font-bold pt-4 border-t border-gray-100"
                    >
                      <ShipWheel size={20} /> {isLoggedIn ? 'My Profile' : 'Admin Login'}
