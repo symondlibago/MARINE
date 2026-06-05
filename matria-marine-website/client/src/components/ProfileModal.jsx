@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff, LayoutDashboard } from 'lucide-react';
 import { authAPI } from '../pages/api'; 
 
 export default function ProfileModal({ isOpen, onClose, onLogout }) {
@@ -188,6 +188,17 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
             {/* VIEW: MENU */}
             {view === 'menu' && (
                 <div className="space-y-2">
+                    {/* Primary CTA: enter the procurement portal */}
+                    <a href="/portal" className="w-full flex items-center justify-between p-4 rounded-lg bg-[#28364b] text-white hover:bg-[#3c4a63] transition-colors">
+                        <div className="flex items-center gap-3">
+                            <LayoutDashboard size={18} />
+                            <span className="font-raleway font-semibold">Staff Portal</span>
+                        </div>
+                        <ChevronRight size={16} className="text-[#cebd88]" />
+                    </a>
+
+                    <hr className="my-2 border-gray-100" />
+
                     <button onClick={() => setView('edit')} className="w-full flex items-center justify-between p-4 rounded-lg hover:bg-gray-50 group transition-colors border border-transparent hover:border-gray-200">
                         <div className="flex items-center gap-3 text-[#28364b]">
                             <User size={18} />
