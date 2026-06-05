@@ -1,7 +1,15 @@
 import axios from 'axios';
 
+// const api = axios.create({
+//   baseURL: 'https://marine-production.up.railway.app',
+//   headers: {
+//     'Accept': 'application/json',
+//     'Content-Type': 'application/json',
+//   }
+// });
+
 const api = axios.create({
-  baseURL: 'https://marine-production.up.railway.app',
+  baseURL: 'http://localhost:8000/api',
   headers: {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
