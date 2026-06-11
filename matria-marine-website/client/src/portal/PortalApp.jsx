@@ -14,6 +14,9 @@ import PurchaseOrderDetail from "./PurchaseOrderDetail";
 import PurchaseInvoices from "./PurchaseInvoices";
 import PurchaseInvoiceDetail from "./PurchaseInvoiceDetail";
 import Reports from "./Reports";
+import Customers from "./Customers";
+import Documents from "./Documents";
+import DocumentForm from "./DocumentForm";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
 
@@ -79,6 +82,10 @@ export default function PortalApp() {
               <Route path="/invoices" component={PurchaseInvoices} />
               <Route path="/invoices/:id" component={PurchaseInvoiceDetail} />
               <Route path="/reports" component={Reports} />
+              <Route path="/documents" component={Documents} />
+              <Route path="/documents/new" component={DocumentForm} />
+              <Route path="/documents/:id" component={DocumentForm} />
+              <Route path="/customers" component={Customers} />
               <Route>
                 <div className="p-8 text-slate-500">Portal page not found.</div>
               </Route>

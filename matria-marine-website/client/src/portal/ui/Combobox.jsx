@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
  * Free-text input with an animated suggestion dropdown.
  * You can type ANY value; suggestions are just shortcuts.
  */
-export default function Combobox({ value, onChange, suggestions = [], placeholder = "", className = "" }) {
+export default function Combobox({ value, onChange, suggestions = [], placeholder = "", className = "", label = "Previously used" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -43,7 +43,7 @@ export default function Combobox({ value, onChange, suggestions = [], placeholde
             transition={{ duration: 0.12 }}
             className="absolute z-50 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
           >
-            <li className="px-3 py-1 text-[10px] uppercase tracking-wide text-slate-300">Previously used</li>
+            <li className="px-3 py-1 text-[10px] uppercase tracking-wide text-slate-300">{label}</li>
             {filtered.map((s) => (
               <li key={s}>
                 <button
