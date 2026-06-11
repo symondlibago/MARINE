@@ -1,14 +1,16 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, Ship, ShoppingCart, Receipt, BarChart3, LogOut } from "lucide-react";
+import { LayoutDashboard, FileText, Files, Ship, ShoppingCart, Receipt, BarChart3, Users, LogOut } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
+  { label: "Documents", to: "/documents", icon: Files },
   { label: "Enquiries", to: "/enquiries", icon: FileText },
   { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
   { label: "Invoices", to: "/invoices", icon: Receipt },
   { label: "Reports", to: "/reports", icon: BarChart3 },
+  { label: "Customers", to: "/customers", icon: Users },
   { label: "Vendors", to: "/vendors", icon: Ship },
 ];
 

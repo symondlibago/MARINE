@@ -157,6 +157,26 @@ export const reportsAPI = {
   pipeline: (params = {}) => api.get(apiUrl('/portal/reports/pipeline'), { params }),
 };
 
+// --- Customers master (for outgoing documents) ---
+export const customersAPI = {
+  list: (search) => api.get(apiUrl('/portal/customers'), { params: search ? { search } : {} }),
+  get: (id) => api.get(apiUrl(`/portal/customers/${id}`)),
+  create: (payload) => api.post(apiUrl('/portal/customers'), payload),
+  update: (id, payload) => api.put(apiUrl(`/portal/customers/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/customers/${id}`)),
+};
+
+// --- Documents: invoice / quotation / enquiry / delivery note (one template) ---
+export const documentsAPI = {
+  list: (params = {}) => api.get(apiUrl('/portal/documents'), { params }),
+  get: (id) => api.get(apiUrl(`/portal/documents/${id}`)),
+  nextNumber: (type) => api.get(apiUrl('/portal/documents/next-number'), { params: { type } }),
+  create: (payload) => api.post(apiUrl('/portal/documents'), payload),
+  update: (id, payload) => api.put(apiUrl(`/portal/documents/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/documents/${id}`)),
+  pdf: (id) => api.get(apiUrl(`/portal/documents/${id}/pdf`), { responseType: 'blob' }),
+};
+
 // Convenience helper: is a staff auth token present?
 export const isAuthenticated = () => !!localStorage.getItem('auth_token');
 

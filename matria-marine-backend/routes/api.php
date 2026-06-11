@@ -13,6 +13,8 @@ use App\Http\Controllers\RfqPdfController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\PurchaseInvoiceController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\DocumentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -110,4 +112,14 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::get('reports/spend', [ReportsController::class, 'spend']);
         Route::get('reports/vendors', [ReportsController::class, 'vendors']);
         Route::get('reports/pipeline', [ReportsController::class, 'pipeline']);
+
+        // Documents — customer/vendor invoices, quotations, enquiries, delivery notes
+        Route::apiResource('customers', CustomerController::class);
+        Route::get('documents/next-number', [DocumentController::class, 'nextNumber']);
+        Route::get('documents', [DocumentController::class, 'index']);
+        Route::post('documents', [DocumentController::class, 'store']);
+        Route::get('documents/{document}/pdf', [DocumentController::class, 'pdf']);
+        Route::get('documents/{document}', [DocumentController::class, 'show']);
+        Route::match(['put', 'patch'], 'documents/{document}', [DocumentController::class, 'update']);
+        Route::delete('documents/{document}', [DocumentController::class, 'destroy']);
     });
