@@ -19,6 +19,7 @@ class RfqController extends Controller
     public function index()
     {
         $rfqs = Rfq::query()
+            ->with('customer:id,name')
             ->withCount(['items', 'rfqVendors', 'quotes'])
             ->orderByDesc('id')
             ->get();
@@ -32,6 +33,10 @@ class RfqController extends Controller
 
         $rfq = DB::transaction(function () use ($data, $request) {
             $rfq = Rfq::create([
+                'customer_id' => $data['customer_id'] ?? null,
+                'customer_reference' => $data['customer_reference'] ?? null,
+                'priority' => $data['priority'] ?? 'normal',
+                'requirements' => $data['requirements'] ?? null,
                 'ship_name' => $data['ship_name'] ?? null,
                 'requested_by' => $data['requested_by'] ?? null,
                 'delivery_port' => $data['delivery_port'] ?? null,
@@ -58,7 +63,7 @@ class RfqController extends Controller
 
     public function show(Rfq $rfq)
     {
-        $rfq->load(['items', 'creator:id,name', 'rfqVendors.vendor', 'quotes.vendor']);
+        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'quotes.vendor']);
 
         return response()->json(['success' => true, 'data' => $rfq]);
     }
@@ -69,6 +74,10 @@ class RfqController extends Controller
 
         DB::transaction(function () use ($rfq, $data) {
             $rfq->update([
+                'customer_id' => $data['customer_id'] ?? null,
+                'customer_reference' => $data['customer_reference'] ?? null,
+                'priority' => $data['priority'] ?? 'normal',
+                'requirements' => $data['requirements'] ?? null,
                 'ship_name' => $data['ship_name'] ?? null,
                 'requested_by' => $data['requested_by'] ?? null,
                 'delivery_port' => $data['delivery_port'] ?? null,
@@ -198,14 +207,33 @@ class RfqController extends Controller
         $rfq->load(['items.award', 'quotes.vendor', 'quotes.items']);
 
         $quotes = $rfq->quotes;
+        $itemCount = $rfq->items->count();
 
-        $vendors = $quotes->map(fn (Quote $q) => [
-            'vendor_id' => $q->vendor_id,
-            'vendor_name' => $q->vendor->name,
-            'quote_id' => $q->id,
-            'currency' => $q->currency,
-            'exchange_rate' => (float) $q->exchange_rate,
-        ])->values();
+        // Per vendor: their total quote value (base currency) and whether they
+        // priced every line (complete) or left some un-quoted (incomplete).
+        $vendors = $quotes->map(function (Quote $q) use ($rfq, $itemCount) {
+            $quoted = 0;
+            $total = 0.0;
+            foreach ($rfq->items as $item) {
+                $qi = $q->items->firstWhere('rfq_item_id', $item->id);
+                if ($qi && $qi->unit_cost !== null) {
+                    $quoted++;
+                    $total += (float) $qi->unit_cost * (float) $q->exchange_rate * (float) $item->qty;
+                }
+            }
+
+            return [
+                'vendor_id' => $q->vendor_id,
+                'vendor_name' => $q->vendor->name,
+                'quote_id' => $q->id,
+                'currency' => $q->currency,
+                'exchange_rate' => (float) $q->exchange_rate,
+                'total_base' => round($total, 2),
+                'quoted_count' => $quoted,
+                'item_count' => $itemCount,
+                'complete' => $itemCount > 0 && $quoted === $itemCount,
+            ];
+        })->values();
 
         $rows = $rfq->items->map(function ($item) use ($quotes) {
             $cells = $quotes->map(function (Quote $quote) use ($item) {
@@ -348,6 +376,11 @@ class RfqController extends Controller
     private function validateRfq(Request $request): array
     {
         return $request->validate([
+            'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
+            'customer_reference' => ['nullable', 'string', 'max:255'],
+            'priority' => ['nullable', 'string', 'in:low,normal,high,urgent'],
+            'requirements' => ['nullable', 'array'],
+            'requirements.*' => ['string', 'max:255'],
             'ship_name' => ['nullable', 'string', 'max:255'],
             'requested_by' => ['nullable', 'string', 'max:255'],
             'delivery_port' => ['nullable', 'string', 'max:255'],

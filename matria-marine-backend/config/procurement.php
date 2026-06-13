@@ -25,22 +25,4 @@ return [
     */
     'base_currency' => env('PROCUREMENT_BASE_CURRENCY', 'USD'),
 
-    /*
-    | Navision / Business Central CSV export (Phase 4). Tune the column values,
-    | date format and delimiter here (or via env) so the CSV matches whatever
-    | your BC purchase-invoice import expects — no code changes needed.
-    */
-    'navision' => [
-        // Default G/L account No. for invoice lines that don't carry their own.
-        'default_account' => env('NAV_DEFAULT_ACCOUNT', ''),
-        // G/L account No. used for the "other charges" (freight etc.) line.
-        'charges_account' => env('NAV_CHARGES_ACCOUNT', ''),
-        // Line type written to the CSV: 'G/L Account' or 'Item'.
-        'line_type' => env('NAV_LINE_TYPE', 'G/L Account'),
-        // PHP date() format for date columns, e.g. 'Y-m-d' or 'd/m/Y'.
-        'date_format' => env('NAV_DATE_FORMAT', 'Y-m-d'),
-        // CSV field delimiter.
-        'delimiter' => env('NAV_DELIMITER', ','),
-    ],
-
 ];

@@ -134,6 +134,13 @@ class PurchaseOrderController extends Controller
             }
         });
 
+        // Stamp the customer delivery address (passed from the Delivery Order) onto
+        // this enquiry's draft purchase orders, so the vendor ships to the customer.
+        if ($request->filled('delivery_address')) {
+            PurchaseOrder::where('rfq_id', $rfq->id)->where('status', 'draft')
+                ->update(['delivery_address' => $request->input('delivery_address')]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => $created->isEmpty()

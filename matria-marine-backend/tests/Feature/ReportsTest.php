@@ -35,8 +35,8 @@ class ReportsTest extends TestCase
         $rfq = Rfq::create(['reference' => 'RFQ-5001', 'ship_name' => 'MV Alpha', 'base_currency' => 'USD', 'status' => 'awarded']);
         $i1 = $rfq->items()->create(['description' => 'Apples', 'qty' => 10, 'unit' => 'kg', 'sort' => 0]);
 
-        $vA = Vendor::factory()->create(['name' => 'Alpha', 'currency' => 'USD', 'nav_code' => 'V1', 'email' => 'a@a.com']);
-        $vB = Vendor::factory()->create(['name' => 'Beta', 'currency' => 'USD', 'nav_code' => 'V2', 'email' => 'b@b.com']);
+        $vA = Vendor::factory()->create(['name' => 'Alpha', 'currency' => 'USD', 'email' => 'a@a.com']);
+        $vB = Vendor::factory()->create(['name' => 'Beta', 'currency' => 'USD', 'email' => 'b@b.com']);
 
         foreach ([$vA, $vB] as $v) {
             RfqVendor::create(['rfq_id' => $rfq->id, 'vendor_id' => $v->id, 'token' => Str::random(48), 'status' => 'requested', 'sent_at' => now()]);

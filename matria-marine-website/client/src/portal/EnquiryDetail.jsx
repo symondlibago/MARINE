@@ -102,11 +102,26 @@ export default function EnquiryDetail({ params }) {
         </div>
       </div>
 
-      <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:grid-cols-2 lg:grid-cols-4">
-        <Info label="Vessel" value={rfq.ship_name} />
-        <Info label="Requested by" value={rfq.requested_by} />
-        <Info label="Delivery port" value={rfq.delivery_port} />
-        <Info label="Base currency" value={rfq.base_currency} />
+      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Info label="Customer" value={rfq.customer?.name} />
+          <Info label="Customer ref" value={rfq.customer_reference} />
+          <Info label="Vessel" value={rfq.ship_name} />
+          <Info label="Priority" value={rfq.priority ? rfq.priority[0].toUpperCase() + rfq.priority.slice(1) : null} />
+          <Info label="Requested by" value={rfq.requested_by} />
+          <Info label="Delivery port" value={rfq.delivery_port} />
+          <Info label="Base currency" value={rfq.base_currency} />
+        </div>
+        {rfq.requirements?.length > 0 && (
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Requirements <span className="font-normal normal-case text-slate-300">· shown to vendors</span></div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {rfq.requirements.map((req) => (
+                <span key={req} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{req}</span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

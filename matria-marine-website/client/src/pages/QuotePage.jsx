@@ -104,6 +104,15 @@ export default function QuotePage({ token }) {
           <div><span className="text-slate-400">Vessel:</span> <span className="font-medium text-[#28364b]">{data.rfq?.ship_name || "—"}</span></div>
         </div>
 
+        {data.rfq?.requirements?.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Requirements:</span>
+            {data.rfq.requirements.map((req) => (
+              <span key={req} className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-[#28364b] ring-1 ring-slate-200">{req}</span>
+            ))}
+          </div>
+        )}
+
         {data.submitted && (
           <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
             You have already submitted a quotation. Submitting again will update your prices.

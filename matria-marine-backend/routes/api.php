@@ -11,7 +11,8 @@ use App\Http\Controllers\VendorController;
 use App\Http\Controllers\RfqController;
 use App\Http\Controllers\RfqPdfController;
 use App\Http\Controllers\PurchaseOrderController;
-use App\Http\Controllers\PurchaseInvoiceController;
+use App\Http\Controllers\OfferController;
+use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DocumentController;
@@ -99,16 +100,23 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::patch('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'update']);
         Route::delete('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'destroy']);
 
-        // Phase 4 — purchase invoices + Navision/Business Central CSV export
-        Route::post('purchase-orders/{purchaseOrder}/invoice', [PurchaseInvoiceController::class, 'createFromPo']);
-        Route::post('purchase-invoices/export', [PurchaseInvoiceController::class, 'export']);
-        Route::get('purchase-invoices', [PurchaseInvoiceController::class, 'index']);
-        Route::post('purchase-invoices', [PurchaseInvoiceController::class, 'store']);
-        Route::get('purchase-invoices/{purchaseInvoice}', [PurchaseInvoiceController::class, 'show']);
-        Route::patch('purchase-invoices/{purchaseInvoice}', [PurchaseInvoiceController::class, 'update']);
-        Route::delete('purchase-invoices/{purchaseInvoice}', [PurchaseInvoiceController::class, 'destroy']);
+        // Offers — customer quotation with markup (built from an enquiry's awards)
+        Route::post('rfqs/{rfq}/offer', [OfferController::class, 'generate']);
+        Route::get('offers', [OfferController::class, 'index']);
+        Route::get('offers/{offer}/pdf', [OfferController::class, 'pdf']);
+        Route::get('offers/{offer}', [OfferController::class, 'show']);
+        Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
+        Route::delete('offers/{offer}', [OfferController::class, 'destroy']);
 
-        // Phase 5 — reports / analytics
+        // Delivery Orders — customer order + delivery address (from an accepted offer)
+        Route::post('offers/{offer}/delivery-order', [DeliveryOrderController::class, 'generate']);
+        Route::get('delivery-orders', [DeliveryOrderController::class, 'index']);
+        Route::get('delivery-orders/{deliveryOrder}/pdf', [DeliveryOrderController::class, 'pdf']);
+        Route::get('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'show']);
+        Route::match(['put', 'patch'], 'delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'update']);
+        Route::delete('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'destroy']);
+
+        // Reports / analytics
         Route::get('reports/spend', [ReportsController::class, 'spend']);
         Route::get('reports/vendors', [ReportsController::class, 'vendors']);
         Route::get('reports/pipeline', [ReportsController::class, 'pipeline']);

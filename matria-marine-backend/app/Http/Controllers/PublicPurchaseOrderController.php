@@ -75,6 +75,7 @@ class PublicPurchaseOrderController extends Controller
             'supplier' => $po->vendor?->name,
             'ship_name' => $po->ship_name,
             'delivery_port' => $po->delivery_port,
+            'delivery_address' => $po->delivery_address,
             'currency' => $po->currency,
             'issued_date' => $po->issued_date?->toDateString(),
             'expected_date' => $po->expected_date?->toDateString(),

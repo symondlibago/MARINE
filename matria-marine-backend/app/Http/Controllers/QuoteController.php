@@ -47,6 +47,9 @@ class QuoteController extends Controller
                     'reference' => $rfq->reference,
                     'ship_name' => $rfq->ship_name,
                     'delivery_port' => $rfq->delivery_port,
+                    // Requirements ARE shown to vendors so they quote correctly.
+                    // The customer is intentionally NOT exposed here.
+                    'requirements' => $rfq->requirements ?? [],
                 ],
                 'items' => $rfq->items->map(fn ($i) => [
                     'rfq_item_id' => $i->id,

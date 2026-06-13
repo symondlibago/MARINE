@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
-import { Ship, FileText, ShoppingCart, Receipt, Send, FileCheck, Download, CheckCircle2 } from "lucide-react";
+import { Ship, FileText, ShoppingCart, Send, CheckCircle2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { rfqsAPI, vendorsAPI, purchaseOrdersAPI, purchaseInvoicesAPI } from "@/pages/api";
+import { rfqsAPI, vendorsAPI, purchaseOrdersAPI } from "@/pages/api";
 
 const ENQ_ORDER = ["draft", "sent", "quoting", "awarded", "closed"];
 const ENQ_COLOR = { draft: "#94a3b8", sent: "#3b82f6", quoting: "#f59e0b", awarded: "#8b5cf6", closed: "#22c55e" };
@@ -21,12 +21,6 @@ const PO_BADGE = {
   received: "bg-green-100 text-green-700",
   cancelled: "bg-red-100 text-red-700",
 };
-const INV_BADGE = {
-  draft: "bg-slate-100 text-slate-600",
-  approved: "bg-blue-100 text-blue-700",
-  exported: "bg-green-100 text-green-700",
-  cancelled: "bg-red-100 text-red-700",
-};
 const ENQ_BADGE = {
   draft: "bg-slate-100 text-slate-600",
   sent: "bg-blue-100 text-blue-700",
@@ -39,32 +33,25 @@ export default function Dashboard() {
   const { data: rfqs } = useQuery({ queryKey: ["rfqs"], queryFn: async () => (await rfqsAPI.list()).data.data });
   const { data: vendors } = useQuery({ queryKey: ["vendors", ""], queryFn: async () => (await vendorsAPI.list()).data.data });
   const { data: pos } = useQuery({ queryKey: ["dashboard-pos"], queryFn: async () => (await purchaseOrdersAPI.list()).data.data });
-  const { data: invs } = useQuery({ queryKey: ["dashboard-invoices"], queryFn: async () => (await purchaseInvoicesAPI.list()).data.data });
 
   const rfqList = rfqs ?? [];
   const poList = pos ?? [];
-  const invList = invs ?? [];
   const vendorList = vendors ?? [];
 
   const openEnq = rfqList.filter((r) => r.status !== "closed").length;
   const quotes = rfqList.reduce((a, r) => a + (r.quotes_count || 0), 0);
   const poAwaiting = poList.filter((p) => p.status === "issued" && !p.accepted_at).length;
-  const invToApprove = invList.filter((i) => i.status === "draft").length;
-  const invToExport = invList.filter((i) => i.status === "approved").length;
 
   const enqChart = ENQ_ORDER.map((s) => ({ status: s, count: rfqList.filter((r) => r.status === s).length })).filter((d) => d.count > 0);
 
   const stats = [
     { label: "Enquiries", value: rfqList.length, sub: `${openEnq} open · ${quotes} quotes`, icon: FileText, to: "/enquiries" },
     { label: "Purchase Orders", value: poList.length, sub: `${poAwaiting} awaiting acceptance`, icon: ShoppingCart, to: "/purchase-orders" },
-    { label: "Invoices", value: invList.length, sub: `${invToExport} ready to export`, icon: Receipt, to: "/invoices" },
     { label: "Vendors", value: vendorList.length, sub: `${vendorList.filter((v) => v.is_active).length} active`, icon: Ship, to: "/vendors" },
   ];
 
   const actions = [
     { label: "POs awaiting vendor acceptance", count: poAwaiting, icon: Send, to: "/purchase-orders" },
-    { label: "Invoices to approve", count: invToApprove, icon: FileCheck, to: "/invoices" },
-    { label: "Invoices ready to export", count: invToExport, icon: Download, to: "/invoices" },
   ];
   const allClear = actions.every((a) => a.count === 0);
 
@@ -78,7 +65,7 @@ export default function Dashboard() {
       </div>
 
       {/* Primary stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         {stats.map((s, i) => {
           const Icon = s.icon;
           return (
@@ -178,7 +165,7 @@ export default function Dashboard() {
       </div>
 
       {/* Recent activity */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         <RecentCard
           title="Recent enquiries"
           to="/enquiries"
@@ -202,21 +189,6 @@ export default function Dashboard() {
               <span className="flex items-center gap-2">
                 <span className="text-xs text-slate-400">{Number(p.subtotal).toFixed(2)} {p.currency}</span>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PO_BADGE[p.status] || "bg-slate-100"}`}>{p.status}</span>
-              </span>
-            </Link>
-          )}
-        />
-        <RecentCard
-          title="Recent invoices"
-          to="/invoices"
-          rows={invList.slice(0, 6)}
-          empty="No invoices yet."
-          render={(inv) => (
-            <Link key={inv.id} href={`/invoices/${inv.id}`} className="flex items-center justify-between rounded-lg px-2 py-2 text-sm transition-colors hover:bg-slate-50">
-              <span className="font-medium text-[#28364b]">{inv.reference} <span className="font-normal text-slate-400">· {inv.vendor}</span></span>
-              <span className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">{Number(inv.total).toFixed(2)} {inv.currency}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${INV_BADGE[inv.status] || "bg-slate-100"}`}>{inv.status}</span>
               </span>
             </Link>
           )}

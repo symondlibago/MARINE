@@ -39,6 +39,7 @@
                 <strong>Expected:</strong> {{ $po->expected_date ? $po->expected_date->format('d M Y') : '—' }}<br>
                 <strong>Vessel:</strong> {{ $po->ship_name ?: '—' }}<br>
                 <strong>Delivery port:</strong> {{ $po->delivery_port ?: '—' }}<br>
+                @if($po->delivery_address)<strong>Deliver to:</strong> {{ $po->delivery_address }}<br>@endif
                 <strong>Currency:</strong> {{ $po->currency }}
             </td>
         </tr>

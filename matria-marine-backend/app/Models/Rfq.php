@@ -11,6 +11,10 @@ class Rfq extends Model
 
     protected $fillable = [
         'reference',
+        'customer_id',
+        'customer_reference',
+        'priority',
+        'requirements',
         'ship_name',
         'requested_by',
         'delivery_port',
@@ -23,7 +27,13 @@ class Rfq extends Model
 
     protected $casts = [
         'received_date' => 'date',
+        'requirements' => 'array',
     ];
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
+    }
 
     public function items()
     {
@@ -50,11 +60,6 @@ class Rfq extends Model
     public function purchaseOrders()
     {
         return $this->hasMany(PurchaseOrder::class);
-    }
-
-    public function purchaseInvoices()
-    {
-        return $this->hasMany(PurchaseInvoice::class);
     }
 
     public function creator()

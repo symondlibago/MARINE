@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Receipt } from "lucide-react";
+import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { purchaseOrdersAPI, purchaseInvoicesAPI } from "@/pages/api";
+import { purchaseOrdersAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
@@ -87,12 +87,6 @@ export default function PurchaseOrderDetail({ params }) {
     onError: (e) => toast.error(e?.response?.data?.message || "Delete failed."),
   });
 
-  const createInvoice = useMutation({
-    mutationFn: () => purchaseInvoicesAPI.createFromPo(id),
-    onSuccess: (res) => { toast.success("Draft invoice created from this PO."); setLocation(`/invoices/${res.data.data.id}`); },
-    onError: (e) => toast.error(e?.response?.data?.message || "Could not create invoice."),
-  });
-
   const downloadPdf = async () => {
     try {
       const res = await purchaseOrdersAPI.pdf(id);
@@ -169,11 +163,6 @@ export default function PurchaseOrderDetail({ params }) {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {(po.status === "issued" || po.status === "received") && (
-            <button onClick={() => createInvoice.mutate()} disabled={createInvoice.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
-              {createInvoice.isLoading ? <Spinner className="h-4 w-4" /> : <Receipt className="h-4 w-4" />} Create invoice
-            </button>
-          )}
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> PDF
           </button>
@@ -223,6 +212,7 @@ export default function PurchaseOrderDetail({ params }) {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Info label="Vessel" value={po.ship_name} />
             <Info label="Delivery port" value={po.delivery_port} />
+            <Info label="Deliver to" value={po.delivery_address} />
             <Info label="Currency" value={`${po.currency}${po.currency !== po.base_currency ? ` · ×${Number(po.exchange_rate)} → ${po.base_currency}` : ""}`} />
             <Info label="Issued" value={po.issued_date ? String(po.issued_date).slice(0, 10) : "—"} />
             <div>

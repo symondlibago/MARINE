@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Anchor, Loader2, CheckCircle } from "lucide-react";
+import { Anchor, Loader2, CheckCircle, MapPin } from "lucide-react";
 import { poAcceptanceAPI } from "@/pages/api";
 
 const STATUS_STYLES = {
@@ -47,6 +47,17 @@ function PoCard({ data }) {
         <div><span className="text-slate-400">Issued:</span> <span className="font-medium text-[#28364b]">{data.issued_date || "—"}</span></div>
         <div><span className="text-slate-400">Expected delivery:</span> <span className="font-medium text-[#28364b]">{data.expected_date || "—"}</span></div>
       </div>
+
+      {data.delivery_address && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center gap-2 text-amber-800">
+            <MapPin className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Deliver the goods to</span>
+          </div>
+          <p className="mt-1.5 whitespace-pre-line text-sm font-medium text-[#28364b]">{data.delivery_address}</p>
+          <p className="mt-1 text-xs text-amber-700">Please ship directly to this address.</p>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full text-sm">

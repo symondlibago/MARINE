@@ -14,6 +14,7 @@ class PurchaseOrder extends Model
         'vendor_id',
         'ship_name',
         'delivery_port',
+        'delivery_address',
         'currency',
         'base_currency',
         'exchange_rate',
@@ -61,11 +62,6 @@ class PurchaseOrder extends Model
     public function rfq()
     {
         return $this->belongsTo(Rfq::class);
-    }
-
-    public function purchaseInvoices()
-    {
-        return $this->hasMany(PurchaseInvoice::class);
     }
 
     public function creator()

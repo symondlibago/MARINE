@@ -1,16 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { rfqsAPI, purchaseOrdersAPI } from "@/pages/api";
+import { rfqsAPI, purchaseOrdersAPI, offersAPI } from "@/pages/api";
+import { fetchRates, rateToBase } from "@/lib/fx";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
 export default function CompareGrid({ params }) {
   const id = params.id;
   const confirm = useConfirm();
+  const [, setLocation] = useLocation();
   const [awards, setAwards] = useState({}); // rfq_item_id -> { vendor_id, quote_item_id, unit_cost, qty_to_buy }
 
   const { data, isLoading, refetch } = useQuery({
@@ -67,6 +69,38 @@ export default function CompareGrid({ params }) {
     onSuccess: () => refetch(),
   });
 
+  // Auto-fill today's live exchange rate for any vendor quoting in a currency
+  // other than the enquiry currency whose rate hasn't been set yet (still 1).
+  // Fetched in the browser; staff can still override the box afterwards.
+  const autoFilled = useRef(new Set());
+  useEffect(() => {
+    if (!data || data.rfq.status === "closed") return;
+    const base = data.rfq.base_currency;
+    const need = (data.vendors || []).filter(
+      (v) =>
+        v.currency &&
+        v.currency !== base &&
+        Number(v.exchange_rate) === 1 &&
+        !autoFilled.current.has(v.quote_id)
+    );
+    if (need.length === 0) return;
+
+    (async () => {
+      let rates;
+      try {
+        rates = await fetchRates(base);
+      } catch {
+        return; // offline / blocked — leave the boxes for manual entry
+      }
+      for (const v of need) {
+        autoFilled.current.add(v.quote_id);
+        const rate = rateToBase(rates, v.currency);
+        if (rate) rateMutation.mutate({ quoteId: v.quote_id, rate: Number(rate.toFixed(6)) });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
   const canOrder = data?.rfq?.status === "awarded" || data?.rfq?.status === "closed";
 
   const { data: pos, refetch: refetchPos } = useQuery({
@@ -79,6 +113,12 @@ export default function CompareGrid({ params }) {
     mutationFn: () => purchaseOrdersAPI.generate(id),
     onSuccess: (res) => { toast.success(res.data.message || "Purchase orders generated."); refetchPos(); },
     onError: (e) => toast.error(e?.response?.data?.message || "Could not generate purchase orders."),
+  });
+
+  const makeOffer = useMutation({
+    mutationFn: () => offersAPI.generate(id),
+    onSuccess: (res) => { toast.success(res.data.message || "Offer ready."); setLocation(`/offers/${res.data.data.id}`); },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not create offer."),
   });
 
   const handleFinish = async () => {
@@ -145,6 +185,23 @@ export default function CompareGrid({ params }) {
   };
   const setQty = (rfqItemId, qty) => setAwards((a) => ({ ...a, [rfqItemId]: { ...a[rfqItemId], qty_to_buy: qty } }));
 
+  // Pull today's live rate for one vendor (manual ↻) and save it to their quote.
+  const applyLiveRate = async (vendor) => {
+    try {
+      const rates = await fetchRates(data.rfq.base_currency);
+      const rate = rateToBase(rates, vendor.currency);
+      if (!rate) {
+        toast.error(`No live rate available for ${vendor.currency}.`);
+        return;
+      }
+      autoFilled.current.add(vendor.quote_id);
+      rateMutation.mutate({ quoteId: vendor.quote_id, rate: Number(rate.toFixed(6)) });
+      toast.success(`${vendor.currency}→${data.rfq.base_currency} rate updated to ${rate.toFixed(4)}.`);
+    } catch {
+      toast.error("Could not fetch a live rate — enter it manually.");
+    }
+  };
+
   const awardedVendorIds = [...new Set(Object.values(awards).map((a) => a.vendor_id))];
   const awardedVendors = data.vendors.filter((v) => awardedVendorIds.includes(v.vendor_id));
   const showPdfs = (data.rfq.status === "awarded" || locked) && awardedVendors.length > 0;
@@ -159,7 +216,7 @@ export default function CompareGrid({ params }) {
         <div>
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
           <p className="text-sm text-slate-500">
-            Base {data.rfq.base_currency}. Lowest converted price per row is highlighted; click a cell to award that line.
+            Base {data.rfq.base_currency}. Vendor prices are converted at today's live FX rate (edit the rate or click ↻ to override). Lowest converted price per row is highlighted; click a cell to award that line.
             {locked && " (Locked)"}
           </p>
         </div>
@@ -192,12 +249,18 @@ export default function CompareGrid({ params }) {
                 <th className="px-3 py-3 text-right font-semibold">Qty</th>
                 {data.vendors.map((v) => (
                   <th key={v.vendor_id} className="px-3 py-3">
-                    <div className="font-semibold text-[#28364b]">{v.vendor_name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-[#28364b]">{v.vendor_name}</span>
+                      <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium normal-case ${v.complete ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`} title={v.complete ? "Priced every line" : "Some lines not priced"}>
+                        {v.complete ? "Complete" : `Incomplete ${v.quoted_count}/${v.item_count}`}
+                      </span>
+                    </div>
                     <div className="mt-1 flex items-center gap-1 text-[10px] font-normal normal-case text-slate-400">
                       {v.currency} · ×
                       <input
                         type="number"
                         step="0.0001"
+                        key={`${v.quote_id}-${v.exchange_rate}`}
                         defaultValue={v.exchange_rate}
                         disabled={locked}
                         onBlur={(e) => {
@@ -207,6 +270,16 @@ export default function CompareGrid({ params }) {
                         className="w-16 rounded border border-slate-200 px-1 py-0.5 text-xs"
                         title="Exchange rate to base currency"
                       />
+                      {v.currency !== data.rfq.base_currency && !locked && (
+                        <button
+                          type="button"
+                          onClick={() => applyLiveRate(v)}
+                          title={`Fetch today's live ${v.currency}→${data.rfq.base_currency} rate`}
+                          className="text-slate-400 transition-colors hover:text-[#28364b]"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                   </th>
                 ))}
@@ -266,8 +339,38 @@ export default function CompareGrid({ params }) {
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50">
+                <td className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500" colSpan={2}>
+                  Vendor total ({data.rfq.base_currency})
+                </td>
+                {data.vendors.map((v) => {
+                  const lowestTotal = Math.min(...data.vendors.filter((x) => x.complete).map((x) => x.total_base));
+                  const isCheapest = v.complete && v.total_base === lowestTotal && data.vendors.filter((x) => x.complete).length > 1;
+                  return (
+                    <td key={v.vendor_id} className={`px-3 py-3 font-bold ${isCheapest ? "text-green-700" : "text-[#28364b]"}`}>
+                      {v.total_base.toFixed(2)}
+                      {isCheapest && <span className="ml-1 text-[10px] font-medium">↓ lowest</span>}
+                    </td>
+                  );
+                })}
+                <td></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
+      )}
+
+      {data.vendors.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#28364b]/20 bg-[#28364b]/[0.04] p-5">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[#28364b]">Customer Offer</h2>
+            <p className="text-xs text-slate-500">Add your markup to the vendor prices and send the customer a quotation.</p>
+          </div>
+          <button onClick={() => makeOffer.mutate()} disabled={makeOffer.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
+            {makeOffer.isLoading ? <Spinner className="h-4 w-4" /> : <Percent className="h-4 w-4" />} Markup &amp; Offer
+          </button>
+        </motion.div>
       )}
 
       {showPdfs && (
