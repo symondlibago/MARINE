@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck } from "lucide-react";
+import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { offersAPI, customersAPI, deliveryOrdersAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -144,6 +144,17 @@ export default function OfferPage({ params }) {
     makeDo.mutate();
   };
 
+  // Save the markup first, then email the quotation + acceptance link to the customer.
+  const sendEmail = useMutation({
+    mutationFn: () => offersAPI.email(id),
+    onSuccess: (res) => { toast.success(res.data.message || "Quotation sent to the customer."); refetch(); },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not send the quotation."),
+  });
+  const sendToCustomer = async () => {
+    try { await save.mutateAsync(); } catch { return; }
+    sendEmail.mutate();
+  };
+
   const downloadPdf = async () => {
     try {
       const res = await offersAPI.pdf(id);
@@ -181,6 +192,9 @@ export default function OfferPage({ params }) {
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Quotation PDF
           </button>
+          <button onClick={sendToCustomer} disabled={save.isLoading || sendEmail.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-3 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70" title="Email the quotation + an online acceptance link to the customer">
+            {sendEmail.isLoading ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />} Send to customer
+          </button>
           <button onClick={() => save.mutate()} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save
           </button>
@@ -189,6 +203,18 @@ export default function OfferPage({ params }) {
           </button>
         </div>
       </div>
+
+      {offer.accepted_at && (
+        <div className="flex items-start gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+          <span>
+            <span className="font-semibold">Accepted by the customer</span>
+            {offer.accepted_by_name ? ` (${offer.accepted_by_name})` : ""} on {new Date(offer.accepted_at).toLocaleString()}.
+            {offer.acceptance_note ? <em className="block text-green-700">“{offer.acceptance_note}”</em> : null}
+            {" "}A delivery order has been created automatically.
+          </span>
+        </div>
+      )}
 
       {/* Profit summary */}
       <div className="grid gap-4 sm:grid-cols-3">

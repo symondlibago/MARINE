@@ -29,64 +29,15 @@ class DeliveryOrderController extends Controller
     /** Build (or return the existing) delivery order from an accepted offer. */
     public function generate(Request $request, Offer $offer)
     {
-        $existing = DeliveryOrder::where('offer_id', $offer->id)->first();
-        if ($existing) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Delivery order already exists for this offer.',
-                'data' => $existing->load('items'),
-            ]);
-        }
+        $existed = DeliveryOrder::where('offer_id', $offer->id)->exists();
 
-        $offer->load(['items', 'rfq:id,customer_reference']);
-
-        $do = DB::transaction(function () use ($offer, $request) {
-            $do = DeliveryOrder::create([
-                'do_number' => $this->nextNumber(),
-                'offer_id' => $offer->id,
-                'rfq_id' => $offer->rfq_id,
-                'customer_id' => $offer->customer_id,
-                'customer_name' => $offer->customer_name,
-                'customer_address' => $offer->customer_address,
-                'delivery_address' => $offer->customer_address, // default — staff confirms/edits
-                'customer_reference' => $offer->rfq?->customer_reference,
-                'currency' => $offer->currency,
-                'status' => 'draft',
-                'order_date' => now()->toDateString(),
-                'subtotal' => $offer->subtotal,
-                'created_by' => $request->user()?->id,
-            ]);
-
-            $sort = 0;
-            foreach ($offer->items->where('is_heading', false) as $it) {
-                $do->items()->create([
-                    'offer_item_id' => $it->id,
-                    'description' => $it->description,
-                    'code' => $it->code,
-                    'unit' => $it->unit,
-                    'qty' => $it->qty,
-                    'unit_price' => $it->unit_price,
-                    'discount_amount' => $it->discount_amount,
-                    'line_total' => $it->line_total,
-                    'sort' => $sort++,
-                ]);
-            }
-
-            $do->recalcTotals();
-
-            // The offer has become an order — mark it accepted.
-            if ($offer->status !== 'accepted') {
-                $offer->update(['status' => 'accepted']);
-            }
-
-            return $do;
-        });
+        $do = DeliveryOrder::generateFromOffer($offer, $request->user()?->id);
 
         return response()->json([
             'success' => true,
-            'message' => 'Delivery order created.',
+            'message' => $existed ? 'Delivery order already exists for this offer.' : 'Delivery order created.',
             'data' => $do->load('items'),
-        ], 201);
+        ], $existed ? 200 : 201);
     }
 
     public function update(Request $request, DeliveryOrder $deliveryOrder)
@@ -159,17 +110,5 @@ class DeliveryOrderController extends Controller
         ]);
 
         return $pdf->download(($deliveryOrder->do_number ?: 'delivery-order').'.pdf');
-    }
-
-    /** Next sequential DO number (DO-0001), computed up front. */
-    private function nextNumber(): string
-    {
-        $last = DeliveryOrder::orderByDesc('id')->value('do_number');
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = (int) $m[1] + 1;
-        }
-
-        return 'DO-'.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 }

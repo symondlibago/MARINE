@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\OfferMail;
 use App\Models\Customer;
 use App\Models\Offer;
 use App\Models\Rfq;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class OfferController extends Controller
 {
@@ -202,6 +205,34 @@ class OfferController extends Controller
         ]);
 
         return $pdf->download(($offer->offer_number ?: 'offer').'.pdf');
+    }
+
+    /** Email the quotation (with a customer acceptance magic link) to the customer. */
+    public function email(Request $request, Offer $offer)
+    {
+        $offer->load('customer:id,name,email');
+
+        $email = $offer->customer?->email;
+        if (! $email) {
+            return response()->json(['success' => false, 'message' => 'This customer has no email on file.'], 422);
+        }
+
+        if (! $offer->token) {
+            $offer->forceFill(['token' => Str::random(48)])->save();
+        }
+        $link = rtrim(config('procurement.frontend_url'), '/').'/offer/'.$offer->token;
+
+        try {
+            Mail::to($email)->send(new OfferMail($offer, $request->user(), $link));
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Email failed: '.$e->getMessage()], 500);
+        }
+
+        if ($offer->status === 'draft') {
+            $offer->update(['status' => 'sent']);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Quotation emailed to '.$email.'.']);
     }
 
     /** Next sequential offer number (OFR-0001), computed up front (independent of the row id). */

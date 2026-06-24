@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Mail\VendorQuoteRequest;
 use App\Models\Award;
 use App\Models\Quote;
+use App\Models\QuoteAttachment;
+use App\Models\QuoteItem;
 use App\Models\Rfq;
 use App\Models\RfqItem;
 use App\Models\RfqVendor;
@@ -12,6 +14,7 @@ use App\Models\Vendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class RfqController extends Controller
@@ -204,7 +207,7 @@ class RfqController extends Controller
      */
     public function compare(Rfq $rfq)
     {
-        $rfq->load(['items.award', 'quotes.vendor', 'quotes.items']);
+        $rfq->load(['items.award', 'quotes.vendor', 'quotes.items', 'quotes.attachments']);
 
         $quotes = $rfq->quotes;
         $itemCount = $rfq->items->count();
@@ -232,6 +235,11 @@ class RfqController extends Controller
                 'quoted_count' => $quoted,
                 'item_count' => $itemCount,
                 'complete' => $itemCount > 0 && $quoted === $itemCount,
+                'attachments' => $q->attachments->map(fn ($a) => [
+                    'id' => $a->id,
+                    'name' => $a->original_name,
+                    'size' => $a->size,
+                ])->values(),
             ];
         })->values();
 
@@ -289,13 +297,71 @@ class RfqController extends Controller
         ]);
     }
 
-    /** Update a quote's exchange rate (staff normalising currencies in the grid). */
+    /** Update a quote's currency and/or exchange rate (staff normalising in the grid). */
     public function updateQuoteRate(Request $request, Quote $quote)
     {
-        $data = $request->validate(['exchange_rate' => ['required', 'numeric', 'min:0']]);
-        $quote->update(['exchange_rate' => $data['exchange_rate']]);
+        $data = $request->validate([
+            'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
+            'currency' => ['sometimes', 'string', 'size:3'],
+        ]);
+
+        $update = [];
+        if (array_key_exists('exchange_rate', $data)) {
+            $update['exchange_rate'] = $data['exchange_rate'];
+        }
+        if (array_key_exists('currency', $data)) {
+            $update['currency'] = strtoupper($data['currency']);
+        }
+        if ($update) {
+            $quote->update($update);
+        }
 
         return response()->json(['success' => true, 'data' => $quote]);
+    }
+
+    /**
+     * Staff key in (or clear) a vendor's unit prices on the compare grid — used
+     * when a vendor only uploaded a file and left the price fields blank.
+     */
+    public function saveVendorPrices(Request $request, Quote $quote)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.rfq_item_id' => ['required', 'integer'],
+            'items.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
+            'items.*.remarks' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $validIds = RfqItem::where('rfq_id', $quote->rfq_id)->pluck('id');
+
+        foreach ($data['items'] as $row) {
+            if (! $validIds->contains($row['rfq_item_id'])) {
+                continue;
+            }
+            $cost = $row['unit_cost'] ?? null;
+            if ($cost === null || $cost === '') {
+                // Cleared price → drop the line.
+                QuoteItem::where('quote_id', $quote->id)->where('rfq_item_id', $row['rfq_item_id'])->delete();
+
+                continue;
+            }
+            QuoteItem::updateOrCreate(
+                ['quote_id' => $quote->id, 'rfq_item_id' => $row['rfq_item_id']],
+                ['unit_cost' => $cost, 'remarks' => $row['remarks'] ?? null]
+            );
+        }
+
+        return response()->json(['success' => true, 'message' => 'Prices saved.']);
+    }
+
+    /** Short-lived signed URL so staff can open a vendor's uploaded file (R2 is private). */
+    public function attachmentUrl(Quote $quote, QuoteAttachment $attachment)
+    {
+        abort_unless($attachment->quote_id === $quote->id, 404);
+
+        $url = Storage::disk($attachment->disk)->temporaryUrl($attachment->path, now()->addMinutes(10));
+
+        return response()->json(['success' => true, 'data' => ['url' => $url, 'name' => $attachment->original_name]]);
     }
 
     /** Save the awarded vendor + qty per line item. */

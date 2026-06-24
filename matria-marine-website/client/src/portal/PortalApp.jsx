@@ -17,8 +17,6 @@ import PurchaseOrders from "./PurchaseOrders";
 import PurchaseOrderDetail from "./PurchaseOrderDetail";
 import Reports from "./Reports";
 import Customers from "./Customers";
-import Documents from "./Documents";
-import DocumentForm from "./DocumentForm";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
 
@@ -86,9 +84,6 @@ export default function PortalApp() {
               <Route path="/purchase-orders" component={PurchaseOrders} />
               <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
               <Route path="/reports" component={Reports} />
-              <Route path="/documents" component={Documents} />
-              <Route path="/documents/new" component={DocumentForm} />
-              <Route path="/documents/:id" component={DocumentForm} />
               <Route path="/customers" component={Customers} />
               <Route>
                 <div className="p-8 text-slate-500">Portal page not found.</div>

@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, purchaseOrdersAPI, offersAPI } from "@/pages/api";
 import { fetchRates, rateToBase } from "@/lib/fx";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
+
+const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 
 export default function CompareGrid({ params }) {
   const id = params.id;
@@ -66,6 +68,20 @@ export default function CompareGrid({ params }) {
 
   const rateMutation = useMutation({
     mutationFn: ({ quoteId, rate }) => rfqsAPI.updateQuoteRate(quoteId, rate),
+    onSuccess: () => refetch(),
+    onError: (e) =>
+      toast.error(e?.response?.data?.message || `Couldn't save the rate (${e?.response?.status || "network error"}).`),
+  });
+
+  const pricesMutation = useMutation({
+    mutationFn: ({ quoteId, rfq_item_id, unit_cost }) =>
+      rfqsAPI.saveVendorPrices(quoteId, [{ rfq_item_id, unit_cost }]),
+    onSuccess: () => refetch(),
+    onError: () => toast.error("Could not save the price."),
+  });
+
+  const currencyMutation = useMutation({
+    mutationFn: ({ quoteId, currency }) => rfqsAPI.updateQuoteCurrency(quoteId, currency),
     onSuccess: () => refetch(),
   });
 
@@ -185,20 +201,71 @@ export default function CompareGrid({ params }) {
   };
   const setQty = (rfqItemId, qty) => setAwards((a) => ({ ...a, [rfqItemId]: { ...a[rfqItemId], qty_to_buy: qty } }));
 
+  // Staff key in / change a vendor's unit price for one line (esp. file-only vendors).
+  const savePrice = (vendor, row, value) => {
+    if (locked) return;
+    const current = row.cells.find((c) => c.vendor_id === vendor.vendor_id)?.unit_cost ?? null;
+    const next = value === "" ? null : Number(value);
+    if ((next ?? null) === (current ?? null)) return;
+    pricesMutation.mutate({ quoteId: vendor.quote_id, rfq_item_id: row.rfq_item_id, unit_cost: next });
+  };
+
+  // Open a vendor's uploaded file via a short-lived signed URL.
+  const openAttachment = async (quoteId, att) => {
+    try {
+      const res = await rfqsAPI.attachmentUrl(quoteId, att.id);
+      window.open(res.data.data.url, "_blank", "noopener");
+    } catch {
+      toast.error("Could not open the file.");
+    }
+  };
+
   // Pull today's live rate for one vendor (manual ↻) and save it to their quote.
   const applyLiveRate = async (vendor) => {
+    let rates;
     try {
-      const rates = await fetchRates(data.rfq.base_currency);
-      const rate = rateToBase(rates, vendor.currency);
-      if (!rate) {
-        toast.error(`No live rate available for ${vendor.currency}.`);
-        return;
-      }
-      autoFilled.current.add(vendor.quote_id);
-      rateMutation.mutate({ quoteId: vendor.quote_id, rate: Number(rate.toFixed(6)) });
-      toast.success(`${vendor.currency}→${data.rfq.base_currency} rate updated to ${rate.toFixed(4)}.`);
+      rates = await fetchRates(data.rfq.base_currency);
     } catch {
       toast.error("Could not fetch a live rate — enter it manually.");
+      return;
+    }
+    const rate = rateToBase(rates, vendor.currency);
+    if (!rate) {
+      toast.error(`No live rate available for ${vendor.currency}.`);
+      return;
+    }
+    try {
+      autoFilled.current.add(vendor.quote_id);
+      // mutateAsync so the success toast only fires once the save actually persists.
+      await rateMutation.mutateAsync({ quoteId: vendor.quote_id, rate: Number(rate.toFixed(6)) });
+      toast.success(`${vendor.currency}→${data.rfq.base_currency} rate saved: ${rate.toFixed(4)}.`);
+    } catch {
+      /* onError on the mutation already shows the reason */
+    }
+  };
+
+  // Staff correct a vendor's quote currency (e.g. file-only vendor who left it on
+  // the default) — then re-pull the live rate for the new currency.
+  const changeCurrency = async (vendor, currency) => {
+    if (locked || currency === vendor.currency) return;
+    const base = data.rfq.base_currency;
+    try {
+      await currencyMutation.mutateAsync({ quoteId: vendor.quote_id, currency });
+      autoFilled.current.add(vendor.quote_id);
+      if (currency === base) {
+        await rateMutation.mutateAsync({ quoteId: vendor.quote_id, rate: 1 });
+      } else {
+        try {
+          const rates = await fetchRates(base);
+          const rate = rateToBase(rates, currency);
+          if (rate) await rateMutation.mutateAsync({ quoteId: vendor.quote_id, rate: Number(rate.toFixed(6)) });
+        } catch {
+          /* couldn't fetch — leave the rate for manual entry */
+        }
+      }
+      toast.success(`Currency set to ${currency}.`);
+    } catch {
+      toast.error("Could not change the currency.");
     }
   };
 
@@ -216,7 +283,7 @@ export default function CompareGrid({ params }) {
         <div>
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
           <p className="text-sm text-slate-500">
-            Base {data.rfq.base_currency}. Vendor prices are converted at today's live FX rate (edit the rate or click ↻ to override). Lowest converted price per row is highlighted; click a cell to award that line.
+            Base {data.rfq.base_currency}. Type a vendor's unit price in its cell (e.g. for a vendor who only uploaded a file 📎); prices convert at today's live FX rate (edit or click ↻ to override). Click a vendor's cell to award that line.
             {locked && " (Locked)"}
           </p>
         </div>
@@ -256,7 +323,18 @@ export default function CompareGrid({ params }) {
                       </span>
                     </div>
                     <div className="mt-1 flex items-center gap-1 text-[10px] font-normal normal-case text-slate-400">
-                      {v.currency} · ×
+                      <select
+                        value={v.currency}
+                        disabled={locked}
+                        onChange={(e) => changeCurrency(v, e.target.value)}
+                        title="Vendor quote currency — change if the vendor used the wrong one"
+                        className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[10px] font-medium uppercase text-[#28364b] disabled:bg-slate-50"
+                      >
+                        {CURRENCIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                      ×
                       <input
                         type="number"
                         step="0.0001"
@@ -281,6 +359,22 @@ export default function CompareGrid({ params }) {
                         </button>
                       )}
                     </div>
+                    {v.attachments?.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {v.attachments.map((a) => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => openAttachment(v.quote_id, a)}
+                            title={`Open ${a.name}`}
+                            className="inline-flex max-w-[150px] items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium normal-case text-slate-600 transition-colors hover:bg-slate-200"
+                          >
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{a.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </th>
                 ))}
                 <th className="px-3 py-3 text-right font-semibold">Buy qty</th>
@@ -304,24 +398,36 @@ export default function CompareGrid({ params }) {
                         <td
                           key={v.vendor_id}
                           onClick={() => pickAward(row, cell)}
-                          className={`px-3 py-3 transition-colors ${cell?.quoted ? "cursor-pointer" : "text-slate-300"} ${
-                            isAwarded ? "bg-[#28364b] text-white" : isLowest ? "bg-green-50" : ""
+                          title={cell?.quoted && !locked ? (isAwarded ? "Awarded to this vendor" : "Click to award this line") : undefined}
+                          className={`px-3 py-3 align-top transition-colors ${cell?.quoted && !locked ? "cursor-pointer" : ""} ${
+                            isAwarded ? "bg-[#28364b]" : isLowest ? "bg-green-50/60 hover:bg-green-100/70" : "hover:bg-slate-50"
                           }`}
                         >
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.0001"
+                              min="0"
+                              key={`p-${v.quote_id}-${row.rfq_item_id}-${cell?.unit_cost ?? ""}`}
+                              defaultValue={cell?.quoted ? cell.unit_cost : ""}
+                              disabled={locked}
+                              placeholder="—"
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => savePrice(v, row, e.target.value)}
+                              className="w-20 rounded border border-slate-200 bg-white px-1.5 py-1 text-sm text-slate-800 disabled:bg-slate-50"
+                              title="Vendor unit price — staff can enter or override"
+                            />
+                            <span className={`text-[10px] ${isAwarded ? "text-slate-300" : "text-slate-400"}`}>{v.currency}</span>
+                          </div>
                           {cell?.quoted ? (
-                            <div>
-                              <div className="font-medium">
-                                {cell.unit_cost.toFixed(2)} <span className={`text-xs ${isAwarded ? "text-slate-200" : "text-slate-400"}`}>{cell.currency}</span>
-                              </div>
-                              <div className={`text-xs ${isAwarded ? "text-slate-200" : "text-slate-400"}`}>
-                                = {cell.base_cost.toFixed(2)} {data.rfq.base_currency}
-                                {isLowest && !isAwarded && " ↓"}
-                              </div>
-                              {cell.remarks && <div className={`text-[10px] ${isAwarded ? "text-slate-300" : "text-slate-400"}`}>{cell.remarks}</div>}
+                            <div className={`mt-1 text-xs ${isAwarded ? "font-semibold text-white" : "text-slate-500"}`}>
+                              = {cell.base_cost.toFixed(2)} {data.rfq.base_currency}
+                              {isAwarded ? " ✓ awarded" : isLowest ? " ↓" : ""}
                             </div>
                           ) : (
-                            "—"
+                            <div className="mt-1 text-[10px] text-slate-400">enter a price</div>
                           )}
+                          {cell?.remarks && <div className={`mt-0.5 text-[10px] ${isAwarded ? "text-slate-300" : "text-slate-400"}`}>{cell.remarks}</div>}
                         </td>
                       );
                     })}

@@ -15,6 +15,7 @@ import { Analytics } from '@vercel/analytics/react';
 const PortalApp = lazy(() => import("@/portal/PortalApp"));
 const QuotePage = lazy(() => import("@/pages/QuotePage"));
 const PoAcceptancePage = lazy(() => import("@/pages/PoAcceptancePage"));
+const OfferAcceptancePage = lazy(() => import("@/pages/OfferAcceptancePage"));
 
 function RouteLoader() {
   return (
@@ -43,6 +44,15 @@ function Router() {
         {(params) => (
           <Suspense fallback={<RouteLoader />}>
             <PoAcceptancePage token={params.token} />
+          </Suspense>
+        )}
+      </Route>
+
+      {/* Public customer quotation acceptance page (magic link, no login). */}
+      <Route path="/offer/:token">
+        {(params) => (
+          <Suspense fallback={<RouteLoader />}>
+            <OfferAcceptancePage token={params.token} />
           </Suspense>
         )}
       </Route>

@@ -34,6 +34,7 @@ class RfqPdfController extends Controller
             'lines' => $lines,
             'currency' => $currency,
             'grandTotal' => $lines->sum('line_total'),
+            'logo' => $this->logo(),
         ]);
 
         return $pdf->download('Award-'.$rfq->reference.'-'.Str::slug($vendor->name).'.pdf');
@@ -67,8 +68,17 @@ class RfqPdfController extends Controller
             'lines' => $lines,
             'grandTotal' => $lines->sum('line_total_base'),
             'baseCurrency' => $rfq->base_currency,
+            'logo' => $this->logo(),
         ]);
 
         return $pdf->download('Quotation-'.$rfq->reference.'.pdf');
+    }
+
+    /** Matria logo as a base64 data URI for embedding in PDFs (null if missing). */
+    private function logo(): ?string
+    {
+        $path = public_path('logo.png');
+
+        return is_file($path) ? 'data:image/png;base64,'.base64_encode(file_get_contents($path)) : null;
     }
 }

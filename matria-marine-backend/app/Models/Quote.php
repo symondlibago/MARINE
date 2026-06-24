@@ -39,4 +39,9 @@ class Quote extends Model
     {
         return $this->hasMany(QuoteItem::class);
     }
+
+    public function attachments()
+    {
+        return $this->hasMany(QuoteAttachment::class);
+    }
 }

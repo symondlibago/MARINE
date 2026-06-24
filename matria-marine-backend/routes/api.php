@@ -7,6 +7,7 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MmsUpdateController;
 use App\Http\Controllers\QuoteController;
 use App\Http\Controllers\PublicPurchaseOrderController;
+use App\Http\Controllers\PublicOfferController;
 use App\Http\Controllers\VendorController;
 use App\Http\Controllers\RfqController;
 use App\Http\Controllers\RfqPdfController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\FxController;
 
 /*
 |--------------------------------------------------------------------------
@@ -32,11 +34,18 @@ Route::get('/updates', [MmsUpdateController::class, 'index']);
 // single vendor's view of one enquiry via rfq_vendors.
 Route::get('/quote/{token}', [QuoteController::class, 'show'])->where('token', '[A-Za-z0-9\-_]+');
 Route::post('/quote/{token}', [QuoteController::class, 'submit'])->where('token', '[A-Za-z0-9\-_]+');
+Route::post('/quote/{token}/attachments', [QuoteController::class, 'uploadAttachment'])->where('token', '[A-Za-z0-9\-_]+');
+Route::delete('/quote/{token}/attachments/{attachment}', [QuoteController::class, 'deleteAttachment'])->where('token', '[A-Za-z0-9\-_]+');
 
 // Public purchase-order acceptance (magic link — NO auth). The {token} resolves
 // to one vendor's view of a single purchase order so they can confirm it.
 Route::get('/po/{token}', [PublicPurchaseOrderController::class, 'show'])->where('token', '[A-Za-z0-9\-_]+');
 Route::post('/po/{token}/accept', [PublicPurchaseOrderController::class, 'accept'])->where('token', '[A-Za-z0-9\-_]+');
+
+// Public customer offer (quotation) acceptance (magic link — NO auth). The {token}
+// resolves to one customer's view of a quotation so they can review and accept it.
+Route::get('/offer/{token}', [PublicOfferController::class, 'show'])->where('token', '[A-Za-z0-9\-_]+');
+Route::post('/offer/{token}/accept', [PublicOfferController::class, 'accept'])->where('token', '[A-Za-z0-9\-_]+');
 
 // Protected Routes
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -76,6 +85,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
             ]);
         });
 
+        // Live FX rates (vendor currency -> enquiry currency on the compare grid)
+        Route::get('fx-rates', [FxController::class, 'rates']);
+
         // Phase 1 masters
         Route::apiResource('vendors', VendorController::class);
 
@@ -88,6 +100,8 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::post('rfqs/{rfq}/finish', [RfqController::class, 'finish']);
         Route::post('rfqs/{rfq}/reopen', [RfqController::class, 'reopen']);
         Route::patch('quotes/{quote}', [RfqController::class, 'updateQuoteRate']);
+        Route::patch('quotes/{quote}/prices', [RfqController::class, 'saveVendorPrices']);
+        Route::get('quotes/{quote}/attachments/{attachment}', [RfqController::class, 'attachmentUrl']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
         Route::get('rfqs/{rfq}/quotation-pdf', [RfqPdfController::class, 'summary']);
 
@@ -104,6 +118,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::post('rfqs/{rfq}/offer', [OfferController::class, 'generate']);
         Route::get('offers', [OfferController::class, 'index']);
         Route::get('offers/{offer}/pdf', [OfferController::class, 'pdf']);
+        Route::post('offers/{offer}/email', [OfferController::class, 'email']);
         Route::get('offers/{offer}', [OfferController::class, 'show']);
         Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
         Route::delete('offers/{offer}', [OfferController::class, 'destroy']);

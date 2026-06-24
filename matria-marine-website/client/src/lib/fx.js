@@ -1,11 +1,11 @@
-// Live foreign-exchange rates (free, no API key required).
+// Live foreign-exchange rates.
 //
-// open.er-api.com returns the value of 1 unit of the requested base currency in
-// every other currency, refreshed once a day. We fetch in the browser (not from
-// PHP) so it works even when the server's outbound TLS is intercepted, and we
-// cache per base-currency per day in localStorage to avoid repeat calls.
+// The rate is fetched by OUR backend (see FxController), not the browser, so it
+// keeps working even when the machine intercepts outbound TLS. The response is
+// { base, rates, date } where rates[X] = units of X per 1 base. We also cache it
+// per base-currency per day in localStorage to avoid repeat calls.
 
-const ENDPOINT = "https://open.er-api.com/v6/latest";
+import { fxAPI } from "@/pages/api";
 
 const memo = new Map(); // base -> { base, rates, date }
 
@@ -30,13 +30,13 @@ export async function fetchRates(base) {
     /* ignore corrupt cache */
   }
 
-  const res = await fetch(`${ENDPOINT}/${base}`);
-  const json = await res.json();
-  if (json.result !== "success" || !json.rates) {
+  const res = await fxAPI.rates(base);
+  const data = res.data?.data;
+  if (!data?.rates) {
     throw new Error("FX lookup failed");
   }
 
-  const out = { base, rates: json.rates, date: json.time_last_update_utc || "" };
+  const out = { base, rates: data.rates, date: data.date || "" };
   memo.set(base, out);
   try {
     localStorage.setItem(dayKey(base), JSON.stringify(out));

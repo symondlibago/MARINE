@@ -26,7 +26,7 @@ export default function Customers() {
       ]}
       fields={[
         { name: "name", label: "Customer name", required: true },
-        { name: "address", label: "Billing address (shown on documents)", type: "textarea" },
+        { name: "address", label: "Address (shown on quotations & orders)", type: "textarea" },
         { name: "email", label: "Email", type: "email" },
         { name: "phone", label: "Phone" },
         { name: "currency", label: "Default currency", type: "select", options: CURRENCIES, required: true },

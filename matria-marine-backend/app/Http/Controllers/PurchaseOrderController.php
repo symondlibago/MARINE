@@ -233,7 +233,10 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder->load(['items', 'vendor']);
 
-        return Pdf::loadView('pdf.purchase-order', ['po' => $purchaseOrder])
+        $logoPath = public_path('logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
+
+        return Pdf::loadView('pdf.purchase-order', ['po' => $purchaseOrder, 'logo' => $logo])
             ->download(($purchaseOrder->po_number ?: 'PO').'.pdf');
     }
 

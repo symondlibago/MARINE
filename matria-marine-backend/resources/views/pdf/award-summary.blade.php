@@ -17,8 +17,17 @@
 </head>
 <body>
     <div class="header">
-        <h1>Quotation — {{ $rfq->reference }}</h1>
-        <div class="muted">Matria Marine Services</div>
+        <table style="width:100%;">
+            <tr>
+                <td style="vertical-align:middle;">
+                    <h1>Quotation — {{ $rfq->reference }}</h1>
+                    <div class="muted">Matria Marine Services</div>
+                </td>
+                <td style="text-align:right; vertical-align:middle; width:90px;">
+                    @if($logo)<img src="{{ $logo }}" style="height:54px;">@endif
+                </td>
+            </tr>
+        </table>
     </div>
 
     <table class="meta">
