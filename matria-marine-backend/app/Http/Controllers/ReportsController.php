@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Award;
-use App\Models\PurchaseInvoice;
 use App\Models\PurchaseOrder;
 use App\Models\Quote;
 use App\Models\Rfq;
@@ -27,12 +26,10 @@ class ReportsController extends Controller
         return strtoupper(config('procurement.base_currency', 'USD'));
     }
 
-    /** Amount of a PO/invoice converted to its base currency. */
+    /** Amount of a PO converted to its base currency. */
     private function docBase($doc): float
     {
-        $amount = $doc instanceof PurchaseOrder ? $doc->subtotal : $doc->total;
-
-        return (float) $amount * (float) $doc->exchange_rate;
+        return (float) $doc->subtotal * (float) $doc->exchange_rate;
     }
 
     /** Spend overview: ordered vs invoiced, by vendor, by vessel, monthly trend. */
@@ -42,11 +39,6 @@ class ReportsController extends Controller
 
         $pos = PurchaseOrder::with(['vendor:id,name', 'rfq:id,ship_name'])
             ->where('status', '!=', 'cancelled')
-            ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
-            ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
-            ->get();
-
-        $invs = PurchaseInvoice::where('status', '!=', 'cancelled')
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
             ->get();
@@ -69,16 +61,14 @@ class ReportsController extends Controller
             ->map(fn ($g, $m) => ['month' => $m, 'ordered' => round($g->sum($poBase), 2)])
             ->sortKeys()->values();
 
-        $multiBase = $pos->pluck('base_currency')->merge($invs->pluck('base_currency'))->filter()->unique()->count() > 1;
+        $multiBase = $pos->pluck('base_currency')->filter()->unique()->count() > 1;
 
         return response()->json(['success' => true, 'data' => [
             'base_currency' => $this->baseCurrency(),
             'multi_base' => $multiBase,
             'totals' => [
                 'ordered' => round($pos->sum($poBase), 2),
-                'invoiced' => round($invs->sum(fn (PurchaseInvoice $i) => $this->docBase($i)), 2),
                 'po_count' => $pos->count(),
-                'invoice_count' => $invs->count(),
             ],
             'by_vendor' => $byVendor,
             'by_vessel' => $byVessel,
@@ -113,7 +103,6 @@ class ReportsController extends Controller
 
             return [
                 'vendor' => $v->name,
-                'nav_code' => $v->nav_code,
                 'sent' => $sent,
                 'quoted' => $quoted,
                 'response_rate' => $sent ? (int) round($quoted / $sent * 100) : null,
@@ -137,7 +126,7 @@ class ReportsController extends Controller
         [$from, $to] = $this->range($request);
 
         $rfqs = Rfq::withCount(['rfqVendors', 'quotes'])
-            ->with(['items.award', 'purchaseOrders', 'purchaseInvoices'])
+            ->with(['items.award', 'purchaseOrders'])
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
             ->get();
@@ -148,18 +137,15 @@ class ReportsController extends Controller
             ['stage' => 'Quoted', 'count' => $rfqs->filter(fn ($r) => $r->quotes_count > 0)->count()],
             ['stage' => 'Awarded', 'count' => $rfqs->filter(fn ($r) => $r->items->contains(fn ($i) => $i->award))->count()],
             ['stage' => 'Ordered', 'count' => $rfqs->filter(fn ($r) => $r->purchaseOrders->isNotEmpty())->count()],
-            ['stage' => 'Invoiced', 'count' => $rfqs->filter(fn ($r) => $r->purchaseInvoices->isNotEmpty())->count()],
         ];
 
         // Aging reflects currently-open items (not date-filtered).
         $openPos = PurchaseOrder::where('status', 'issued')->get();
-        $openInvs = PurchaseInvoice::whereIn('status', ['draft', 'approved'])->get();
 
         return response()->json(['success' => true, 'data' => [
             'base_currency' => $this->baseCurrency(),
             'funnel' => $funnel,
             'aging_pos' => $this->ageBuckets($openPos, fn ($p) => $p->issued_date ?? $p->created_at),
-            'aging_invoices' => $this->ageBuckets($openInvs, fn ($i) => $i->invoice_date ?? $i->created_at),
             'savings' => $this->savings($from, $to),
         ]]);
     }

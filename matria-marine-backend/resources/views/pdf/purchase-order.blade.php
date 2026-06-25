@@ -18,8 +18,17 @@
 </head>
 <body>
     <div class="header">
-        <h1>Purchase Order — {{ $po->po_number }}</h1>
-        <div class="muted">Matria Marine Services</div>
+        <table style="width:100%;">
+            <tr>
+                <td style="vertical-align:middle;">
+                    <h1>Purchase Order — {{ $po->po_number }}</h1>
+                    <div class="muted">Matria Marine Services</div>
+                </td>
+                <td style="text-align:right; vertical-align:middle; width:90px;">
+                    @if($logo)<img src="{{ $logo }}" style="height:54px;">@endif
+                </td>
+            </tr>
+        </table>
     </div>
 
     <table class="cols">
@@ -39,6 +48,7 @@
                 <strong>Expected:</strong> {{ $po->expected_date ? $po->expected_date->format('d M Y') : '—' }}<br>
                 <strong>Vessel:</strong> {{ $po->ship_name ?: '—' }}<br>
                 <strong>Delivery port:</strong> {{ $po->delivery_port ?: '—' }}<br>
+                @if($po->delivery_address)<strong>Deliver to:</strong> {{ $po->delivery_address }}<br>@endif
                 <strong>Currency:</strong> {{ $po->currency }}
             </td>
         </tr>

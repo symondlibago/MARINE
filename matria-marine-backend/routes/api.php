@@ -7,14 +7,17 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MmsUpdateController;
 use App\Http\Controllers\QuoteController;
 use App\Http\Controllers\PublicPurchaseOrderController;
+use App\Http\Controllers\PublicOfferController;
 use App\Http\Controllers\VendorController;
 use App\Http\Controllers\RfqController;
 use App\Http\Controllers\RfqPdfController;
 use App\Http\Controllers\PurchaseOrderController;
-use App\Http\Controllers\PurchaseInvoiceController;
+use App\Http\Controllers\OfferController;
+use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\FxController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,11 +34,18 @@ Route::get('/updates', [MmsUpdateController::class, 'index']);
 // single vendor's view of one enquiry via rfq_vendors.
 Route::get('/quote/{token}', [QuoteController::class, 'show'])->where('token', '[A-Za-z0-9\-_]+');
 Route::post('/quote/{token}', [QuoteController::class, 'submit'])->where('token', '[A-Za-z0-9\-_]+');
+Route::post('/quote/{token}/attachments', [QuoteController::class, 'uploadAttachment'])->where('token', '[A-Za-z0-9\-_]+');
+Route::delete('/quote/{token}/attachments/{attachment}', [QuoteController::class, 'deleteAttachment'])->where('token', '[A-Za-z0-9\-_]+');
 
 // Public purchase-order acceptance (magic link — NO auth). The {token} resolves
 // to one vendor's view of a single purchase order so they can confirm it.
 Route::get('/po/{token}', [PublicPurchaseOrderController::class, 'show'])->where('token', '[A-Za-z0-9\-_]+');
 Route::post('/po/{token}/accept', [PublicPurchaseOrderController::class, 'accept'])->where('token', '[A-Za-z0-9\-_]+');
+
+// Public customer offer (quotation) acceptance (magic link — NO auth). The {token}
+// resolves to one customer's view of a quotation so they can review and accept it.
+Route::get('/offer/{token}', [PublicOfferController::class, 'show'])->where('token', '[A-Za-z0-9\-_]+');
+Route::post('/offer/{token}/accept', [PublicOfferController::class, 'accept'])->where('token', '[A-Za-z0-9\-_]+');
 
 // Protected Routes
 Route::middleware(['auth:sanctum'])->group(function () {
@@ -75,6 +85,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
             ]);
         });
 
+        // Live FX rates (vendor currency -> enquiry currency on the compare grid)
+        Route::get('fx-rates', [FxController::class, 'rates']);
+
         // Phase 1 masters
         Route::apiResource('vendors', VendorController::class);
 
@@ -87,6 +100,8 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::post('rfqs/{rfq}/finish', [RfqController::class, 'finish']);
         Route::post('rfqs/{rfq}/reopen', [RfqController::class, 'reopen']);
         Route::patch('quotes/{quote}', [RfqController::class, 'updateQuoteRate']);
+        Route::patch('quotes/{quote}/prices', [RfqController::class, 'saveVendorPrices']);
+        Route::get('quotes/{quote}/attachments/{attachment}', [RfqController::class, 'attachmentUrl']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
         Route::get('rfqs/{rfq}/quotation-pdf', [RfqPdfController::class, 'summary']);
 
@@ -99,16 +114,24 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::patch('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'update']);
         Route::delete('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'destroy']);
 
-        // Phase 4 — purchase invoices + Navision/Business Central CSV export
-        Route::post('purchase-orders/{purchaseOrder}/invoice', [PurchaseInvoiceController::class, 'createFromPo']);
-        Route::post('purchase-invoices/export', [PurchaseInvoiceController::class, 'export']);
-        Route::get('purchase-invoices', [PurchaseInvoiceController::class, 'index']);
-        Route::post('purchase-invoices', [PurchaseInvoiceController::class, 'store']);
-        Route::get('purchase-invoices/{purchaseInvoice}', [PurchaseInvoiceController::class, 'show']);
-        Route::patch('purchase-invoices/{purchaseInvoice}', [PurchaseInvoiceController::class, 'update']);
-        Route::delete('purchase-invoices/{purchaseInvoice}', [PurchaseInvoiceController::class, 'destroy']);
+        // Offers — customer quotation with markup (built from an enquiry's awards)
+        Route::post('rfqs/{rfq}/offer', [OfferController::class, 'generate']);
+        Route::get('offers', [OfferController::class, 'index']);
+        Route::get('offers/{offer}/pdf', [OfferController::class, 'pdf']);
+        Route::post('offers/{offer}/email', [OfferController::class, 'email']);
+        Route::get('offers/{offer}', [OfferController::class, 'show']);
+        Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
+        Route::delete('offers/{offer}', [OfferController::class, 'destroy']);
 
-        // Phase 5 — reports / analytics
+        // Delivery Orders — customer order + delivery address (from an accepted offer)
+        Route::post('offers/{offer}/delivery-order', [DeliveryOrderController::class, 'generate']);
+        Route::get('delivery-orders', [DeliveryOrderController::class, 'index']);
+        Route::get('delivery-orders/{deliveryOrder}/pdf', [DeliveryOrderController::class, 'pdf']);
+        Route::get('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'show']);
+        Route::match(['put', 'patch'], 'delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'update']);
+        Route::delete('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'destroy']);
+
+        // Reports / analytics
         Route::get('reports/spend', [ReportsController::class, 'spend']);
         Route::get('reports/vendors', [ReportsController::class, 'vendors']);
         Route::get('reports/pipeline', [ReportsController::class, 'pipeline']);

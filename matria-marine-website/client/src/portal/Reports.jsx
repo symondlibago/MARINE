@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, Users, GitBranch, Download, ShoppingCart, Receipt, FileText, FileCheck, PiggyBank } from "lucide-react";
+import { TrendingUp, Users, GitBranch, Download, ShoppingCart, FileText, PiggyBank } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { reportsAPI } from "@/pages/api";
 import { PageLoader } from "./ui/Loading";
@@ -126,11 +126,9 @@ function SpendReport({ range }) {
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Totals span multiple base currencies; shown converted to {base_currency}-equivalent.</p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Kpi label={`Ordered · ${base_currency}`} value={money(totals.ordered)} icon={ShoppingCart} />
-        <Kpi label={`Invoiced · ${base_currency}`} value={money(totals.invoiced)} icon={Receipt} />
         <Kpi label="Purchase orders" value={totals.po_count} icon={FileText} />
-        <Kpi label="Invoices" value={totals.invoice_count} icon={FileCheck} />
       </div>
 
       <Card title="Monthly ordered spend">
@@ -209,7 +207,6 @@ function VendorScorecard({ range }) {
               <tr key={r.vendor} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-2 py-2.5">
                   <div className="font-medium text-[#28364b]">{r.vendor}</div>
-                  {r.nav_code && <div className="text-[10px] text-slate-400">{r.nav_code}</div>}
                 </td>
                 <td className="px-2 py-2.5 text-right text-slate-600">{r.sent}</td>
                 <td className="px-2 py-2.5 text-right text-slate-600">{r.quoted}</td>
@@ -259,7 +256,7 @@ function PipelineReport({ range }) {
   if (isLoading) return <PageLoader />;
   if (!data) return null;
 
-  const { funnel, aging_pos, aging_invoices, savings, base_currency } = data;
+  const { funnel, aging_pos, savings, base_currency } = data;
   const first = funnel[0]?.count || 0;
 
   return (
@@ -301,10 +298,7 @@ function PipelineReport({ range }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <AgingCard title="Open purchase orders by age" buckets={aging_pos} />
-        <AgingCard title="Open invoices by age" buckets={aging_invoices} />
-      </div>
+      <AgingCard title="Open purchase orders by age" buckets={aging_pos} />
     </div>
   );
 }

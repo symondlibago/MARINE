@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Anchor, Loader2, CheckCircle } from "lucide-react";
+import { Anchor, Loader2, CheckCircle, UploadCloud, Paperclip, X } from "lucide-react";
 import { quoteAPI } from "@/pages/api";
 import Select from "@/portal/ui/Select";
+
+const prettySize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 
@@ -40,6 +42,11 @@ export default function QuotePage({ token }) {
   const [currency, setCurrency] = useState("USD");
   const [lines, setLines] = useState({}); // rfq_item_id -> { unit_cost, remarks }
   const [done, setDone] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!data) return;
@@ -49,7 +56,34 @@ export default function QuotePage({ token }) {
       init[qi.rfq_item_id] = { unit_cost: qi.unit_cost, remarks: qi.remarks || "" };
     });
     setLines(init);
+    setFiles(data.attachments || []);
   }, [data]);
+
+  const uploadFiles = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploadError("");
+    const fd = new FormData();
+    Array.from(fileList).forEach((f) => fd.append("files[]", f));
+    setUploading(true);
+    try {
+      const res = await quoteAPI.uploadFiles(token, fd);
+      setFiles(res.data.data || []);
+    } catch (e) {
+      setUploadError(e?.response?.data?.message || "Upload failed. Use PDF, image, Word, Excel or CSV (max 10 MB each).");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeFile = async (id) => {
+    try {
+      const res = await quoteAPI.deleteFile(token, id);
+      setFiles(res.data.data || []);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const submit = useMutation({
     mutationFn: () => {
@@ -104,6 +138,15 @@ export default function QuotePage({ token }) {
           <div><span className="text-slate-400">Vessel:</span> <span className="font-medium text-[#28364b]">{data.rfq?.ship_name || "—"}</span></div>
         </div>
 
+        {data.rfq?.requirements?.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Requirements:</span>
+            {data.rfq.requirements.map((req) => (
+              <span key={req} className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-[#28364b] ring-1 ring-slate-200">{req}</span>
+            ))}
+          </div>
+        )}
+
         {data.submitted && (
           <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
             You have already submitted a quotation. Submitting again will update your prices.
@@ -155,7 +198,58 @@ export default function QuotePage({ token }) {
           </table>
         </div>
 
-        <p className="text-xs text-slate-400">Leave a price blank if you cannot supply that item.</p>
+        {/* File uploads — vendors can attach their own quotation / datasheets / certificates */}
+        <div className="space-y-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-[#28364b]">Attach files (optional)</label>
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); }}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${
+              dragOver ? "border-[#28364b] bg-slate-50" : "border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx,.csv,.txt"
+              onChange={(e) => uploadFiles(e.target.files)}
+            />
+            {uploading ? (
+              <span className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</span>
+            ) : (
+              <>
+                <UploadCloud className="h-6 w-6 text-slate-400" />
+                <span className="text-sm font-medium text-[#28364b]">Drag &amp; drop, or click to browse</span>
+                <span className="text-xs text-slate-400">Your quotation, datasheets, certificates — PDF, image, Word, Excel, CSV (max 10 MB each)</span>
+              </>
+            )}
+          </div>
+          {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
+          {files.length > 0 && (
+            <ul className="space-y-1.5">
+              {files.map((f) => (
+                <li key={f.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <span className="flex min-w-0 items-center gap-2 text-[#28364b]">
+                    <Paperclip className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="truncate">{f.name}</span>
+                    <span className="shrink-0 text-xs text-slate-400">{prettySize(f.size)}</span>
+                  </span>
+                  <button type="button" onClick={() => removeFile(f.id)} className="shrink-0 text-slate-400 hover:text-red-600" title="Remove">
+                    <X className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Leave a price blank if you cannot supply that item. You can also just <span className="font-medium text-slate-500">attach your quotation file above</span> and submit — Matria will enter the prices for you.
+        </p>
 
         <div className="flex justify-end">
           <button

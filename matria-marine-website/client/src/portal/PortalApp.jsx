@@ -9,14 +9,14 @@ import Enquiries from "./Enquiries";
 import EnquiryForm from "./EnquiryForm";
 import EnquiryDetail from "./EnquiryDetail";
 import CompareGrid from "./CompareGrid";
+import Offers from "./Offers";
+import OfferPage from "./OfferPage";
+import DeliveryOrders from "./DeliveryOrders";
+import DeliveryOrderPage from "./DeliveryOrderPage";
 import PurchaseOrders from "./PurchaseOrders";
 import PurchaseOrderDetail from "./PurchaseOrderDetail";
-import PurchaseInvoices from "./PurchaseInvoices";
-import PurchaseInvoiceDetail from "./PurchaseInvoiceDetail";
 import Reports from "./Reports";
 import Customers from "./Customers";
-import Documents from "./Documents";
-import DocumentForm from "./DocumentForm";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
 
@@ -77,14 +77,13 @@ export default function PortalApp() {
               <Route path="/enquiries/:id/edit" component={EnquiryForm} />
               <Route path="/enquiries/:id/compare" component={CompareGrid} />
               <Route path="/enquiries/:id" component={EnquiryDetail} />
+              <Route path="/offers" component={Offers} />
+              <Route path="/offers/:id" component={OfferPage} />
+              <Route path="/delivery-orders" component={DeliveryOrders} />
+              <Route path="/delivery-orders/:id" component={DeliveryOrderPage} />
               <Route path="/purchase-orders" component={PurchaseOrders} />
               <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
-              <Route path="/invoices" component={PurchaseInvoices} />
-              <Route path="/invoices/:id" component={PurchaseInvoiceDetail} />
               <Route path="/reports" component={Reports} />
-              <Route path="/documents" component={Documents} />
-              <Route path="/documents/new" component={DocumentForm} />
-              <Route path="/documents/:id" component={DocumentForm} />
               <Route path="/customers" component={Customers} />
               <Route>
                 <div className="p-8 text-slate-500">Portal page not found.</div>

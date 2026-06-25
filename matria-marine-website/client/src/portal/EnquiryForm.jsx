@@ -2,15 +2,35 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { motion } from "framer-motion";
-import { Plus, Trash2, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { rfqsAPI } from "@/pages/api";
+import { rfqsAPI, customersAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import Combobox from "./ui/Combobox";
 import DatePicker from "./ui/DatePicker";
 import { Spinner } from "./ui/Loading";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
+
+const PRIORITIES = [
+  { value: "low", label: "Low" },
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+  { value: "urgent", label: "Urgent" },
+];
+
+// Sourcing requirement tags. These ARE shown to vendors so they quote correctly.
+const REQUIREMENTS = [
+  "Genuine spares only",
+  "IHM relevant",
+  "PSD certificate",
+  "MSDS approval",
+  "Technical (TDS) file",
+  "Type Approval / Class certificate",
+  "SDOC required",
+  "EU MED / Wheelmark",
+];
+
 const input =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
 // Same look, but no w-full — so flex sizing (w-24) is respected in the line-item row.
@@ -21,6 +41,10 @@ export default function EnquiryForm({ params }) {
   const editId = params?.id;
   const [, setLocation] = useLocation();
   const [header, setHeader] = useState({
+    customer_id: "",
+    customer_reference: "",
+    priority: "normal",
+    requirements: [],
     ship_name: "",
     requested_by: "",
     delivery_port: "",
@@ -29,6 +53,11 @@ export default function EnquiryForm({ params }) {
     notes: "",
   });
   const [items, setItems] = useState([{ description: "", qty: "", unit: "" }]);
+
+  const { data: customers } = useQuery({
+    queryKey: ["customers"],
+    queryFn: async () => (await customersAPI.list()).data.data,
+  });
 
   // When editing, load the existing enquiry and prefill (items keep their id).
   const { data: existing } = useQuery({
@@ -40,6 +69,10 @@ export default function EnquiryForm({ params }) {
   useEffect(() => {
     if (!existing) return;
     setHeader({
+      customer_id: existing.customer_id ? String(existing.customer_id) : "",
+      customer_reference: existing.customer_reference || "",
+      priority: existing.priority || "normal",
+      requirements: Array.isArray(existing.requirements) ? existing.requirements : [],
       ship_name: existing.ship_name || "",
       requested_by: existing.requested_by || "",
       delivery_port: existing.delivery_port || "",
@@ -57,14 +90,25 @@ export default function EnquiryForm({ params }) {
   });
 
   const setH = (k, v) => setHeader((h) => ({ ...h, [k]: v }));
+  const toggleReq = (req) =>
+    setHeader((h) => ({
+      ...h,
+      requirements: h.requirements.includes(req) ? h.requirements.filter((r) => r !== req) : [...h.requirements, req],
+    }));
   const setItem = (i, k, v) => setItems((its) => its.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   const addItem = () => setItems((its) => [...its, { description: "", qty: "", unit: "" }]);
   const removeItem = (i) => setItems((its) => its.filter((_, idx) => idx !== i));
+
+  const customerOptions = [
+    { value: "", label: "— Select customer —" },
+    ...(customers || []).map((c) => ({ value: String(c.id), label: c.name })),
+  ];
 
   const save = useMutation({
     mutationFn: () => {
       const payload = {
         ...header,
+        customer_id: header.customer_id ? Number(header.customer_id) : null,
         received_date: header.received_date || null,
         items: items
           .filter((it) => it.description.trim())
@@ -99,14 +143,23 @@ export default function EnquiryForm({ params }) {
 
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Customer">
+            <Select value={header.customer_id} onChange={(v) => setH("customer_id", v)} options={customerOptions} />
+          </Field>
+          <Field label="Customer reference">
+            <input className={input} value={header.customer_reference} onChange={(e) => setH("customer_reference", e.target.value)} placeholder="Their PO / ref no." />
+          </Field>
+          <Field label="Priority">
+            <Select value={header.priority} onChange={(v) => setH("priority", v)} options={PRIORITIES} />
+          </Field>
           <Field label="Ship / Vessel">
             <input className={input} value={header.ship_name} onChange={(e) => setH("ship_name", e.target.value)} />
           </Field>
-          <Field label="Requested by">
-            <input className={input} value={header.requested_by} onChange={(e) => setH("requested_by", e.target.value)} />
-          </Field>
           <Field label="Delivery port">
             <input className={input} value={header.delivery_port} onChange={(e) => setH("delivery_port", e.target.value)} />
+          </Field>
+          <Field label="Requested by">
+            <input className={input} value={header.requested_by} onChange={(e) => setH("requested_by", e.target.value)} />
           </Field>
           <Field label="Received date">
             <DatePicker value={header.received_date} onChange={(v) => setH("received_date", v)} />
@@ -114,9 +167,39 @@ export default function EnquiryForm({ params }) {
           <Field label="Base currency *">
             <Select value={header.base_currency} onChange={(v) => setH("base_currency", v)} options={CURRENCIES} />
           </Field>
-          <Field label="Notes">
+          <Field label="Notes (internal)">
             <input className={input} value={header.notes} onChange={(e) => setH("notes", e.target.value)} />
           </Field>
+        </div>
+      </div>
+
+      {/* Requirements — shown to vendors */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Requirements</h2>
+            <p className="text-xs text-slate-400">Tap to add. These are shown to vendors so they quote correctly.</p>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+            <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Customer is never shown to vendors
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {REQUIREMENTS.map((req) => {
+            const on = header.requirements.includes(req);
+            return (
+              <button
+                type="button"
+                key={req}
+                onClick={() => toggleReq(req)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  on ? "border-[#28364b] bg-[#28364b] text-white" : "border-slate-200 text-slate-600 hover:border-[#28364b] hover:text-[#28364b]"
+                }`}
+              >
+                {req}
+              </button>
+            );
+          })}
         </div>
       </div>
 

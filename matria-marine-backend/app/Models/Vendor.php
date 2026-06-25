@@ -16,7 +16,6 @@ class Vendor extends Model
         'phone',
         'address',
         'currency',
-        'nav_code',
         'notes',
         'is_active',
     ];
@@ -28,10 +27,5 @@ class Vendor extends Model
     public function purchaseOrders()
     {
         return $this->hasMany(PurchaseOrder::class);
-    }
-
-    public function purchaseInvoices()
-    {
-        return $this->hasMany(PurchaseInvoice::class);
     }
 }

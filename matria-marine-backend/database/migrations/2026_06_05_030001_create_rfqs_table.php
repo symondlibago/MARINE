@@ -11,6 +11,11 @@ return new class extends Migration
         Schema::create('rfqs', function (Blueprint $table) {
             $table->id();
             $table->string('reference')->nullable()->unique();   // e.g. RFQ-0001
+            // Customer this enquiry is for — INTERNAL ONLY, never exposed to vendors.
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
+            $table->string('customer_reference')->nullable();    // customer's own ref / PO number
+            $table->string('priority')->default('normal');       // low|normal|high|urgent
+            $table->json('requirements')->nullable();            // sourcing tags shown to vendors
             $table->string('ship_name')->nullable();
             $table->string('requested_by')->nullable();          // free-text requester / contact
             $table->string('delivery_port')->nullable();

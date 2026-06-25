@@ -56,9 +56,29 @@ return [
             'throw' => true,
             
             // ADD THESE LINES:
-            'scheme'  => 'https', 
+            'scheme'  => 'https',
             'http'    => [
                 'verify' => false, // <--- This forces the bypass
+            ],
+        ],
+
+        // Cloudflare R2 (S3-compatible) — vendor uploads, certificates, etc.
+        'r2' => [
+            'driver' => 's3',
+            'key' => env('R2_ACCESS_KEY_ID'),
+            'secret' => env('R2_SECRET_ACCESS_KEY'),
+            'region' => env('R2_DEFAULT_REGION', 'auto'),
+            'bucket' => env('R2_BUCKET'),
+            'endpoint' => env('R2_URL'),
+            'use_path_style_endpoint' => env('R2_USE_PATH_STYLE', false),
+            'visibility' => 'private',   // vendor files are never public
+            'throw' => true,
+            'scheme' => 'https',
+            'http' => [
+                // Dev machines here sit behind a TLS-intercepting proxy (Norton);
+                // only verify certificates in production. (Must use env() here —
+                // app()->environment() isn't available yet while config loads.)
+                'verify' => env('APP_ENV', 'production') === 'production',
             ],
         ],
 

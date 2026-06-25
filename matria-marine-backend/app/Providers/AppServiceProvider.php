@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 
 class AppServiceProvider extends ServiceProvider
@@ -25,6 +26,12 @@ class AppServiceProvider extends ServiceProvider
             app('files')->link(
                 storage_path('app/public'), public_path('storage')
             );
+        }
+
+        // All outgoing mail replies go to the sales inbox, regardless of which
+        // SMTP account or staff member sent it.
+        if ($replyTo = config('mail.reply_to.address')) {
+            Mail::alwaysReplyTo($replyTo, config('mail.reply_to.name'));
         }
     }
 }

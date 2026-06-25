@@ -91,12 +91,23 @@ export const portalAPI = {
 export const quoteAPI = {
   get: (token) => api.get(apiUrl(`/quote/${token}`)),
   submit: (token, payload) => api.post(apiUrl(`/quote/${token}`), payload),
+  uploadFiles: (token, formData) =>
+    api.post(apiUrl(`/quote/${token}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  deleteFile: (token, attachmentId) => api.delete(apiUrl(`/quote/${token}/attachments/${attachmentId}`)),
 };
 
 // --- Vendor purchase-order acceptance magic link (public, NO auth) ---
 export const poAcceptanceAPI = {
   get: (token) => api.get(apiUrl(`/po/${token}`)),
   accept: (token, payload) => api.post(apiUrl(`/po/${token}/accept`), payload),
+};
+
+// --- Customer offer (quotation) acceptance magic link (public, NO auth) ---
+export const offerAcceptanceAPI = {
+  get: (token) => api.get(apiUrl(`/offer/${token}`)),
+  accept: (token, payload) => api.post(apiUrl(`/offer/${token}/accept`), payload),
 };
 
 // --- Phase 1 masters (staff, authenticated) ---
@@ -121,6 +132,12 @@ export const rfqsAPI = {
   finish: (id) => api.post(apiUrl(`/portal/rfqs/${id}/finish`)),
   updateQuoteRate: (quoteId, exchange_rate) =>
     api.patch(apiUrl(`/portal/quotes/${quoteId}`), { exchange_rate }),
+  updateQuoteCurrency: (quoteId, currency) =>
+    api.patch(apiUrl(`/portal/quotes/${quoteId}`), { currency }),
+  saveVendorPrices: (quoteId, items) =>
+    api.patch(apiUrl(`/portal/quotes/${quoteId}/prices`), { items }),
+  attachmentUrl: (quoteId, attachmentId) =>
+    api.get(apiUrl(`/portal/quotes/${quoteId}/attachments/${attachmentId}`)),
   itemSuggestions: (q) => api.get(apiUrl('/portal/item-suggestions'), { params: q ? { q } : {} }),
   vendorAwardPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/award-pdf`), { responseType: 'blob' }),
@@ -132,25 +149,35 @@ export const rfqsAPI = {
 export const purchaseOrdersAPI = {
   list: (params = {}) => api.get(apiUrl('/portal/purchase-orders'), { params }),
   get: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}`)),
-  generate: (rfqId) => api.post(apiUrl(`/portal/rfqs/${rfqId}/purchase-orders`)),
+  generate: (rfqId, payload = {}) => api.post(apiUrl(`/portal/rfqs/${rfqId}/purchase-orders`), payload),
   update: (id, payload) => api.patch(apiUrl(`/portal/purchase-orders/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/purchase-orders/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}/pdf`), { responseType: 'blob' }),
   email: (id) => api.post(apiUrl(`/portal/purchase-orders/${id}/email`)),
 };
 
-// --- Phase 4: purchase invoices + Navision/BC CSV export ---
-export const purchaseInvoicesAPI = {
-  list: (params = {}) => api.get(apiUrl('/portal/purchase-invoices'), { params }),
-  get: (id) => api.get(apiUrl(`/portal/purchase-invoices/${id}`)),
-  createFromPo: (poId) => api.post(apiUrl(`/portal/purchase-orders/${poId}/invoice`)),
-  create: (payload) => api.post(apiUrl('/portal/purchase-invoices'), payload),
-  update: (id, payload) => api.patch(apiUrl(`/portal/purchase-invoices/${id}`), payload),
-  remove: (id) => api.delete(apiUrl(`/portal/purchase-invoices/${id}`)),
-  export: (payload = {}) => api.post(apiUrl('/portal/purchase-invoices/export'), payload, { responseType: 'blob' }),
+// --- Offers: customer quotation with markup (built from an enquiry's awards) ---
+export const offersAPI = {
+  list: () => api.get(apiUrl('/portal/offers')),
+  get: (id) => api.get(apiUrl(`/portal/offers/${id}`)),
+  generate: (rfqId) => api.post(apiUrl(`/portal/rfqs/${rfqId}/offer`)),
+  update: (id, payload) => api.patch(apiUrl(`/portal/offers/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/offers/${id}`)),
+  pdf: (id) => api.get(apiUrl(`/portal/offers/${id}/pdf`), { responseType: 'blob' }),
+  email: (id) => api.post(apiUrl(`/portal/offers/${id}/email`)),
 };
 
-// --- Phase 5: reports / analytics ---
+// --- Delivery Orders: customer order + delivery address (from an accepted offer) ---
+export const deliveryOrdersAPI = {
+  list: () => api.get(apiUrl('/portal/delivery-orders')),
+  get: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}`)),
+  generate: (offerId) => api.post(apiUrl(`/portal/offers/${offerId}/delivery-order`)),
+  update: (id, payload) => api.patch(apiUrl(`/portal/delivery-orders/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/delivery-orders/${id}`)),
+  pdf: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}/pdf`), { responseType: 'blob' }),
+};
+
+// --- Reports / analytics ---
 export const reportsAPI = {
   spend: (params = {}) => api.get(apiUrl('/portal/reports/spend'), { params }),
   vendors: (params = {}) => api.get(apiUrl('/portal/reports/vendors'), { params }),
@@ -175,6 +202,11 @@ export const documentsAPI = {
   update: (id, payload) => api.put(apiUrl(`/portal/documents/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/documents/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/documents/${id}/pdf`), { responseType: 'blob' }),
+};
+
+// --- Live FX rates (server-side lookup, used by the Compare & Award grid) ---
+export const fxAPI = {
+  rates: (base) => api.get(apiUrl('/portal/fx-rates'), { params: { base } }),
 };
 
 // Convenience helper: is a staff auth token present?

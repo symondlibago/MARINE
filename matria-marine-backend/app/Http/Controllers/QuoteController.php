@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Quote;
+use App\Models\QuoteAttachment;
 use App\Models\QuoteItem;
 use App\Models\RfqVendor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Public, token-protected vendor quote endpoints (magic link — NO auth).
@@ -34,7 +36,7 @@ class QuoteController extends Controller
         $rfq = $rv->rfq;
         $vendor = $rv->vendor;
 
-        $existing = Quote::with('items')
+        $existing = Quote::with(['items', 'attachments'])
             ->where('rfq_id', $rfq->id)
             ->where('vendor_id', $vendor->id)
             ->first();
@@ -43,10 +45,16 @@ class QuoteController extends Controller
             'success' => true,
             'data' => [
                 'vendor' => ['name' => $vendor->name, 'currency' => $vendor->currency],
+                'attachments' => $existing
+                    ? $existing->attachments->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])->values()
+                    : [],
                 'rfq' => [
                     'reference' => $rfq->reference,
                     'ship_name' => $rfq->ship_name,
                     'delivery_port' => $rfq->delivery_port,
+                    // Requirements ARE shown to vendors so they quote correctly.
+                    // The customer is intentionally NOT exposed here.
+                    'requirements' => $rfq->requirements ?? [],
                 ],
                 'items' => $rfq->items->map(fn ($i) => [
                     'rfq_item_id' => $i->id,
@@ -122,5 +130,77 @@ class QuoteController extends Controller
         });
 
         return response()->json(['success' => true, 'message' => 'Thank you — your quotation has been submitted.']);
+    }
+
+    /**
+     * Vendor uploads supporting files (their own quote, datasheets, certificates).
+     * Creates the quote if needed so files can be attached before/without pricing.
+     */
+    public function uploadAttachment(Request $request, string $token)
+    {
+        $rv = RfqVendor::with('vendor')->where('token', $token)->first();
+
+        if (! $rv) {
+            return response()->json(['success' => false, 'message' => 'This quotation link is invalid or has expired.'], 404);
+        }
+
+        $request->validate([
+            'files' => ['required', 'array', 'max:10'],
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx,csv,txt'],
+        ]);
+
+        $quote = Quote::firstOrCreate(
+            ['rfq_id' => $rv->rfq_id, 'vendor_id' => $rv->vendor_id],
+            ['currency' => $rv->vendor->currency ?? 'USD', 'status' => 'draft']
+        );
+
+        foreach ($request->file('files') as $file) {
+            $path = $file->store('quotes/'.$quote->id, 'r2');
+            $quote->attachments()->create([
+                'disk' => 'r2',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+            ]);
+        }
+
+        // Mark the vendor as having engaged with the request.
+        if (in_array($rv->status, ['requested', 'sent', 'opened'], true)) {
+            $rv->status = 'opened';
+            $rv->opened_at = $rv->opened_at ?? now();
+            $rv->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File(s) uploaded.',
+            'data' => $this->attachmentList($quote),
+        ]);
+    }
+
+    public function deleteAttachment(string $token, QuoteAttachment $attachment)
+    {
+        $rv = RfqVendor::where('token', $token)->first();
+
+        if (! $rv) {
+            return response()->json(['success' => false, 'message' => 'This quotation link is invalid or has expired.'], 404);
+        }
+
+        $quote = Quote::where('rfq_id', $rv->rfq_id)->where('vendor_id', $rv->vendor_id)->first();
+        abort_unless($quote && $attachment->quote_id === $quote->id, 404);
+
+        Storage::disk($attachment->disk)->delete($attachment->path);
+        $attachment->delete();
+
+        return response()->json(['success' => true, 'message' => 'File removed.', 'data' => $this->attachmentList($quote)]);
+    }
+
+    private function attachmentList(Quote $quote): array
+    {
+        return $quote->attachments()->get()
+            ->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])
+            ->values()
+            ->all();
     }
 }

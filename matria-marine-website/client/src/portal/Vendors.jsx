@@ -27,7 +27,6 @@ export default function Vendors() {
         phone: "",
         address: "",
         currency: "USD",
-        nav_code: "",
         notes: "",
         is_active: true,
       }}
@@ -45,7 +44,6 @@ export default function Vendors() {
         { name: "email", label: "Email", type: "email" },
         { name: "phone", label: "Phone" },
         { name: "currency", label: "Currency", type: "select", options: CURRENCIES, required: true },
-        { name: "nav_code", label: "Navision Vendor No.", placeholder: "e.g. V01234" },
         { name: "address", label: "Address", type: "textarea" },
         { name: "notes", label: "Notes", type: "textarea" },
         { name: "is_active", label: "Active", type: "switch" },

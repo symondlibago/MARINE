@@ -38,6 +38,7 @@ export default function Enquiries() {
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-semibold">Reference</th>
+              <th className="px-4 py-3 font-semibold">Customer</th>
               <th className="px-4 py-3 font-semibold">Vessel</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 text-right font-semibold">Items</th>
@@ -47,9 +48,9 @@ export default function Enquiries() {
           </thead>
           <tbody>
             {isLoading ? (
-              <TableSkeleton cols={6} />
+              <TableSkeleton cols={7} />
             ) : rows.length === 0 ? (
-              <tr><td colSpan={6} className="py-10 text-center text-slate-400">No enquiries yet — create your first one.</td></tr>
+              <tr><td colSpan={7} className="py-10 text-center text-slate-400">No enquiries yet — create your first one.</td></tr>
             ) : (
               rows.map((r, i) => (
                 <motion.tr
@@ -61,6 +62,7 @@ export default function Enquiries() {
                   className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                 >
                   <td className="px-4 py-3 font-medium text-[#28364b]">{r.reference}</td>
+                  <td className="px-4 py-3 text-slate-700">{r.customer?.name || "—"}</td>
                   <td className="px-4 py-3 text-slate-700">{r.ship_name || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || "bg-slate-100"}`}>{r.status}</span>
