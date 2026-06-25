@@ -27,13 +27,9 @@ class VendorQuoteRequest extends Mailable
 
     public function envelope(): Envelope
     {
-        $replyTo = ($this->staff && $this->staff->email)
-            ? [new Address($this->staff->email, $this->staff->name)]
-            : [];
-
+        // Reply-To is applied globally (sales inbox) in AppServiceProvider.
         return new Envelope(
             subject: $this->subjectLine ?: 'Request for Quotation — '.$this->rfq->reference,
-            replyTo: $replyTo,
         );
     }
 

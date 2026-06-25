@@ -25,13 +25,9 @@ class PurchaseOrderMail extends Mailable
 
     public function envelope(): Envelope
     {
-        $replyTo = ($this->staff && $this->staff->email)
-            ? [new Address($this->staff->email, $this->staff->name)]
-            : [];
-
+        // Reply-To is applied globally (sales inbox) in AppServiceProvider.
         return new Envelope(
             subject: 'Purchase Order '.$this->po->po_number.' — Matria Marine Services',
-            replyTo: $replyTo,
         );
     }
 

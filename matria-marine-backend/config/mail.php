@@ -66,6 +66,13 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    // Where replies should go. Mail is sent from the SMTP account above, but
+    // recipients who hit "Reply" reach the sales inbox.
+    'reply_to' => [
+        'address' => env('MAIL_REPLY_TO_ADDRESS', 'sales@matriamarine.com'),
+        'name' => env('MAIL_REPLY_TO_NAME', env('MAIL_FROM_NAME', 'Matria Marine Services')),
+    ],
+
     'markdown' => [
         'theme' => 'default',
 
