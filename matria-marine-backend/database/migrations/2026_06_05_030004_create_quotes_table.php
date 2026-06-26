@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('rfq_id')->constrained('rfqs')->cascadeOnDelete();
             $table->foreignId('vendor_id')->constrained('vendors')->cascadeOnDelete();
+            $table->string('quotation_number')->nullable(); // the vendor's own quote/reference number
             $table->char('currency', 3)->default('USD');
             $table->decimal('exchange_rate', 16, 8)->default(1); // multiply unit_cost to get base currency
             $table->date('valid_until')->nullable();

@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Mail\PurchaseOrderMail;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderAttachment;
 use App\Models\Quote;
 use App\Models\Rfq;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class PurchaseOrderController extends Controller
@@ -59,9 +61,17 @@ class PurchaseOrderController extends Controller
             $purchaseOrder->forceFill(['token' => Str::random(48)])->save();
         }
 
-        $purchaseOrder->load(['items', 'vendor', 'rfq:id,reference', 'creator:id,name']);
+        $purchaseOrder->load(['items', 'vendor', 'rfq:id,reference', 'creator:id,name', 'returnNote.items', 'attachments']);
 
-        return response()->json(['success' => true, 'data' => $purchaseOrder]);
+        $data = $purchaseOrder->toArray();
+        $data['attachments'] = $purchaseOrder->attachments
+            ->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])
+            ->values();
+        $returnsTotal = (float) ($purchaseOrder->returnNote?->subtotal ?? 0);
+        $data['returns_total'] = round($returnsTotal, 4);
+        $data['net_payable'] = round((float) $purchaseOrder->subtotal - $returnsTotal, 4);
+
+        return response()->json(['success' => true, 'data' => $data]);
     }
 
     /**
@@ -271,5 +281,59 @@ class PurchaseOrderController extends Controller
             'success' => true,
             'message' => 'Purchase order emailed to '.$purchaseOrder->vendor->email.'.',
         ]);
+    }
+
+    /** Attach the vendor's invoice (and any supporting files) to this PO. Stored privately on R2. */
+    public function uploadAttachment(Request $request, PurchaseOrder $purchaseOrder)
+    {
+        $request->validate([
+            'files' => ['required', 'array', 'max:10'],
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,xls,xlsx,doc,docx,csv,txt'],
+        ]);
+
+        foreach ($request->file('files') as $file) {
+            $path = $file->store('purchase-orders/'.$purchaseOrder->id, 'r2');
+            $purchaseOrder->attachments()->create([
+                'disk' => 'r2',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File(s) uploaded.',
+            'data' => $this->attachmentList($purchaseOrder),
+        ]);
+    }
+
+    public function deleteAttachment(PurchaseOrder $purchaseOrder, PurchaseOrderAttachment $attachment)
+    {
+        abort_unless($attachment->purchase_order_id === $purchaseOrder->id, 404);
+
+        Storage::disk($attachment->disk)->delete($attachment->path);
+        $attachment->delete();
+
+        return response()->json(['success' => true, 'message' => 'File removed.', 'data' => $this->attachmentList($purchaseOrder)]);
+    }
+
+    /** Short-lived signed URL so staff can open a private attachment. */
+    public function attachmentUrl(PurchaseOrder $purchaseOrder, PurchaseOrderAttachment $attachment)
+    {
+        abort_unless($attachment->purchase_order_id === $purchaseOrder->id, 404);
+
+        $url = Storage::disk($attachment->disk)->temporaryUrl($attachment->path, now()->addMinutes(10));
+
+        return response()->json(['success' => true, 'data' => ['url' => $url, 'name' => $attachment->original_name]]);
+    }
+
+    private function attachmentList(PurchaseOrder $purchaseOrder): array
+    {
+        return $purchaseOrder->attachments()->get()
+            ->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])
+            ->values()
+            ->all();
     }
 }

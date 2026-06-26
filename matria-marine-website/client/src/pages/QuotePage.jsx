@@ -40,7 +40,9 @@ export default function QuotePage({ token }) {
   });
 
   const [currency, setCurrency] = useState("USD");
+  const [quotationNumber, setQuotationNumber] = useState("");
   const [lines, setLines] = useState({}); // rfq_item_id -> { unit_cost, remarks }
+  const [formError, setFormError] = useState("");
   const [done, setDone] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -51,6 +53,7 @@ export default function QuotePage({ token }) {
   useEffect(() => {
     if (!data) return;
     setCurrency(data.quote?.currency || data.vendor?.currency || "USD");
+    setQuotationNumber(data.quote?.quotation_number || "");
     const init = {};
     (data.quote?.items || []).forEach((qi) => {
       init[qi.rfq_item_id] = { unit_cost: qi.unit_cost, remarks: qi.remarks || "" };
@@ -85,20 +88,39 @@ export default function QuotePage({ token }) {
     }
   };
 
+  const isPriced = (id) => {
+    const v = lines[id]?.unit_cost;
+    return v !== undefined && v !== "" && Number(v) >= 0 && !Number.isNaN(Number(v));
+  };
+
+  const handleSubmit = () => {
+    setFormError("");
+    if (!quotationNumber.trim()) {
+      setFormError("Please enter your quotation number.");
+      return;
+    }
+    const unpriced = data.items.filter((it) => !isPriced(it.rfq_item_id));
+    if (unpriced.length > 0) {
+      setFormError(`Please enter a price for every item (${unpriced.length} still missing). A price is required even if you attached a file.`);
+      return;
+    }
+    submit.mutate();
+  };
+
   const submit = useMutation({
     mutationFn: () => {
       const payload = {
+        quotation_number: quotationNumber.trim(),
         currency,
         lines: data.items.map((it) => {
           const v = lines[it.rfq_item_id] || {};
-          const cost = v.unit_cost === undefined || v.unit_cost === "" ? null : Number(v.unit_cost);
-          return { rfq_item_id: it.rfq_item_id, unit_cost: cost, remarks: v.remarks || null };
+          return { rfq_item_id: it.rfq_item_id, unit_cost: Number(v.unit_cost), remarks: v.remarks || null };
         }),
       };
       return quoteAPI.submit(token, payload);
     },
     onSuccess: () => setDone(true),
-    onError: () => {},
+    onError: (e) => setFormError(e?.response?.data?.message || "Submission failed. Please check your prices and try again."),
   });
 
   const setLine = (id, k, v) => setLines((l) => ({ ...l, [id]: { ...l[id], [k]: v } }));
@@ -153,9 +175,22 @@ export default function QuotePage({ token }) {
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-[#28364b]">Currency</label>
-          <div className="w-32"><Select value={currency} onChange={setCurrency} options={CURRENCIES} /></div>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#28364b]">
+              Quotation No. <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={quotationNumber}
+              onChange={(e) => setQuotationNumber(e.target.value)}
+              placeholder="Your quote / reference no."
+              className="w-56 rounded border border-slate-200 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#28364b]">Currency</label>
+            <div className="w-32"><Select value={currency} onChange={setCurrency} options={CURRENCIES} /></div>
+          </div>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -164,7 +199,7 @@ export default function QuotePage({ token }) {
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2 font-semibold">Item</th>
                 <th className="px-3 py-2 text-right font-semibold">Qty</th>
-                <th className="px-3 py-2 font-semibold">Unit price</th>
+                <th className="px-3 py-2 font-semibold">Unit price <span className="text-red-500">*</span></th>
                 <th className="px-3 py-2 font-semibold">Remarks</th>
               </tr>
             </thead>
@@ -178,10 +213,12 @@ export default function QuotePage({ token }) {
                       type="number"
                       step="0.0001"
                       min="0"
-                      placeholder="—"
+                      placeholder="required"
                       value={lines[it.rfq_item_id]?.unit_cost ?? ""}
                       onChange={(e) => setLine(it.rfq_item_id, "unit_cost", e.target.value)}
-                      className="w-28 rounded border border-slate-200 px-2 py-1 text-sm"
+                      className={`w-28 rounded border px-2 py-1 text-sm ${
+                        isPriced(it.rfq_item_id) ? "border-slate-200" : "border-red-300 bg-red-50"
+                      }`}
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -248,12 +285,16 @@ export default function QuotePage({ token }) {
         </div>
 
         <p className="text-xs text-slate-400">
-          Leave a price blank if you cannot supply that item. You can also just <span className="font-medium text-slate-500">attach your quotation file above</span> and submit — Matria will enter the prices for you.
+          A <span className="font-medium text-slate-500">price is required for every item</span>, even if you also attach your quotation file above. Please also enter your <span className="font-medium text-slate-500">quotation number</span>.
         </p>
+
+        {formError && (
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</div>
+        )}
 
         <div className="flex justify-end">
           <button
-            onClick={() => submit.mutate()}
+            onClick={handleSubmit}
             disabled={submit.isLoading}
             className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-70"
           >

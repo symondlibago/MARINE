@@ -14,7 +14,7 @@ return [
     */
     'company' => [
         'name' => env('COMPANY_NAME', 'MATRIA MARINE SERVICES'),
-        'address' => env('COMPANY_ADDRESS', "BLK 239, Unit 15-92, Lorong 1 Toa Payoh\nSingapore 310239"),
+        'address' => env('COMPANY_ADDRESS', "192 Pandan Loop, #06-29 Unit B,\nPantech Business Hub\nSingapore 128381"),
         'phone' => env('COMPANY_PHONE', '(65) 82277151'),
         'uen' => env('COMPANY_UEN', 'S3500706W'),
     ],

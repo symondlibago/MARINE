@@ -12,6 +12,7 @@ class Quote extends Model
     protected $fillable = [
         'rfq_id',
         'vendor_id',
+        'quotation_number',
         'currency',
         'exchange_rate',
         'valid_until',

@@ -15,6 +15,8 @@ import DeliveryOrders from "./DeliveryOrders";
 import DeliveryOrderPage from "./DeliveryOrderPage";
 import PurchaseOrders from "./PurchaseOrders";
 import PurchaseOrderDetail from "./PurchaseOrderDetail";
+import ReturnNotes from "./ReturnNotes";
+import ReturnNoteDetail from "./ReturnNoteDetail";
 import Reports from "./Reports";
 import Customers from "./Customers";
 import { ConfirmProvider } from "./ui/confirm";
@@ -83,6 +85,8 @@ export default function PortalApp() {
               <Route path="/delivery-orders/:id" component={DeliveryOrderPage} />
               <Route path="/purchase-orders" component={PurchaseOrders} />
               <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
+              <Route path="/return-notes" component={ReturnNotes} />
+              <Route path="/return-notes/:id" component={ReturnNoteDetail} />
               <Route path="/reports" component={Reports} />
               <Route path="/customers" component={Customers} />
               <Route>

@@ -70,7 +70,7 @@ export default function Contact() {
     {
       icon: MapPin,
       title: 'Address',
-      content: '239 #15-92, Lorong 1 Toa Payoh, Singapore 310239',
+      content: '192 Pandan Loop, #06-29 Unit B, Pantech Business Hub, Singapore 128381',
     },
     {
       icon: Phone,
