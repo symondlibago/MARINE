@@ -23,6 +23,9 @@ class Offer extends Model
         'base_total',
         'subtotal',
         'markup_total',
+        'packing_cost',
+        'transportation_cost',
+        'grand_total',
         'notes',
         'opened_at',
         'accepted_at',
@@ -38,6 +41,9 @@ class Offer extends Model
         'base_total' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'markup_total' => 'decimal:2',
+        'packing_cost' => 'decimal:2',
+        'transportation_cost' => 'decimal:2',
+        'grand_total' => 'decimal:2',
     ];
 
     protected static function booted(): void
@@ -76,11 +82,13 @@ class Offer extends Model
 
         $base = $lines->sum(fn ($i) => (float) $i->base_price * (float) $i->qty);
         $subtotal = $lines->sum(fn ($i) => (float) $i->line_total);
+        $delivery = (float) $this->packing_cost + (float) $this->transportation_cost;
 
         $this->update([
             'base_total' => round($base, 2),
             'subtotal' => round($subtotal, 2),
             'markup_total' => round($subtotal - $base, 2),
+            'grand_total' => round($subtotal + $delivery, 2),
         ]);
     }
 }

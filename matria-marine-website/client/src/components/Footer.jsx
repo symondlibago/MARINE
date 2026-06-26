@@ -175,7 +175,7 @@ export default function Footer() {
                   <div className="flex items-start space-x-2">
                     <MapPin size={16} className="text-[#cebd88] flex-shrink-0 mt-1" />
                     <span>
-                      239 #15-92, Lorong 1 Toa Payoh, Singapore 310239
+                      192 Pandan Loop, #06-29 Unit B, Pantech Business Hub, Singapore 128381
                     </span>
                   </div>
                 </div>

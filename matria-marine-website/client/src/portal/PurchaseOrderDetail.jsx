@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye } from "lucide-react";
+import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { purchaseOrdersAPI } from "@/pages/api";
+import { purchaseOrdersAPI, returnNotesAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
@@ -17,6 +17,8 @@ const STATUS_STYLES = {
 };
 
 const cellInput = "w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
+
+const prettySize = (b) => (b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
 
 export default function PurchaseOrderDetail({ params }) {
   const id = params.id;
@@ -31,6 +33,14 @@ export default function PurchaseOrderDetail({ params }) {
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState("");
   const [expected, setExpected] = useState("");
+  const [returns, setReturns] = useState([]); // [{ po_item_id, description, unit, ordered, unit_cost, qty, reason }]
+  const [returnDate, setReturnDate] = useState("");
+  const [returnNotes, setReturnNotes] = useState("");
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!po) return;
@@ -43,7 +53,61 @@ export default function PurchaseOrderDetail({ params }) {
     })));
     setNotes(po.notes || "");
     setExpected(po.expected_date ? String(po.expected_date).slice(0, 10) : "");
+
+    // Returns: one row per PO line, pre-filled from any existing return note.
+    const existing = new Map((po.return_note?.items || []).map((ri) => [ri.purchase_order_item_id, ri]));
+    setReturns((po.items || []).map((it) => {
+      const ri = existing.get(it.id);
+      return {
+        po_item_id: it.id,
+        description: it.description,
+        unit: it.unit || "",
+        ordered: Number(it.qty),
+        unit_cost: Number(it.unit_cost),
+        qty: ri ? String(Number(ri.qty)) : "",
+        reason: ri?.reason || "",
+      };
+    }));
+    setReturnDate(po.return_note?.return_date ? String(po.return_note.return_date).slice(0, 10) : "");
+    setReturnNotes(po.return_note?.notes || "");
+    setFiles(po.attachments || []);
   }, [po]);
+
+  const uploadFiles = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploadError("");
+    const fd = new FormData();
+    Array.from(fileList).forEach((f) => fd.append("files[]", f));
+    setUploading(true);
+    try {
+      const res = await purchaseOrdersAPI.uploadFiles(id, fd);
+      setFiles(res.data.data || []);
+      toast.success("File(s) uploaded.");
+    } catch (e) {
+      setUploadError(e?.response?.data?.message || "Upload failed. Use PDF, image, Word, Excel or CSV (max 10 MB each).");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeFile = async (attId) => {
+    try {
+      const res = await purchaseOrdersAPI.deleteFile(id, attId);
+      setFiles(res.data.data || []);
+    } catch {
+      toast.error("Could not remove file.");
+    }
+  };
+
+  const openFile = async (attId) => {
+    try {
+      const res = await purchaseOrdersAPI.attachmentUrl(id, attId);
+      window.open(res.data.data.url, "_blank", "noopener");
+    } catch {
+      toast.error("Could not open file.");
+    }
+  };
 
   const isDraft = po?.status === "draft";
   const isClosed = po?.status === "received" || po?.status === "cancelled";
@@ -86,6 +150,21 @@ export default function PurchaseOrderDetail({ params }) {
     onSuccess: () => { toast.success("Purchase order deleted."); setLocation("/purchase-orders"); },
     onError: (e) => toast.error(e?.response?.data?.message || "Delete failed."),
   });
+
+  const saveReturns = useMutation({
+    mutationFn: () =>
+      returnNotesAPI.saveForPo(id, {
+        return_date: returnDate || null,
+        notes: returnNotes || null,
+        lines: returns
+          .filter((r) => Number(r.qty) > 0)
+          .map((r) => ({ purchase_order_item_id: r.po_item_id, qty: Number(r.qty), reason: r.reason || null })),
+      }),
+    onSuccess: (res) => { toast.success(res.data.message || "Return note saved."); refetch(); },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not save return note."),
+  });
+
+  const setReturn = (idx, patch) => setReturns((arr) => arr.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
   const downloadPdf = async () => {
     try {
@@ -139,6 +218,8 @@ export default function PurchaseOrderDetail({ params }) {
   if (isLoading || !po) return <PageLoader />;
 
   const grandTotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unit_cost) || 0), 0);
+  const returnsTotal = returns.reduce((s, r) => s + Math.min(Number(r.qty) || 0, r.ordered) * (r.unit_cost || 0), 0);
+  const netPayable = grandTotal - returnsTotal;
   const setItem = (idx, patch) => setItems((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   const addItem = () => setItems((arr) => [...arr, { description: "", unit: "", qty: "1", unit_cost: "0" }]);
   const removeItem = (idx) => setItems((arr) => arr.filter((_, i) => i !== idx));
@@ -305,6 +386,92 @@ export default function PurchaseOrderDetail({ params }) {
         )}
       </div>
 
+      {/* Returns / rejected items — credits what we pay the vendor */}
+      {(po.status === "issued" || po.status === "received") && (
+        <div className="overflow-hidden rounded-xl border border-amber-200 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 bg-amber-50/60 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Undo2 className="h-4 w-4 text-amber-600" />
+              <div>
+                <h2 className="text-sm font-bold text-[#28364b]">Returns / rejected items</h2>
+                <p className="text-xs text-slate-500">Enter how many of each item are being returned (e.g. faulty). This reduces what you pay the vendor.</p>
+              </div>
+            </div>
+            {po.return_note && (
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{po.return_note.rtn_number}</span>
+                <button onClick={() => setLocation(`/return-notes/${po.return_note.id}`)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
+                  <FileText className="h-3.5 w-3.5" /> Open return note
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-2.5 font-semibold">Description</th>
+                  <th className="w-24 px-3 py-2.5 text-right font-semibold">Ordered</th>
+                  <th className="w-28 px-3 py-2.5 text-right font-semibold">Return qty</th>
+                  <th className="px-3 py-2.5 font-semibold">Reason</th>
+                  <th className="w-32 px-3 py-2.5 text-right font-semibold">Credit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returns.map((r, idx) => {
+                  const credit = Math.min(Number(r.qty) || 0, r.ordered) * (r.unit_cost || 0);
+                  const over = (Number(r.qty) || 0) > r.ordered;
+                  return (
+                    <tr key={r.po_item_id} className="border-b border-slate-100 last:border-0">
+                      <td className="px-4 py-2 text-slate-700">{r.description}{r.unit ? <span className="text-slate-400"> ({r.unit})</span> : null}</td>
+                      <td className="px-3 py-2 text-right text-slate-500">{r.ordered}</td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number" step="0.001" min="0" max={r.ordered}
+                          className={`${cellInput} text-right ${over ? "border-red-300 bg-red-50" : ""}`}
+                          value={r.qty}
+                          onChange={(e) => setReturn(idx, { qty: e.target.value })}
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input className={cellInput} value={r.reason} onChange={(e) => setReturn(idx, { reason: e.target.value })} placeholder="e.g. not functional / wrong part" />
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-amber-700">{credit.toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
+                {returns.length === 0 && (
+                  <tr><td colSpan={5} className="py-6 text-center text-slate-400">No line items to return.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid gap-4 border-t border-slate-100 p-4 sm:grid-cols-2">
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Return date</label>
+                <div className="mt-1"><DatePicker value={returnDate} onChange={setReturnDate} placeholder="Set date" /></div>
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Return notes</label>
+                <textarea rows={2} value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} placeholder="Optional note for the vendor…" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div className="space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
+              <div className="flex justify-between text-slate-500"><span>Order total</span><span>{grandTotal.toFixed(2)} {po.currency}</span></div>
+              <div className="flex justify-between text-amber-700"><span>Less returns</span><span>− {returnsTotal.toFixed(2)} {po.currency}</span></div>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 text-base font-bold text-[#28364b]"><span>Net payable</span><span>{netPayable.toFixed(2)} {po.currency}</span></div>
+              <button onClick={() => saveReturns.mutate()} disabled={saveReturns.isLoading} className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-70">
+                {saveReturns.isLoading ? <Spinner className="h-4 w-4" /> : <Undo2 className="h-4 w-4" />} Save return note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Notes</label>
         <textarea
@@ -315,6 +482,59 @@ export default function PurchaseOrderDetail({ params }) {
           placeholder="Internal notes or instructions for the vendor…"
           className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
         />
+      </div>
+
+      {/* Invoice & documents — attach the vendor's invoice and supporting files */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-2 flex items-center gap-1.5">
+          <FileText className="h-4 w-4 text-[#28364b]" />
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Invoice &amp; documents</h2>
+        </div>
+        <p className="mb-3 text-xs text-slate-400">Attach the vendor's invoice for this order (plus packing lists / delivery notes if any).</p>
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); uploadFiles(e.dataTransfer.files); }}
+          className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${
+            dragOver ? "border-[#28364b] bg-slate-50" : "border-slate-300 hover:bg-slate-50"
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx,.csv,.txt"
+            onChange={(e) => uploadFiles(e.target.files)}
+          />
+          {uploading ? (
+            <span className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</span>
+          ) : (
+            <>
+              <UploadCloud className="h-6 w-6 text-slate-400" />
+              <span className="text-sm font-medium text-[#28364b]">Drag &amp; drop the invoice, or click to browse</span>
+              <span className="text-xs text-slate-400">PDF, image, Word, Excel, CSV (max 10 MB each)</span>
+            </>
+          )}
+        </div>
+        {uploadError && <p className="mt-2 text-xs text-red-600">{uploadError}</p>}
+        {files.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {files.map((f) => (
+              <li key={f.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                <button type="button" onClick={() => openFile(f.id)} className="flex min-w-0 items-center gap-2 text-[#28364b] hover:underline" title="Open file">
+                  <Paperclip className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="truncate">{f.name}</span>
+                  <span className="shrink-0 text-xs text-slate-400">{prettySize(f.size)}</span>
+                </button>
+                <button type="button" onClick={() => removeFile(f.id)} className="shrink-0 text-slate-400 hover:text-red-600" title="Remove">
+                  <X className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Action bar */}

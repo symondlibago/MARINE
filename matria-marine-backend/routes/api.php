@@ -12,6 +12,7 @@ use App\Http\Controllers\VendorController;
 use App\Http\Controllers\RfqController;
 use App\Http\Controllers\RfqPdfController;
 use App\Http\Controllers\PurchaseOrderController;
+use App\Http\Controllers\ReturnNoteController;
 use App\Http\Controllers\OfferController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
@@ -113,6 +114,20 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::get('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'show']);
         Route::patch('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'update']);
         Route::delete('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'destroy']);
+
+        // Purchase order attachments — vendor invoice + supporting files (R2)
+        Route::post('purchase-orders/{purchaseOrder}/attachments', [PurchaseOrderController::class, 'uploadAttachment']);
+        Route::get('purchase-orders/{purchaseOrder}/attachments/{attachment}', [PurchaseOrderController::class, 'attachmentUrl']);
+        Route::delete('purchase-orders/{purchaseOrder}/attachments/{attachment}', [PurchaseOrderController::class, 'deleteAttachment']);
+
+        // Return notes — goods returned to a vendor (credits the PO payable)
+        Route::post('purchase-orders/{purchaseOrder}/return-note', [ReturnNoteController::class, 'storeForPo']);
+        Route::get('return-notes', [ReturnNoteController::class, 'index']);
+        Route::get('return-notes/{returnNote}/pdf', [ReturnNoteController::class, 'pdf']);
+        Route::post('return-notes/{returnNote}/email', [ReturnNoteController::class, 'email']);
+        Route::get('return-notes/{returnNote}', [ReturnNoteController::class, 'show']);
+        Route::match(['put', 'patch'], 'return-notes/{returnNote}', [ReturnNoteController::class, 'update']);
+        Route::delete('return-notes/{returnNote}', [ReturnNoteController::class, 'destroy']);
 
         // Offers — customer quotation with markup (built from an enquiry's awards)
         Route::post('rfqs/{rfq}/offer', [OfferController::class, 'generate']);
