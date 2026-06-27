@@ -23,7 +23,7 @@ COPY . .
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-install=auto
 
 EXPOSE 8080
 
