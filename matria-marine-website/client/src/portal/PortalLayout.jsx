@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2 } from "lucide-react";
+import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
 
@@ -13,10 +13,13 @@ const NAV = [
   { label: "Reports", to: "/reports", icon: BarChart3 },
   { label: "Customers", to: "/customers", icon: Users },
   { label: "Vendors", to: "/vendors", icon: Ship },
+  { label: "Sent Log", to: "/sent-log", icon: Send },
+  { label: "Manage Staff", to: "/staff", icon: UserCog, superAdminOnly: true },
 ];
 
 export default function PortalLayout({ user, children }) {
   const [location] = useLocation();
+  const nav = NAV.filter((item) => !item.superAdminOnly || user?.role === "super_admin");
 
   const handleLogout = async () => {
     try {
@@ -38,7 +41,7 @@ export default function PortalLayout({ user, children }) {
           </div>
         </div>
         <nav className="flex-1 space-y-1 p-3">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const active = item.to === "/" ? location === "/" : location.startsWith(item.to);
             const Icon = item.icon;
             return (

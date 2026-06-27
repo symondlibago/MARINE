@@ -6,6 +6,7 @@ use App\Mail\PurchaseOrderMail;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderAttachment;
 use App\Models\Quote;
+use App\Models\SentLog;
 use App\Models\Rfq;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -19,7 +20,7 @@ class PurchaseOrderController extends Controller
     public function index(Request $request)
     {
         $query = PurchaseOrder::query()
-            ->with(['vendor:id,name', 'rfq:id,reference'])
+            ->with(['vendor:id,name', 'rfq:id,reference', 'creator:id,name'])
             ->withCount('items')
             ->orderByDesc('id');
 
@@ -42,6 +43,7 @@ class PurchaseOrderController extends Controller
             'rfq_id' => $po->rfq_id,
             'reference' => $po->rfq?->reference,
             'vendor' => $po->vendor?->name,
+            'prepared_by' => $po->creator?->name,
             'currency' => $po->currency,
             'status' => $po->status,
             'subtotal' => (float) $po->subtotal,
@@ -241,13 +243,33 @@ class PurchaseOrderController extends Controller
 
     public function pdf(PurchaseOrder $purchaseOrder)
     {
-        $purchaseOrder->load(['items', 'vendor']);
+        $purchaseOrder->load(['items', 'vendor', 'creator:id,name,phone']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
         return Pdf::loadView('pdf.purchase-order', ['po' => $purchaseOrder, 'logo' => $logo])
             ->download(($purchaseOrder->po_number ?: 'PO').'.pdf');
+    }
+
+    /** Final invoice PDF — order line items less any returns = the net amount payable to the vendor. */
+    public function finalInvoice(PurchaseOrder $purchaseOrder)
+    {
+        $purchaseOrder->load(['items', 'vendor', 'returnNote.items']);
+
+        $returnsTotal = (float) ($purchaseOrder->returnNote?->subtotal ?? 0);
+        $netPayable = round((float) $purchaseOrder->subtotal - $returnsTotal, 4);
+
+        $logoPath = public_path('logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
+
+        return Pdf::loadView('pdf.final-invoice', [
+            'po' => $purchaseOrder,
+            'company' => config('procurement.company'),
+            'logo' => $logo,
+            'returnsTotal' => $returnsTotal,
+            'netPayable' => $netPayable,
+        ])->download('final-invoice-'.($purchaseOrder->po_number ?: 'PO').'.pdf');
     }
 
     public function email(Request $request, PurchaseOrder $purchaseOrder)
@@ -263,11 +285,26 @@ class PurchaseOrderController extends Controller
         }
         $link = rtrim(config('procurement.frontend_url'), '/').'/po/'.$purchaseOrder->token;
 
+        $staff = $request->user();
         try {
-            Mail::to($purchaseOrder->vendor->email)->send(new PurchaseOrderMail($purchaseOrder, $request->user(), $link));
+            Mail::to($purchaseOrder->vendor->email)->send(new PurchaseOrderMail($purchaseOrder, $staff, $link));
         } catch (\Throwable $e) {
+            SentLog::record([
+                'type' => 'Purchase Order', 'reference' => $purchaseOrder->po_number,
+                'recipient_name' => $purchaseOrder->vendor->name, 'recipient_email' => $purchaseOrder->vendor->email,
+                'subject' => 'Purchase Order '.$purchaseOrder->po_number,
+                'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+            ]);
+
             return response()->json(['success' => false, 'message' => 'Email failed: '.$e->getMessage()], 500);
         }
+
+        SentLog::record([
+            'type' => 'Purchase Order', 'reference' => $purchaseOrder->po_number,
+            'recipient_name' => $purchaseOrder->vendor->name, 'recipient_email' => $purchaseOrder->vendor->email,
+            'subject' => 'Purchase Order '.$purchaseOrder->po_number,
+            'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+        ]);
 
         // Emailing a draft PO issues it.
         if ($purchaseOrder->status === 'draft') {

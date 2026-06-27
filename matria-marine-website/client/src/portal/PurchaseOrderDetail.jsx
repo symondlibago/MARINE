@@ -180,6 +180,20 @@ export default function PurchaseOrderDetail({ params }) {
     }
   };
 
+  const downloadFinalInvoice = async () => {
+    try {
+      const res = await purchaseOrdersAPI.finalInvoice(id);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `final-invoice-${po.po_number}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Could not download final invoice.");
+    }
+  };
+
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/po/${po.token}`);
@@ -246,6 +260,9 @@ export default function PurchaseOrderDetail({ params }) {
         <div className="flex flex-wrap gap-2">
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> PDF
+          </button>
+          <button onClick={downloadFinalInvoice} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50" title="Order less any returns = net payable to the vendor">
+            <FileText className="h-4 w-4" /> Final Invoice
           </button>
           <button onClick={handleEmail} disabled={emailPo.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60">
             {emailPo.isLoading ? <Spinner className="h-4 w-4" /> : <Mail className="h-4 w-4" />} Email vendor

@@ -26,7 +26,8 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       const user = response.data.user;
       
       sessionStorage.setItem('user_name', user.name);
-      
+      sessionStorage.setItem('user_role', user.role || '');
+
       setUserName(user.name);
       setIsSuccess(true); 
 

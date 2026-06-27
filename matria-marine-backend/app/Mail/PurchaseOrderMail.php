@@ -7,7 +7,6 @@ use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
@@ -38,7 +37,10 @@ class PurchaseOrderMail extends Mailable
 
     public function attachments(): array
     {
-        $pdf = Pdf::loadView('pdf.purchase-order', ['po' => $this->po]);
+        $logoPath = public_path('logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
+
+        $pdf = Pdf::loadView('pdf.purchase-order', ['po' => $this->po, 'logo' => $logo]);
 
         return [
             Attachment::fromData(fn () => $pdf->output(), ($this->po->po_number ?: 'PO').'.pdf')

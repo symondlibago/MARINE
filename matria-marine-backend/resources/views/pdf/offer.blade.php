@@ -94,6 +94,12 @@
                         <td class="lbl">Payment:</td>
                         <td>{{ $offer->payment_terms ?: '—' }}</td>
                     </tr>
+                    @if(optional($offer->creator)->name)
+                    <tr>
+                        <td class="lbl">Quoted by:</td>
+                        <td>{{ $offer->creator->name }}@if($offer->creator->phone) · {{ $offer->creator->phone }}@endif</td>
+                    </tr>
+                    @endif
                 </table>
             </td>
         </tr>

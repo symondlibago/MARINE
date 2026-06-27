@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\ReturnNoteMail;
 use App\Models\PurchaseOrder;
 use App\Models\ReturnNote;
+use App\Models\SentLog;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -193,11 +194,26 @@ class ReturnNoteController extends Controller
             return response()->json(['success' => false, 'message' => 'This vendor has no email on file.'], 422);
         }
 
+        $staff = $request->user();
         try {
-            Mail::to($returnNote->vendor->email)->send(new ReturnNoteMail($returnNote, $request->user()));
+            Mail::to($returnNote->vendor->email)->send(new ReturnNoteMail($returnNote, $staff));
         } catch (\Throwable $e) {
+            SentLog::record([
+                'type' => 'Return Note', 'reference' => $returnNote->rtn_number,
+                'recipient_name' => $returnNote->vendor->name, 'recipient_email' => $returnNote->vendor->email,
+                'subject' => 'Return Note '.$returnNote->rtn_number,
+                'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+            ]);
+
             return response()->json(['success' => false, 'message' => 'Email failed: '.$e->getMessage()], 500);
         }
+
+        SentLog::record([
+            'type' => 'Return Note', 'reference' => $returnNote->rtn_number,
+            'recipient_name' => $returnNote->vendor->name, 'recipient_email' => $returnNote->vendor->email,
+            'subject' => 'Return Note '.$returnNote->rtn_number,
+            'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+        ]);
 
         if ($returnNote->status === 'draft') {
             $returnNote->update(['status' => 'issued', 'issued_at' => $returnNote->issued_at ?? now()]);

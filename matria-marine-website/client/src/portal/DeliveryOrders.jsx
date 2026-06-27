@@ -34,16 +34,17 @@ export default function DeliveryOrders() {
               <th className="px-4 py-3 font-semibold">DO</th>
               <th className="px-4 py-3 font-semibold">Customer</th>
               <th className="px-4 py-3 font-semibold">Enquiry</th>
+              <th className="px-4 py-3 font-semibold">Prepared by</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 text-right font-semibold">Total</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <TableSkeleton cols={5} />
+              <TableSkeleton cols={6} />
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-slate-400">
+                <td colSpan={6} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center gap-2">
                     <Truck className="h-8 w-8 text-slate-300" />
                     No delivery orders yet — open an accepted offer and click <span className="font-medium">Create Delivery Order</span>.
@@ -63,6 +64,7 @@ export default function DeliveryOrders() {
                   <td className="px-4 py-3 font-medium text-[#28364b]">{r.do_number}</td>
                   <td className="px-4 py-3 text-slate-700">{r.customer?.name || r.customer_name || "—"}</td>
                   <td className="px-4 py-3 text-slate-500">{r.rfq?.reference || "—"}</td>
+                  <td className="px-4 py-3 text-slate-500">{r.creator?.name || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || "bg-slate-100"}`}>{r.status}</span>
                   </td>
