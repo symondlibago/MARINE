@@ -34,6 +34,7 @@ export default function Offers() {
               <th className="px-4 py-3 font-semibold">Offer</th>
               <th className="px-4 py-3 font-semibold">Customer</th>
               <th className="px-4 py-3 font-semibold">Enquiry</th>
+              <th className="px-4 py-3 font-semibold">Quoted by</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 text-right font-semibold">Markup</th>
               <th className="px-4 py-3 text-right font-semibold">Total</th>
@@ -41,10 +42,10 @@ export default function Offers() {
           </thead>
           <tbody>
             {isLoading ? (
-              <TableSkeleton cols={6} />
+              <TableSkeleton cols={7} />
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-slate-400">
+                <td colSpan={7} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center gap-2">
                     <Tag className="h-8 w-8 text-slate-300" />
                     No offers yet — open an enquiry's <span className="font-medium">Compare &amp; Award</span> and click <span className="font-medium">Markup &amp; Offer</span>.
@@ -64,6 +65,7 @@ export default function Offers() {
                   <td className="px-4 py-3 font-medium text-[#28364b]">{r.offer_number}</td>
                   <td className="px-4 py-3 text-slate-700">{r.customer?.name || r.customer_name || "—"}</td>
                   <td className="px-4 py-3 text-slate-500">{r.rfq?.reference || "—"}</td>
+                  <td className="px-4 py-3 text-slate-500">{r.creator?.name || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || "bg-slate-100"}`}>{r.status}</span>
                   </td>

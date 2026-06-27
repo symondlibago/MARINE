@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Anchor, Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle } from "lucide-react";
 import { offerAcceptanceAPI } from "@/pages/api";
 
 const money = (n) => Number(n || 0).toFixed(2);
@@ -10,7 +10,7 @@ function Shell({ children }) {
     <div className="min-h-screen bg-slate-50 py-10">
       <div className="mx-auto max-w-3xl px-4">
         <div className="mb-6 flex items-center gap-3">
-          <div className="rounded-full bg-[#28364b] p-2 text-white"><Anchor className="h-5 w-5" /></div>
+          <img src="/logo.png" alt="Matria Marine" className="h-11 w-11 shrink-0 object-contain" />
           <div>
             <h1 className="text-xl font-bold text-[#28364b]">Matria Marine — Quotation</h1>
             <p className="text-sm text-slate-500">Review your quotation and confirm your order. No login required.</p>
@@ -72,9 +72,29 @@ function OfferCard({ data }) {
             )}
           </tbody>
           <tfoot>
+            {(Number(data.packing_cost) > 0 || Number(data.transportation_cost) > 0) && (
+              <>
+                <tr className="border-t border-slate-200">
+                  <td colSpan={3} className="px-3 py-1.5 text-right text-sm text-slate-500">Subtotal</td>
+                  <td className="px-3 py-1.5 text-right text-sm text-slate-600">{money(data.subtotal)}</td>
+                </tr>
+                {Number(data.packing_cost) > 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-1.5 text-right text-sm text-slate-500">Packing cost</td>
+                    <td className="px-3 py-1.5 text-right text-sm text-slate-600">{money(data.packing_cost)}</td>
+                  </tr>
+                )}
+                {Number(data.transportation_cost) > 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-1.5 text-right text-sm text-slate-500">Transportation cost</td>
+                    <td className="px-3 py-1.5 text-right text-sm text-slate-600">{money(data.transportation_cost)}</td>
+                  </tr>
+                )}
+              </>
+            )}
             <tr className="border-t border-slate-200">
               <td colSpan={3} className="px-3 py-2.5 text-right text-sm font-semibold text-slate-500">Total ({data.currency})</td>
-              <td className="px-3 py-2.5 text-right text-base font-bold text-[#28364b]">{money(data.subtotal)}</td>
+              <td className="px-3 py-2.5 text-right text-base font-bold text-[#28364b]">{money(data.grand_total ?? data.subtotal)}</td>
             </tr>
           </tfoot>
         </table>

@@ -17,12 +17,14 @@ import PurchaseOrders from "./PurchaseOrders";
 import PurchaseOrderDetail from "./PurchaseOrderDetail";
 import ReturnNotes from "./ReturnNotes";
 import ReturnNoteDetail from "./ReturnNoteDetail";
+import ManageStaff from "./ManageStaff";
+import SentLog from "./SentLog";
 import Reports from "./Reports";
 import Customers from "./Customers";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
 
-const STAFF_ROLES = ["admin", "staff"];
+const STAFF_ROLES = ["super_admin", "admin"];
 
 /**
  * Gate for the portal: requires a Sanctum token, verifies it against
@@ -89,6 +91,8 @@ export default function PortalApp() {
               <Route path="/return-notes/:id" component={ReturnNoteDetail} />
               <Route path="/reports" component={Reports} />
               <Route path="/customers" component={Customers} />
+              <Route path="/staff" component={ManageStaff} />
+              <Route path="/sent-log" component={SentLog} />
               <Route>
                 <div className="p-8 text-slate-500">Portal page not found.</div>
               </Route>

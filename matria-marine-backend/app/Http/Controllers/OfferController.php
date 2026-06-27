@@ -6,6 +6,7 @@ use App\Mail\OfferMail;
 use App\Models\Customer;
 use App\Models\Offer;
 use App\Models\Rfq;
+use App\Models\SentLog;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ class OfferController extends Controller
 {
     public function index()
     {
-        $offers = Offer::with(['rfq:id,reference', 'customer:id,name'])
+        $offers = Offer::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name'])
             ->orderByDesc('id')
             ->get();
 
@@ -197,7 +198,7 @@ class OfferController extends Controller
 
     public function pdf(Offer $offer)
     {
-        $offer->load(['items', 'rfq:id,customer_reference,ship_name']);
+        $offer->load(['items', 'rfq:id,customer_reference,ship_name', 'creator:id,name,phone']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
@@ -226,11 +227,26 @@ class OfferController extends Controller
         }
         $link = rtrim(config('procurement.frontend_url'), '/').'/offer/'.$offer->token;
 
+        $staff = $request->user();
         try {
-            Mail::to($email)->send(new OfferMail($offer, $request->user(), $link));
+            Mail::to($email)->send(new OfferMail($offer, $staff, $link));
         } catch (\Throwable $e) {
+            SentLog::record([
+                'type' => 'Quotation', 'reference' => $offer->offer_number,
+                'recipient_name' => $offer->customer?->name, 'recipient_email' => $email,
+                'subject' => 'Quotation '.$offer->offer_number,
+                'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+            ]);
+
             return response()->json(['success' => false, 'message' => 'Email failed: '.$e->getMessage()], 500);
         }
+
+        SentLog::record([
+            'type' => 'Quotation', 'reference' => $offer->offer_number,
+            'recipient_name' => $offer->customer?->name, 'recipient_email' => $email,
+            'subject' => 'Quotation '.$offer->offer_number,
+            'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+        ]);
 
         if ($offer->status === 'draft') {
             $offer->update(['status' => 'sent']);

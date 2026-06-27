@@ -13,7 +13,10 @@
         table.items th, table.items td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
         table.items th { background: #28364b; color: #fff; }
         .num { text-align: right; }
-        tfoot td { font-weight: bold; }
+        table.totals { width: 45%; margin-left: 55%; margin-top: 10px; border-collapse: collapse; }
+        table.totals td { padding: 4px 8px; }
+        table.totals tr.grand td { border-top: 2px solid #28364b; font-weight: bold; font-size: 14px; }
+        .credit { color: #b45309; }
     </style>
 </head>
 <body>
@@ -21,8 +24,8 @@
         <table style="width:100%;">
             <tr>
                 <td style="vertical-align:middle;">
-                    <h1>Purchase Order — {{ $po->po_number }}</h1>
-                    <div class="muted">Matria Marine Services</div>
+                    <h1>Final Invoice</h1>
+                    <div class="muted">{{ $company['name'] }} · for {{ $po->po_number }}</div>
                 </td>
                 <td style="text-align:right; vertical-align:middle; width:90px;">
                     @if($logo)<img src="{{ $logo }}" style="height:54px;">@endif
@@ -42,15 +45,12 @@
                 @if($po->vendor->address){{ $po->vendor->address }}@endif
             </td>
             <td>
-                <strong>PO number:</strong> {{ $po->po_number }}<br>
+                <strong>Invoice for PO:</strong> {{ $po->po_number }}<br>
+                <strong>Date:</strong> {{ now()->format('d M Y') }}<br>
                 <strong>Status:</strong> {{ ucfirst($po->status) }}<br>
-                <strong>Issued:</strong> {{ $po->issued_date ? $po->issued_date->format('d M Y') : '—' }}<br>
-                <strong>Expected:</strong> {{ $po->expected_date ? $po->expected_date->format('d M Y') : '—' }}<br>
-                <strong>Vessel:</strong> {{ $po->ship_name ?: '—' }}<br>
-                <strong>Delivery port:</strong> {{ $po->delivery_port ?: '—' }}<br>
+                @if($po->ship_name)<strong>Vessel:</strong> {{ $po->ship_name }}<br>@endif
                 @if($po->delivery_address)<strong>Deliver to:</strong> {{ $po->delivery_address }}<br>@endif
-                <strong>Currency:</strong> {{ $po->currency }}<br>
-                @if(optional($po->creator)->name)<strong>Prepared by:</strong> {{ $po->creator->name }}@if($po->creator->phone) · {{ $po->creator->phone }}@endif@endif
+                <strong>Currency:</strong> {{ $po->currency }}
             </td>
         </tr>
     </table>
@@ -80,20 +80,58 @@
                 <tr><td colspan="6">No line items on this purchase order.</td></tr>
             @endforelse
         </tbody>
-        <tfoot>
+    </table>
+
+    @if($returnsTotal > 0 && $po->returnNote)
+        <p style="margin-top:14px;"><strong>Returns / rejected items</strong>
+            @if($po->returnNote->rtn_number) ({{ $po->returnNote->rtn_number }})@endif:</p>
+        <table class="items" style="margin-top:4px;">
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th>Reason</th>
+                    <th class="num">Qty returned</th>
+                    <th class="num">Unit cost</th>
+                    <th class="num">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($po->returnNote->items as $r)
+                    <tr>
+                        <td>{{ $r->description }}</td>
+                        <td>{{ $r->reason ?: '—' }}</td>
+                        <td class="num">{{ number_format($r->qty, 2) }}</td>
+                        <td class="num">{{ number_format($r->unit_cost, 2) }}</td>
+                        <td class="num credit">− {{ number_format($r->line_total, 2) }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endif
+
+    <table class="totals">
+        <tr>
+            <td>Order total</td>
+            <td class="num">{{ number_format($po->subtotal, 2) }} {{ $po->currency }}</td>
+        </tr>
+        @if($returnsTotal > 0)
             <tr>
-                <td colspan="5" class="num">Total ({{ $po->currency }})</td>
-                <td class="num">{{ number_format($po->subtotal, 2) }}</td>
+                <td class="credit">Less returns</td>
+                <td class="num credit">− {{ number_format($returnsTotal, 2) }} {{ $po->currency }}</td>
             </tr>
-        </tfoot>
+        @endif
+        <tr class="grand">
+            <td>Net payable</td>
+            <td class="num">{{ number_format($netPayable, 2) }} {{ $po->currency }}</td>
+        </tr>
     </table>
 
     @if($po->notes)
-        <p style="margin-top: 14px;"><strong>Notes:</strong> {{ $po->notes }}</p>
+        <p style="margin-top: 18px;"><strong>Notes:</strong> {{ $po->notes }}</p>
     @endif
 
     <p class="muted" style="margin-top: 24px; font-size: 11px;">
-        This purchase order is issued by Matria Marine Services. Please reply to confirm acceptance.
+        This final invoice reflects the amount payable to the supplier for {{ $po->po_number }}{{ $returnsTotal > 0 ? ' after deducting returned / rejected items' : '' }}.
     </p>
 </body>
 </html>

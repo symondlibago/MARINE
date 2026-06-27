@@ -11,28 +11,28 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Ensure the portal staff roles exist (spatie, 'web' guard).
+        // Portal staff roles (spatie, 'web' guard).
+        Role::findOrCreate('super_admin', 'web');
         Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('staff', 'web');
 
-        // Primary admin account. Created once with its seeded password; on
-        // re-seed the password is left untouched.
+        // Primary account — the Super Admin (can do everything, incl. Media + MMS).
         $admin = User::firstOrCreate(
             ['email' => 'sales@matriamarine.com'],   // Login Email
             [
                 'name' => 'Matria Admin',
-                'password' => Hash::make('M@tria_2025'), // Login Password (only set on first create)
-                'role' => 'admin',
+                'password' => Hash::make('M@tria_2025'), // only set on first create
+                'role' => 'super_admin',
+                'phone' => '(65) 82277151',
             ]
         );
+        $admin->forceFill(['role' => 'super_admin', 'is_active' => true])->save();
+        $admin->syncRoles(['super_admin']);
 
-        // Make sure it is a fully-enabled portal admin: legacy column (read by
-        // the SPA) + spatie 'admin' role (checked by the API gate) + active.
-        $admin->forceFill(['role' => 'admin', 'is_active' => true])->save();
-        $admin->syncRoles(['admin']);
+        // Only the primary Super Admin is seeded — all other staff are added
+        // from the portal's "Manage Staff" page.
 
         $this->command?->info(
-            "Admin ready: {$admin->email} (spatie: {$admin->getRoleNames()->implode(',')}, active: ".(int) $admin->is_active.')'
+            "Super admin ready: {$admin->email} (spatie: {$admin->getRoleNames()->implode(',')})"
         );
     }
 }
