@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import Modal from "./ui/Modal";
@@ -11,19 +11,33 @@ import { useConfirm } from "./ui/confirm";
 const inputCls =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
 
+const PER_PAGE = 100;
+
 export default function MasterCrud({ title, singular, queryKey, api, columns, fields, emptyRow }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyRow);
 
-  const { data, isLoading } = useQuery({
-    queryKey: [queryKey, search],
-    queryFn: async () => (await api.list(search)).data.data,
+  // Reset to the first page whenever the search term changes.
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: [queryKey, search, page],
+    queryFn: async () =>
+      (await api.list({ ...(search ? { search } : {}), page, per_page: PER_PAGE })).data,
+    keepPreviousData: true,
   });
-  const rows = data ?? [];
+  const rows = data?.data ?? [];
+  const total = data?.meta?.total ?? rows.length;
+  const lastPage = data?.meta?.last_page ?? 1;
+  const rangeStart = total === 0 ? 0 : (page - 1) * PER_PAGE + 1;
+  const rangeEnd = Math.min(page * PER_PAGE, total);
 
   const saveMutation = useMutation({
     mutationFn: (payload) => (editing ? api.update(editing.id, payload) : api.create(payload)),
@@ -76,7 +90,7 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#28364b]">{title}</h1>
-          <p className="text-sm text-slate-500">{rows.length} record{rows.length === 1 ? "" : "s"}</p>
+          <p className="text-sm text-slate-500">{total.toLocaleString()} record{total === 1 ? "" : "s"}</p>
         </div>
         <button onClick={openCreate} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63]">
           <Plus className="h-4 w-4" /> New {singular}
@@ -102,14 +116,8 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
             ) : rows.length === 0 ? (
               <tr><td colSpan={columns.length + 1} className="py-10 text-center text-slate-400">No {title.toLowerCase()} yet.</td></tr>
             ) : (
-              rows.map((row, i) => (
-                <motion.tr
-                  key={row.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: Math.min(i * 0.02, 0.3) }}
-                  className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                >
+              rows.map((row) => (
+                <tr key={row.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                   {columns.map((c) => <td key={c.key} className="px-4 py-3 text-slate-700">{c.render ? c.render(row) : row[c.key] ?? "—"}</td>)}
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
@@ -121,12 +129,42 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
                       </button>
                     </div>
                   </td>
-                </motion.tr>
+                </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {!isLoading && total > 0 && (
+        <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+          <p className="text-sm text-slate-500">
+            Showing <span className="font-medium text-slate-700">{rangeStart.toLocaleString()}</span>–
+            <span className="font-medium text-slate-700">{rangeEnd.toLocaleString()}</span> of{" "}
+            <span className="font-medium text-slate-700">{total.toLocaleString()}</span>
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || isFetching}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" /> Prev
+            </button>
+            <span className="px-3 text-sm text-slate-500">
+              Page <span className="font-semibold text-[#28364b]">{page}</span> of {lastPage.toLocaleString()}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(lastPage, p + 1))}
+              disabled={page >= lastPage || isFetching}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <Modal open={dialogOpen} onClose={() => setDialogOpen(false)} title={editing ? `Edit ${singular}` : `New ${singular}`}>
         <form onSubmit={handleSubmit} className="space-y-4 p-6">

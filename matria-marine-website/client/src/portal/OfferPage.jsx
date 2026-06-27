@@ -6,6 +6,7 @@ import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2 
 import { toast } from "sonner";
 import { offersAPI, customersAPI, deliveryOrdersAPI } from "@/pages/api";
 import Select from "./ui/Select";
+import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import { Spinner, PageLoader } from "./ui/Loading";
 
@@ -42,8 +43,7 @@ export default function OfferPage({ params }) {
   const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", status: "draft", notes: "" });
   const [items, setItems] = useState([]);
   const [bulk, setBulk] = useState("");
-
-  const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: async () => (await customersAPI.list()).data.data });
+  const [pickedCustomerName, setPickedCustomerName] = useState(null);
 
   useEffect(() => {
     if (!offer) return;
@@ -99,8 +99,7 @@ export default function OfferPage({ params }) {
   const profit = custTotal - baseTotal;
   const profitPct = baseTotal > 0 ? (profit / baseTotal) * 100 : 0;
 
-  const customerOptions = [{ value: "", label: "— Select customer —" }, ...(customers || []).map((c) => ({ value: String(c.id), label: c.name }))];
-  const custName = header.customer_id ? (customers || []).find((c) => String(c.id) === header.customer_id)?.name : null;
+  const custName = header.customer_id ? pickedCustomerName ?? offer?.customer_name ?? null : null;
 
   const save = useMutation({
     mutationFn: () =>
@@ -238,7 +237,7 @@ export default function OfferPage({ params }) {
       {/* Commercial terms */}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Customer"><Select value={header.customer_id} onChange={(v) => setH("customer_id", v)} options={customerOptions} /></Field>
+          <Field label="Customer"><EntityPicker api={customersAPI} queryKey="customers" value={header.customer_id} onChange={(v, ent) => { setH("customer_id", v); setPickedCustomerName(ent?.name ?? null); }} placeholder="— Select customer —" /></Field>
           <Field label="Currency"><Select value={header.currency} onChange={(v) => setH("currency", v)} options={CURRENCIES} /></Field>
           <Field label="Valid until"><DatePicker value={header.valid_until} onChange={(v) => setH("valid_until", v)} /></Field>
           <Field label="Status"><Select value={header.status} onChange={(v) => setH("status", v)} options={STATUSES} /></Field>

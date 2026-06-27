@@ -31,12 +31,15 @@ const ENQ_BADGE = {
 
 export default function Dashboard() {
   const { data: rfqs } = useQuery({ queryKey: ["rfqs"], queryFn: async () => (await rfqsAPI.list()).data.data });
-  const { data: vendors } = useQuery({ queryKey: ["vendors", ""], queryFn: async () => (await vendorsAPI.list()).data.data });
+  // Only the counts are needed here — fetch totals, not the whole vendor table.
+  const { data: vendorMeta } = useQuery({ queryKey: ["vendors", "count"], queryFn: async () => (await vendorsAPI.list({ per_page: 1 })).data.meta });
+  const { data: vendorActiveMeta } = useQuery({ queryKey: ["vendors", "count", "active"], queryFn: async () => (await vendorsAPI.list({ per_page: 1, active: 1 })).data.meta });
   const { data: pos } = useQuery({ queryKey: ["dashboard-pos"], queryFn: async () => (await purchaseOrdersAPI.list()).data.data });
 
   const rfqList = rfqs ?? [];
   const poList = pos ?? [];
-  const vendorList = vendors ?? [];
+  const vendorTotal = vendorMeta?.total ?? 0;
+  const vendorActive = vendorActiveMeta?.total ?? 0;
 
   const openEnq = rfqList.filter((r) => r.status !== "closed").length;
   const quotes = rfqList.reduce((a, r) => a + (r.quotes_count || 0), 0);
@@ -47,7 +50,7 @@ export default function Dashboard() {
   const stats = [
     { label: "Enquiries", value: rfqList.length, sub: `${openEnq} open · ${quotes} quotes`, icon: FileText, to: "/enquiries" },
     { label: "Purchase Orders", value: poList.length, sub: `${poAwaiting} awaiting acceptance`, icon: ShoppingCart, to: "/purchase-orders" },
-    { label: "Vendors", value: vendorList.length, sub: `${vendorList.filter((v) => v.is_active).length} active`, icon: Ship, to: "/vendors" },
+    { label: "Vendors", value: vendorTotal, sub: `${vendorActive} active`, icon: Ship, to: "/vendors" },
   ];
 
   const actions = [

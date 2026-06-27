@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -25,15 +25,26 @@ export default function EnquiryDetail({ params }) {
   const [sendOpen, setSendOpen] = useState(false);
   const [selected, setSelected] = useState([]);
   const [vendorSearch, setVendorSearch] = useState("");
+  const [vendorQuery, setVendorQuery] = useState("");
   const [compose, setCompose] = useState({ subject: "", message: "" });
+
+  // Debounce the vendor search so we hit the server at most ~4x/second.
+  useEffect(() => {
+    const t = setTimeout(() => setVendorQuery(vendorSearch), 250);
+    return () => clearTimeout(t);
+  }, [vendorSearch]);
 
   const { data: rfq, isLoading } = useQuery({
     queryKey: ["rfq", id],
     queryFn: async () => (await rfqsAPI.get(id)).data.data,
   });
-  const { data: vendors } = useQuery({
-    queryKey: ["vendors", ""],
-    queryFn: async () => (await vendorsAPI.list()).data.data,
+  // Server-side search: only the first 50 matches are fetched & rendered.
+  const { data: vendors, isFetching: vendorsFetching } = useQuery({
+    queryKey: ["vendors", "send-picker", vendorQuery],
+    queryFn: async () =>
+      (await vendorsAPI.list({ ...(vendorQuery ? { search: vendorQuery } : {}), per_page: 50 })).data.data,
+    enabled: sendOpen,
+    keepPreviousData: true,
   });
 
   const sendMutation = useMutation({
@@ -71,9 +82,7 @@ export default function EnquiryDetail({ params }) {
   const sentVendors = rfq.rfq_vendors || [];
   const hasQuotes = (rfq.quotes || []).length > 0;
   const toggle = (vid) => setSelected((s) => (s.includes(vid) ? s.filter((x) => x !== vid) : [...s, vid]));
-  const filteredVendors = (vendors || []).filter(
-    (v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase()) || (v.email || "").toLowerCase().includes(vendorSearch.toLowerCase())
-  );
+  const vendorResults = vendors || [];
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
@@ -181,10 +190,12 @@ export default function EnquiryDetail({ params }) {
               <input value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} placeholder="Search vendors…" className="w-full rounded-lg border border-slate-200 px-3 py-2 pl-9 text-sm" />
             </div>
             <div className="max-h-52 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
-              {filteredVendors.length === 0 ? (
+              {vendorsFetching && vendorResults.length === 0 ? (
+                <p className="py-4 text-center text-xs text-slate-400">Searching…</p>
+              ) : vendorResults.length === 0 ? (
                 <p className="py-4 text-center text-xs text-slate-400">No vendors match.</p>
               ) : (
-                filteredVendors.map((v) => (
+                vendorResults.map((v) => (
                   <label key={v.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-slate-50">
                     <input type="checkbox" checked={selected.includes(v.id)} onChange={() => toggle(v.id)} className="accent-[#28364b]" />
                     <span className="font-medium text-[#28364b]">{v.name}</span>
@@ -193,6 +204,9 @@ export default function EnquiryDetail({ params }) {
                 ))
               )}
             </div>
+            {vendorResults.length >= 50 && (
+              <p className="mt-1 text-[11px] text-slate-400">Showing the first 50 — type to narrow down.</p>
+            )}
           </div>
           <Labeled label="Subject (optional)">
             <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={compose.subject} onChange={(e) => setCompose((c) => ({ ...c, subject: e.target.value }))} placeholder={`Request for Quotation — ${rfq.reference}`} />

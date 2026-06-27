@@ -18,9 +18,33 @@ class CustomerController extends Controller
             });
         }
 
+        if ($request->filled('active')) {
+            $query->where('is_active', $request->boolean('active'));
+        }
+
+        $query->orderBy('name');
+
+        // Opt-in pagination: only when the client asks (page / per_page present).
+        // Other consumers (dropdowns) still get the full list as before.
+        if ($request->filled('page') || $request->filled('per_page')) {
+            $perPage = min(max((int) $request->query('per_page', 100), 1), 200);
+            $paginator = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $paginator->items(),
+                'meta' => [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page' => $paginator->lastPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                ],
+            ]);
+        }
+
         return response()->json([
             'success' => true,
-            'data' => $query->orderBy('name')->get(),
+            'data' => $query->get(),
         ]);
     }
 

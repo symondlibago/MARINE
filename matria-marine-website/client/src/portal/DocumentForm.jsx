@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { documentsAPI, customersAPI, vendorsAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
 import Select from "./ui/Select";
+import EntityPicker from "./ui/EntityPicker";
 import UnitSelect from "./ui/UnitSelect";
 import DatePicker from "./ui/DatePicker";
 
@@ -54,10 +55,6 @@ export default function DocumentForm({ params }) {
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const partyKind = form.type === "enquiry" ? "vendor" : "customer";
-
-  const { data: customers } = useQuery({ queryKey: ["customers", ""], queryFn: async () => (await customersAPI.list()).data.data });
-  const { data: vendors } = useQuery({ queryKey: ["vendors", ""], queryFn: async () => (await vendorsAPI.list()).data.data });
-  const recipientList = (partyKind === "vendor" ? vendors : customers) ?? [];
 
   // Edit: load the existing document.
   const { data: existing, isLoading } = useQuery({
@@ -107,8 +104,7 @@ export default function DocumentForm({ params }) {
 
   const onTypeChange = (t) => setForm((f) => ({ ...f, type: t, customer_id: "", vendor_id: "" }));
 
-  const pickRecipient = (idStr) => {
-    const ent = recipientList.find((e) => String(e.id) === String(idStr));
+  const pickRecipient = (idStr, ent) => {
     setForm((f) => ({
       ...f,
       customer_id: partyKind === "customer" ? idStr : "",
@@ -225,19 +221,14 @@ export default function DocumentForm({ params }) {
       <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 lg:grid-cols-2">
         <div className="space-y-3">
           <Field label={recipientLabel}>
-            {recipientList.length === 0 ? (
-              <p className="text-sm text-slate-400">
-                No {recipientLabel.toLowerCase()}s yet —{" "}
-                <Link href={partyKind === "vendor" ? "/vendors" : "/customers"} className="text-[#28364b] underline">add one</Link>, or just type the details below.
-              </p>
-            ) : (
-              <Select
-                value={partyKind === "vendor" ? form.vendor_id : form.customer_id}
-                onChange={pickRecipient}
-                options={recipientList.map((e) => ({ value: String(e.id), label: e.name }))}
-                placeholder={`Choose ${recipientLabel.toLowerCase()}`}
-              />
-            )}
+            <EntityPicker
+              api={partyKind === "vendor" ? vendorsAPI : customersAPI}
+              queryKey={partyKind === "vendor" ? "vendors" : "customers"}
+              value={partyKind === "vendor" ? form.vendor_id : form.customer_id}
+              onChange={pickRecipient}
+              placeholder={`Choose ${recipientLabel.toLowerCase()}`}
+            />
+            <p className="mt-1 text-xs text-slate-400">Search by name, or just type the details below.</p>
           </Field>
           <Field label="Name (shown on document)">
             <input className={fieldInput} value={form.party_name} onChange={(e) => setF("party_name", e.target.value)} />

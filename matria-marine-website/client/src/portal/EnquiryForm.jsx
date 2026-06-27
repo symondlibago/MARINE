@@ -6,6 +6,7 @@ import { Plus, Trash2, ArrowLeft, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, customersAPI } from "@/pages/api";
 import Select from "./ui/Select";
+import EntityPicker from "./ui/EntityPicker";
 import Combobox from "./ui/Combobox";
 import DatePicker from "./ui/DatePicker";
 import { Spinner } from "./ui/Loading";
@@ -54,11 +55,6 @@ export default function EnquiryForm({ params }) {
   });
   const [items, setItems] = useState([{ description: "", qty: "", unit: "" }]);
 
-  const { data: customers } = useQuery({
-    queryKey: ["customers"],
-    queryFn: async () => (await customersAPI.list()).data.data,
-  });
-
   // When editing, load the existing enquiry and prefill (items keep their id).
   const { data: existing } = useQuery({
     queryKey: ["rfq", editId],
@@ -98,11 +94,6 @@ export default function EnquiryForm({ params }) {
   const setItem = (i, k, v) => setItems((its) => its.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   const addItem = () => setItems((its) => [...its, { description: "", qty: "", unit: "" }]);
   const removeItem = (i) => setItems((its) => its.filter((_, idx) => idx !== i));
-
-  const customerOptions = [
-    { value: "", label: "— Select customer —" },
-    ...(customers || []).map((c) => ({ value: String(c.id), label: c.name })),
-  ];
 
   const save = useMutation({
     mutationFn: () => {
@@ -144,7 +135,7 @@ export default function EnquiryForm({ params }) {
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer">
-            <Select value={header.customer_id} onChange={(v) => setH("customer_id", v)} options={customerOptions} />
+            <EntityPicker api={customersAPI} queryKey="customers" value={header.customer_id} onChange={(v) => setH("customer_id", v)} placeholder="— Select customer —" />
           </Field>
           <Field label="Customer reference">
             <input className={input} value={header.customer_reference} onChange={(e) => setH("customer_reference", e.target.value)} placeholder="Their PO / ref no." />

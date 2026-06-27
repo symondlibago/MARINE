@@ -112,7 +112,7 @@ export const offerAcceptanceAPI = {
 
 // --- Phase 1 masters (staff, authenticated) ---
 export const vendorsAPI = {
-  list: (search) => api.get(apiUrl('/portal/vendors'), { params: search ? { search } : {} }),
+  list: (params = {}) => api.get(apiUrl('/portal/vendors'), { params }),
   get: (id) => api.get(apiUrl(`/portal/vendors/${id}`)),
   create: (payload) => api.post(apiUrl('/portal/vendors'), payload),
   update: (id, payload) => api.put(apiUrl(`/portal/vendors/${id}`), payload),
@@ -186,7 +186,7 @@ export const reportsAPI = {
 
 // --- Customers master (for outgoing documents) ---
 export const customersAPI = {
-  list: (search) => api.get(apiUrl('/portal/customers'), { params: search ? { search } : {} }),
+  list: (params = {}) => api.get(apiUrl('/portal/customers'), { params }),
   get: (id) => api.get(apiUrl(`/portal/customers/${id}`)),
   create: (payload) => api.post(apiUrl('/portal/customers'), payload),
   update: (id, payload) => api.put(apiUrl(`/portal/customers/${id}`), payload),
