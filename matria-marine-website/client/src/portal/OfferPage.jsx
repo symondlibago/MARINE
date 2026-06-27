@@ -40,10 +40,11 @@ export default function OfferPage({ params }) {
     queryFn: async () => (await offersAPI.get(id)).data.data,
   });
 
-  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", status: "draft", notes: "" });
+  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "" });
   const [items, setItems] = useState([]);
   const [bulk, setBulk] = useState("");
   const [pickedCustomerName, setPickedCustomerName] = useState(null);
+  const [bulkLead, setBulkLead] = useState("");
 
   useEffect(() => {
     if (!offer) return;
@@ -56,6 +57,8 @@ export default function OfferPage({ params }) {
       origin_type: offer.origin_type || "",
       status: offer.status || "draft",
       notes: offer.notes || "",
+      packing_cost: offer.packing_cost != null ? String(offer.packing_cost) : "",
+      transportation_cost: offer.transportation_cost != null ? String(offer.transportation_cost) : "",
     });
     setItems(
       (offer.items || [])
@@ -84,6 +87,10 @@ export default function OfferPage({ params }) {
     if (Number.isNaN(m) || bulk === "") return;
     setItems((arr) => arr.map((it) => ({ ...it, markup_pct: m })));
   };
+  const applyBulkLead = () => {
+    if (bulkLead.trim() === "") return;
+    setItems((arr) => arr.map((it) => ({ ...it, lead_time: bulkLead.trim() })));
+  };
 
   // Live maths: base → markup% → unit price → discount → amount; markup amount = profit.
   const rows = items.map((it) => {
@@ -98,6 +105,10 @@ export default function OfferPage({ params }) {
   const custTotal = rows.reduce((s, r) => s + r.line_total, 0);
   const profit = custTotal - baseTotal;
   const profitPct = baseTotal > 0 ? (profit / baseTotal) * 100 : 0;
+  const packing = Number(header.packing_cost) || 0;
+  const transportation = Number(header.transportation_cost) || 0;
+  const deliveryTotal = packing + transportation;
+  const grandTotal = custTotal + deliveryTotal;
 
   const custName = header.customer_id ? pickedCustomerName ?? offer?.customer_name ?? null : null;
 
@@ -110,6 +121,8 @@ export default function OfferPage({ params }) {
         payment_terms: header.payment_terms || null,
         delivery_terms: header.delivery_terms || null,
         origin_type: header.origin_type || null,
+        packing_cost: Number(header.packing_cost) || 0,
+        transportation_cost: Number(header.transportation_cost) || 0,
         status: header.status,
         notes: header.notes || null,
         items: items.map((it) => ({
@@ -230,7 +243,8 @@ export default function OfferPage({ params }) {
         </div>
         <div className="rounded-xl border border-[#28364b] bg-[#28364b] p-4 text-white">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">Customer total</div>
-          <div className="mt-1 text-2xl font-bold">{money(custTotal)} <span className="text-sm font-normal text-slate-300">{header.currency}</span></div>
+          <div className="mt-1 text-2xl font-bold">{money(grandTotal)} <span className="text-sm font-normal text-slate-300">{header.currency}</span></div>
+          {deliveryTotal > 0 && <div className="mt-1 text-xs text-slate-300">incl. delivery {money(deliveryTotal)} ({money(custTotal)} items + {money(deliveryTotal)} delivery)</div>}
         </div>
       </div>
 
@@ -245,6 +259,23 @@ export default function OfferPage({ params }) {
           <Field label="Delivery terms (Incoterms)"><Select value={header.delivery_terms} onChange={(v) => setH("delivery_terms", v)} options={DELIVERY_TERMS} placeholder="—" /></Field>
           <Field label="Origin"><Select value={header.origin_type} onChange={(v) => setH("origin_type", v)} options={ORIGIN_TYPES} placeholder="—" /></Field>
         </div>
+
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
+            <Truck className="h-3.5 w-3.5" /> Delivery charges ({header.currency})
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Packing cost">
+              <input type="number" step="0.01" min="0" value={header.packing_cost} onChange={(e) => setH("packing_cost", e.target.value)} placeholder="0.00" className={`${ci} text-right`} />
+            </Field>
+            <Field label="Transportation cost">
+              <input type="number" step="0.01" min="0" value={header.transportation_cost} onChange={(e) => setH("transportation_cost", e.target.value)} placeholder="0.00" className={`${ci} text-right`} />
+            </Field>
+            <Field label="Total delivery">
+              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-right text-sm font-semibold text-[#28364b]">{money(deliveryTotal)}</div>
+            </Field>
+          </div>
+        </div>
       </div>
 
       {/* Line items with markup */}
@@ -254,13 +285,16 @@ export default function OfferPage({ params }) {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items &amp; markup</h2>
             <p className="text-xs text-slate-400">Amber columns are internal — the customer only sees description, unit, qty, unit price, discount &amp; amount.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
             <span className="text-xs text-slate-500">Set all markup</span>
             <div className="relative">
               <input type="number" value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder="%" className="w-20 rounded border border-slate-200 px-2 py-1 pr-5 text-sm" />
               <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
             </div>
             <button onClick={applyBulk} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
+            <span className="ml-2 text-xs text-slate-500">Set all lead time</span>
+            <input value={bulkLead} onChange={(e) => setBulkLead(e.target.value)} placeholder="e.g. 2 days" className="w-28 rounded border border-slate-200 px-2 py-1 text-sm" />
+            <button onClick={applyBulkLead} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
           </div>
         </div>
 
@@ -313,9 +347,28 @@ export default function OfferPage({ params }) {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50">
-                <td colSpan={11} className="px-2 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Customer total ({header.currency})</td>
-                <td className="px-2 py-3 text-right text-xs font-semibold text-green-700 whitespace-nowrap">{money(profit)}</td>
-                <td className="px-2 py-3 text-right text-base font-bold text-[#28364b] whitespace-nowrap">{money(custTotal)}</td>
+                <td colSpan={11} className="px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Items subtotal ({header.currency})</td>
+                <td className="px-2 py-2 text-right text-xs font-semibold text-green-700 whitespace-nowrap">{money(profit)}</td>
+                <td className="px-2 py-2 text-right text-sm font-semibold text-[#28364b] whitespace-nowrap">{money(custTotal)}</td>
+                <td colSpan={3}></td>
+              </tr>
+              {packing > 0 && (
+                <tr className="bg-slate-50">
+                  <td colSpan={12} className="px-2 py-1 text-right text-xs text-slate-500">Packing cost</td>
+                  <td className="px-2 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(packing)}</td>
+                  <td colSpan={3}></td>
+                </tr>
+              )}
+              {transportation > 0 && (
+                <tr className="bg-slate-50">
+                  <td colSpan={12} className="px-2 py-1 text-right text-xs text-slate-500">Transportation cost</td>
+                  <td className="px-2 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(transportation)}</td>
+                  <td colSpan={3}></td>
+                </tr>
+              )}
+              <tr className="border-t border-slate-200 bg-slate-50">
+                <td colSpan={12} className="px-2 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
+                <td className="px-2 py-3 text-right text-base font-bold text-[#28364b] whitespace-nowrap">{money(grandTotal)}</td>
                 <td colSpan={3}></td>
               </tr>
             </tfoot>

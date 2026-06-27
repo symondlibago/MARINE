@@ -44,6 +44,7 @@ export const authAPI = {
     const response = await api.post(apiUrl('/logout'));
     localStorage.removeItem('auth_token');
     sessionStorage.removeItem('user_name');
+    sessionStorage.removeItem('user_role');
     return response;
   },
 
@@ -153,7 +154,25 @@ export const purchaseOrdersAPI = {
   update: (id, payload) => api.patch(apiUrl(`/portal/purchase-orders/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/purchase-orders/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}/pdf`), { responseType: 'blob' }),
+  finalInvoice: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}/final-invoice`), { responseType: 'blob' }),
   email: (id) => api.post(apiUrl(`/portal/purchase-orders/${id}/email`)),
+  uploadFiles: (id, formData) =>
+    api.post(apiUrl(`/portal/purchase-orders/${id}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  deleteFile: (id, attachmentId) => api.delete(apiUrl(`/portal/purchase-orders/${id}/attachments/${attachmentId}`)),
+  attachmentUrl: (id, attachmentId) => api.get(apiUrl(`/portal/purchase-orders/${id}/attachments/${attachmentId}`)),
+};
+
+// --- Return notes: goods returned to a vendor (credits the PO payable) ---
+export const returnNotesAPI = {
+  list: (params = {}) => api.get(apiUrl('/portal/return-notes'), { params }),
+  get: (id) => api.get(apiUrl(`/portal/return-notes/${id}`)),
+  saveForPo: (poId, payload) => api.post(apiUrl(`/portal/purchase-orders/${poId}/return-note`), payload),
+  update: (id, payload) => api.patch(apiUrl(`/portal/return-notes/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/return-notes/${id}`)),
+  pdf: (id) => api.get(apiUrl(`/portal/return-notes/${id}/pdf`), { responseType: 'blob' }),
+  email: (id) => api.post(apiUrl(`/portal/return-notes/${id}/email`)),
 };
 
 // --- Offers: customer quotation with markup (built from an enquiry's awards) ---
@@ -175,6 +194,20 @@ export const deliveryOrdersAPI = {
   update: (id, payload) => api.patch(apiUrl(`/portal/delivery-orders/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/delivery-orders/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}/pdf`), { responseType: 'blob' }),
+  proforma: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}/proforma`), { responseType: 'blob' }),
+};
+
+// --- Staff management (super admin only) ---
+export const usersAPI = {
+  list: () => api.get(apiUrl('/portal/users')),
+  create: (payload) => api.post(apiUrl('/portal/users'), payload),
+  update: (id, payload) => api.patch(apiUrl(`/portal/users/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/users/${id}`)),
+};
+
+// --- Sent log (proof of document emails sent) ---
+export const sentLogsAPI = {
+  list: (params = {}) => api.get(apiUrl('/portal/sent-logs'), { params }),
 };
 
 // --- Reports / analytics ---

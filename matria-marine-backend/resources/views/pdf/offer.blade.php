@@ -94,6 +94,12 @@
                         <td class="lbl">Payment:</td>
                         <td>{{ $offer->payment_terms ?: '—' }}</td>
                     </tr>
+                    @if(optional($offer->creator)->name)
+                    <tr>
+                        <td class="lbl">Quoted by:</td>
+                        <td>{{ $offer->creator->name }}@if($offer->creator->phone) · {{ $offer->creator->phone }}@endif</td>
+                    </tr>
+                    @endif
                 </table>
             </td>
         </tr>
@@ -146,14 +152,45 @@
         </tbody>
     </table>
 
-    {{-- Total --}}
+    {{-- Totals (items subtotal + delivery charges + grand total) --}}
+    @php
+        $packing = (float) $offer->packing_cost;
+        $transport = (float) $offer->transportation_cost;
+        $hasDelivery = $packing > 0 || $transport > 0;
+        $grand = $hasDelivery ? (float) $offer->grand_total : (float) $offer->subtotal;
+    @endphp
     <table style="width:100%; margin-top:12px;">
         <tr>
-            <td style="width:60%;"></td>
-            <td style="width:40%; text-align:right; border-top:2px solid #28364b; padding-top:8px;">
-                <span style="font-size:14px; font-weight:bold;" class="navy">
-                    Total ({{ $offer->currency }}): {{ number_format((float) $offer->subtotal, 2) }}
-                </span>
+            <td style="width:58%;"></td>
+            <td style="width:42%;">
+                <table style="width:100%; border-collapse:collapse;">
+                    @if($hasDelivery)
+                        <tr>
+                            <td style="text-align:right; padding:2px 0; color:#444;">Subtotal:</td>
+                            <td class="num" style="padding:2px 0; width:110px;">{{ number_format((float) $offer->subtotal, 2) }}</td>
+                        </tr>
+                        @if($packing > 0)
+                        <tr>
+                            <td style="text-align:right; padding:2px 0; color:#444;">Packing:</td>
+                            <td class="num" style="padding:2px 0;">{{ number_format($packing, 2) }}</td>
+                        </tr>
+                        @endif
+                        @if($transport > 0)
+                        <tr>
+                            <td style="text-align:right; padding:2px 0; color:#444;">Transportation:</td>
+                            <td class="num" style="padding:2px 0;">{{ number_format($transport, 2) }}</td>
+                        </tr>
+                        @endif
+                    @endif
+                    <tr>
+                        <td style="text-align:right; border-top:2px solid #28364b; padding-top:8px;">
+                            <span style="font-size:14px; font-weight:bold;" class="navy">Total ({{ $offer->currency }}):</span>
+                        </td>
+                        <td class="num" style="border-top:2px solid #28364b; padding-top:8px;">
+                            <span style="font-size:14px; font-weight:bold;" class="navy">{{ number_format($grand, 2) }}</span>
+                        </td>
+                    </tr>
+                </table>
             </td>
         </tr>
     </table>

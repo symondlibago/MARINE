@@ -25,8 +25,8 @@ export default function MMSUpdates() {
   // 1. Initial Fetch
   useEffect(() => {
     window.scrollTo(0, 0);
-    const user = sessionStorage.getItem('user_name');
-    setIsAdmin(!!user);
+    // MMS updates management is super-admin only (the backend also enforces this).
+    setIsAdmin(sessionStorage.getItem('user_role') === 'super_admin');
     fetchUpdates();
   }, []);
 

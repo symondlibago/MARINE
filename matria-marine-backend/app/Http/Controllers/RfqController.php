@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\VendorQuoteRequest;
 use App\Models\Award;
+use App\Models\SentLog;
 use App\Models\Quote;
 use App\Models\QuoteAttachment;
 use App\Models\QuoteItem;
@@ -185,8 +186,20 @@ class RfqController extends Controller
                     new VendorQuoteRequest($rfq, $vendor, $link, $data['message'] ?? null, $data['subject'] ?? null, $staff)
                 );
                 $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $vendor->email, 'sent' => true];
+                SentLog::record([
+                    'type' => 'RFQ', 'reference' => $rfq->reference,
+                    'recipient_name' => $vendor->name, 'recipient_email' => $vendor->email,
+                    'subject' => $data['subject'] ?? ('Request for Quotation — '.$rfq->reference),
+                    'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+                ]);
             } catch (\Throwable $e) {
                 $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $vendor->email, 'sent' => false, 'error' => $e->getMessage()];
+                SentLog::record([
+                    'type' => 'RFQ', 'reference' => $rfq->reference,
+                    'recipient_name' => $vendor->name, 'recipient_email' => $vendor->email,
+                    'subject' => $data['subject'] ?? ('Request for Quotation — '.$rfq->reference),
+                    'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+                ]);
             }
         }
 

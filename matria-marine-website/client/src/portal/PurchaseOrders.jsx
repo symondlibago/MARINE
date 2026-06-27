@@ -105,6 +105,7 @@ export default function PurchaseOrders() {
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-semibold">Enquiry / PO</th>
               <th className="px-4 py-3 font-semibold">Vendor</th>
+              <th className="px-4 py-3 font-semibold">Prepared by</th>
               <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 text-right font-semibold">Items</th>
               <th className="px-4 py-3 text-right font-semibold">Total</th>
@@ -116,7 +117,7 @@ export default function PurchaseOrders() {
           ) : groups.length === 0 ? (
             <tbody>
               <tr>
-                <td colSpan={6} className="py-12 text-center text-slate-400">
+                <td colSpan={7} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center gap-2">
                     <ShoppingCart className="h-8 w-8 text-slate-300" />
                     No purchase orders yet — generate them from a finished enquiry's <span className="font-medium">Delivery Order</span>.
@@ -151,6 +152,7 @@ export default function PurchaseOrders() {
                       <td className="px-4 py-3 text-slate-500">
                         {g.pos.length} vendor{g.pos.length === 1 ? "" : "s"}
                       </td>
+                      <td className="px-4 py-3"></td>
                       <td className="px-4 py-3">
                         <span className="flex flex-wrap gap-1">
                           {Object.entries(g.statusCounts).map(([s, n]) => (
@@ -183,6 +185,7 @@ export default function PurchaseOrders() {
                         >
                           <td className="px-4 py-2.5 pl-11 font-medium text-[#28364b]">{r.po_number}</td>
                           <td className="px-4 py-2.5 text-slate-700">{r.vendor || "—"}</td>
+                          <td className="px-4 py-2.5 text-slate-500">{r.prepared_by || "—"}</td>
                           <td className="px-4 py-2.5">
                             <span className="inline-flex items-center gap-1.5">
                               <StatusBadge status={r.status} />

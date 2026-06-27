@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff, LayoutDashboard } from 'lucide-react';
+import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff, LayoutDashboard, UserCog } from 'lucide-react';
 import { authAPI } from '../pages/api'; 
 
 export default function ProfileModal({ isOpen, onClose, onLogout }) {
@@ -196,6 +196,16 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
                         </div>
                         <ChevronRight size={16} className="text-[#cebd88]" />
                     </a>
+
+                    {user?.role === 'super_admin' && (
+                        <a href="/portal/staff" className="w-full flex items-center justify-between p-4 rounded-lg hover:bg-gray-50 group transition-colors border border-transparent hover:border-gray-200">
+                            <div className="flex items-center gap-3 text-[#28364b]">
+                                <UserCog size={18} />
+                                <span className="font-raleway font-semibold">Manage Staff</span>
+                            </div>
+                            <ChevronRight size={16} className="text-gray-400 group-hover:text-[#cebd88]" />
+                        </a>
+                    )}
 
                     <hr className="my-2 border-gray-100" />
 

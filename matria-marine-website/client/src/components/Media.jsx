@@ -103,8 +103,8 @@ export default function Media() {
   }, []);
 
   const checkLoginStatus = () => {
-    const user = sessionStorage.getItem('user_name'); 
-    setIsAdmin(!!user);
+    // Media management is super-admin only (the backend also enforces this).
+    setIsAdmin(sessionStorage.getItem('user_role') === 'super_admin');
   };
 
   const fetchMediaData = useCallback(async () => {

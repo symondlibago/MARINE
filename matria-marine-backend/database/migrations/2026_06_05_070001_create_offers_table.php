@@ -25,6 +25,9 @@ return new class extends Migration
             $table->decimal('base_total', 16, 2)->default(0);    // internal: sum of vendor base costs
             $table->decimal('subtotal', 16, 2)->default(0);      // customer subtotal (marked up)
             $table->decimal('markup_total', 16, 2)->default(0);  // profit = subtotal - base_total
+            $table->decimal('packing_cost', 16, 2)->default(0);         // delivery charge — packing
+            $table->decimal('transportation_cost', 16, 2)->default(0);  // delivery charge — transportation
+            $table->decimal('grand_total', 16, 2)->default(0);   // subtotal + packing + transportation
             $table->text('notes')->nullable();
             $table->timestamp('opened_at')->nullable();
             $table->timestamp('accepted_at')->nullable();

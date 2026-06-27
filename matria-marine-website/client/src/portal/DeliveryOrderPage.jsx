@@ -79,19 +79,21 @@ export default function DeliveryOrderPage({ params }) {
     onError: (e) => toast.error(e?.response?.data?.message || "Could not save."),
   });
 
-  const downloadPdf = async () => {
+  const downloadBlob = async (fetcher, filename, errMsg) => {
     try {
-      const res = await deliveryOrdersAPI.pdf(id);
+      const res = await fetcher();
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${doc.do_number}.pdf`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error("Could not download PDF.");
+      toast.error(errMsg);
     }
   };
+  const downloadPdf = () => downloadBlob(() => deliveryOrdersAPI.pdf(id), `${doc.do_number}.pdf`, "Could not download PDF.");
+  const downloadProforma = () => downloadBlob(() => deliveryOrdersAPI.proforma(id), `proforma-${doc.do_number}.pdf`, "Could not download proforma invoice.");
 
   // Purchase orders for this enquiry.
   const { data: pos, refetch: refetchPos } = useQuery({
@@ -123,8 +125,11 @@ export default function DeliveryOrderPage({ params }) {
           <p className="mt-1 text-sm text-slate-500">Order for <span className="font-medium text-[#28364b]">{doc.customer_name || "—"}</span></p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50">
+          <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50" title="Quantities only — no prices">
             <Download className="h-4 w-4" /> Delivery Order PDF
+          </button>
+          <button onClick={downloadProforma} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50" title="Priced proforma invoice for this delivery order">
+            <Download className="h-4 w-4" /> Proforma Invoice
           </button>
           <button onClick={() => save.mutate()} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save

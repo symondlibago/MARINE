@@ -54,6 +54,16 @@ class PurchaseOrder extends Model
         return $this->hasMany(PurchaseOrderItem::class)->orderBy('sort')->orderBy('id');
     }
 
+    public function returnNote()
+    {
+        return $this->hasOne(ReturnNote::class);
+    }
+
+    public function attachments()
+    {
+        return $this->hasMany(PurchaseOrderAttachment::class)->latest();
+    }
+
     public function vendor()
     {
         return $this->belongsTo(Vendor::class);

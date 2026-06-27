@@ -74,6 +74,7 @@ export default function Navigation({ currentPage, onPageChange }) {
 
   const handleLogoutSuccess = () => {
     sessionStorage.removeItem('user_name');
+    sessionStorage.removeItem('user_role');
     setIsLoggedIn(false);
     setIsProfileOpen(false);
     // Show custom modal instead of alert

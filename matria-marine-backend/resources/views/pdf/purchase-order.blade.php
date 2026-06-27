@@ -49,7 +49,8 @@
                 <strong>Vessel:</strong> {{ $po->ship_name ?: '—' }}<br>
                 <strong>Delivery port:</strong> {{ $po->delivery_port ?: '—' }}<br>
                 @if($po->delivery_address)<strong>Deliver to:</strong> {{ $po->delivery_address }}<br>@endif
-                <strong>Currency:</strong> {{ $po->currency }}
+                <strong>Currency:</strong> {{ $po->currency }}<br>
+                @if(optional($po->creator)->name)<strong>Prepared by:</strong> {{ $po->creator->name }}@if($po->creator->phone) · {{ $po->creator->phone }}@endif@endif
             </td>
         </tr>
     </table>

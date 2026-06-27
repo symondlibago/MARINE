@@ -6,6 +6,7 @@ use App\Mail\OfferMail;
 use App\Models\Customer;
 use App\Models\Offer;
 use App\Models\Rfq;
+use App\Models\SentLog;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ class OfferController extends Controller
 {
     public function index()
     {
-        $offers = Offer::with(['rfq:id,reference', 'customer:id,name'])
+        $offers = Offer::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name'])
             ->orderByDesc('id')
             ->get();
 
@@ -99,6 +100,8 @@ class OfferController extends Controller
             'payment_terms' => ['nullable', 'string', 'max:255'],
             'delivery_terms' => ['nullable', 'string', 'max:255'],
             'origin_type' => ['nullable', 'string', 'max:255'],
+            'packing_cost' => ['nullable', 'numeric', 'min:0'],
+            'transportation_cost' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'status' => ['sometimes', 'string', 'in:draft,sent,accepted,declined'],
             'items' => ['sometimes', 'array'],
@@ -131,6 +134,8 @@ class OfferController extends Controller
                 'payment_terms' => array_key_exists('payment_terms', $data) ? $data['payment_terms'] : $offer->payment_terms,
                 'delivery_terms' => array_key_exists('delivery_terms', $data) ? $data['delivery_terms'] : $offer->delivery_terms,
                 'origin_type' => array_key_exists('origin_type', $data) ? $data['origin_type'] : $offer->origin_type,
+                'packing_cost' => array_key_exists('packing_cost', $data) ? ($data['packing_cost'] ?? 0) : $offer->packing_cost,
+                'transportation_cost' => array_key_exists('transportation_cost', $data) ? ($data['transportation_cost'] ?? 0) : $offer->transportation_cost,
                 'notes' => array_key_exists('notes', $data) ? $data['notes'] : $offer->notes,
                 'status' => $data['status'] ?? $offer->status,
             ])->save();
@@ -193,7 +198,7 @@ class OfferController extends Controller
 
     public function pdf(Offer $offer)
     {
-        $offer->load(['items', 'rfq:id,customer_reference,ship_name']);
+        $offer->load(['items', 'rfq:id,customer_reference,ship_name', 'creator:id,name,phone']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
@@ -222,11 +227,26 @@ class OfferController extends Controller
         }
         $link = rtrim(config('procurement.frontend_url'), '/').'/offer/'.$offer->token;
 
+        $staff = $request->user();
         try {
-            Mail::to($email)->send(new OfferMail($offer, $request->user(), $link));
+            Mail::to($email)->send(new OfferMail($offer, $staff, $link));
         } catch (\Throwable $e) {
+            SentLog::record([
+                'type' => 'Quotation', 'reference' => $offer->offer_number,
+                'recipient_name' => $offer->customer?->name, 'recipient_email' => $email,
+                'subject' => 'Quotation '.$offer->offer_number,
+                'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+            ]);
+
             return response()->json(['success' => false, 'message' => 'Email failed: '.$e->getMessage()], 500);
         }
+
+        SentLog::record([
+            'type' => 'Quotation', 'reference' => $offer->offer_number,
+            'recipient_name' => $offer->customer?->name, 'recipient_email' => $email,
+            'subject' => 'Quotation '.$offer->offer_number,
+            'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
+        ]);
 
         if ($offer->status === 'draft') {
             $offer->update(['status' => 'sent']);

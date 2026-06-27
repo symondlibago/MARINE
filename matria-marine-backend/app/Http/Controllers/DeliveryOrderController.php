@@ -12,7 +12,7 @@ class DeliveryOrderController extends Controller
 {
     public function index()
     {
-        $orders = DeliveryOrder::with(['rfq:id,reference', 'customer:id,name'])
+        $orders = DeliveryOrder::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name'])
             ->orderByDesc('id')
             ->get();
 
@@ -98,7 +98,7 @@ class DeliveryOrderController extends Controller
 
     public function pdf(DeliveryOrder $deliveryOrder)
     {
-        $deliveryOrder->load('items');
+        $deliveryOrder->load(['items', 'creator:id,name,phone']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
@@ -110,5 +110,22 @@ class DeliveryOrderController extends Controller
         ]);
 
         return $pdf->download(($deliveryOrder->do_number ?: 'delivery-order').'.pdf');
+    }
+
+    /** Proforma invoice for the DO — the PRICED version (the delivery-order PDF shows quantities only). */
+    public function proforma(DeliveryOrder $deliveryOrder)
+    {
+        $deliveryOrder->load(['items', 'creator:id,name,phone']);
+
+        $logoPath = public_path('logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
+
+        $pdf = Pdf::loadView('pdf.proforma-invoice', [
+            'do' => $deliveryOrder,
+            'company' => config('procurement.company'),
+            'logo' => $logo,
+        ]);
+
+        return $pdf->download('proforma-'.($deliveryOrder->do_number ?: 'delivery-order').'.pdf');
     }
 }

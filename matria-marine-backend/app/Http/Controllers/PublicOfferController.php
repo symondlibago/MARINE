@@ -87,6 +87,11 @@ class PublicOfferController extends Controller
             'delivery_terms' => $offer->delivery_terms,
             'origin_type' => $offer->origin_type,
             'subtotal' => (float) $offer->subtotal,
+            'packing_cost' => (float) $offer->packing_cost,
+            'transportation_cost' => (float) $offer->transportation_cost,
+            'grand_total' => ((float) $offer->packing_cost + (float) $offer->transportation_cost) > 0
+                ? (float) $offer->grand_total
+                : (float) $offer->subtotal,
             'opened_at' => $offer->opened_at?->toIso8601String(),
             'accepted_at' => $offer->accepted_at?->toIso8601String(),
             'accepted_by_name' => $offer->accepted_by_name,

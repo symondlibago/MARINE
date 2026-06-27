@@ -64,6 +64,7 @@ class QuoteController extends Controller
                 ])->values(),
                 'submitted' => (bool) $existing,
                 'quote' => $existing ? [
+                    'quotation_number' => $existing->quotation_number,
                     'currency' => $existing->currency,
                     'items' => $existing->items->map(fn ($qi) => [
                         'rfq_item_id' => $qi->rfq_item_id,
@@ -84,21 +85,34 @@ class QuoteController extends Controller
         }
 
         $data = $request->validate([
+            'quotation_number' => ['required', 'string', 'max:100'],
             'currency' => ['required', 'string', 'size:3'],
             'valid_until' => ['nullable', 'date'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.rfq_item_id' => ['required', 'integer'],
-            'lines.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
+            // A price on every item is now mandatory — vendors must quote each line.
+            'lines.*.unit_cost' => ['required', 'numeric', 'min:0'],
             'lines.*.remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $rfq = $rv->rfq;
         $validItemIds = $rfq->items->pluck('id');
 
+        // Guard: every requested item must carry a price (no missing lines).
+        $pricedItemIds = collect($data['lines'])->pluck('rfq_item_id');
+        $missing = $validItemIds->diff($pricedItemIds);
+        if ($missing->isNotEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please enter a price for every item before submitting.',
+            ], 422);
+        }
+
         DB::transaction(function () use ($rv, $rfq, $data, $validItemIds) {
             $quote = Quote::updateOrCreate(
                 ['rfq_id' => $rfq->id, 'vendor_id' => $rv->vendor_id],
                 [
+                    'quotation_number' => $data['quotation_number'],
                     'currency' => strtoupper($data['currency']),
                     'valid_until' => $data['valid_until'] ?? null,
                     'status' => 'submitted',
@@ -110,13 +124,9 @@ class QuoteController extends Controller
                 if (! $validItemIds->contains($line['rfq_item_id'])) {
                     continue;
                 }
-                $cost = $line['unit_cost'] ?? null;
-                if ($cost === null || $cost === '') {
-                    continue; // line left un-priced by the vendor
-                }
                 QuoteItem::updateOrCreate(
                     ['quote_id' => $quote->id, 'rfq_item_id' => $line['rfq_item_id']],
-                    ['unit_cost' => $cost, 'remarks' => $line['remarks'] ?? null]
+                    ['unit_cost' => $line['unit_cost'], 'remarks' => $line['remarks'] ?? null]
                 );
             }
 

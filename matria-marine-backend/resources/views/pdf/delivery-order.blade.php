@@ -78,6 +78,12 @@
                     <tr><td class="val">{{ $do->customer_reference }}</td></tr>
                 </table>
                 @endif
+                @if(optional($do->creator)->name)
+                <table style="width:100%; margin-top:10px;">
+                    <tr><td class="bar">Prepared By</td></tr>
+                    <tr><td class="val">{{ $do->creator->name }}@if($do->creator->phone) · {{ $do->creator->phone }}@endif</td></tr>
+                </table>
+                @endif
             </td>
         </tr>
     </table>
@@ -87,10 +93,8 @@
         <thead>
             <tr>
                 <th style="text-align:left;">Description</th>
-                <th style="text-align:left; width:55px;">Unit</th>
-                <th class="num" style="width:50px;">Qty</th>
-                <th class="num" style="width:90px;">Unit Price</th>
-                <th class="num" style="width:105px;">Amount ({{ $do->currency }})</th>
+                <th style="text-align:left; width:80px;">Unit</th>
+                <th class="num" style="width:80px;">Qty</th>
             </tr>
         </thead>
         <tbody>
@@ -99,32 +103,15 @@
                     <td>{{ $line->description }}</td>
                     <td>{{ $line->unit }}</td>
                     <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                    <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>
-                    <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="5">No line items.</td></tr>
+                <tr><td colspan="3">No line items.</td></tr>
             @endforelse
         </tbody>
     </table>
 
-    {{-- Total --}}
-    <table style="width:100%; margin-top:8px;">
-        <tr>
-            <td style="width:55%; vertical-align:top; padding-top:12px;">
-                <em class="navy">Goods to be delivered to the address above.</em>
-            </td>
-            <td style="width:45%; vertical-align:top;">
-                <table class="totals" style="width:100%;">
-                    <tr style="font-weight:bold; font-size:14px;">
-                        <td class="navy">TOTAL</td>
-                        <td class="num navy">{{ $do->currency }}</td>
-                        <td class="num navy">{{ number_format((float) $do->subtotal, 2) }}</td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
+    {{-- Delivery note: quantities only, no prices (see the Proforma Invoice for pricing) --}}
+    <p style="margin-top:12px;"><em class="navy">Goods to be delivered to the address above. Please check quantities on receipt.</em></p>
 
     @if($do->notes)
         <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $do->notes }}</p>

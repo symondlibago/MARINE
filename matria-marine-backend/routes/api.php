@@ -12,6 +12,9 @@ use App\Http\Controllers\VendorController;
 use App\Http\Controllers\RfqController;
 use App\Http\Controllers\RfqPdfController;
 use App\Http\Controllers\PurchaseOrderController;
+use App\Http\Controllers\ReturnNoteController;
+use App\Http\Controllers\SentLogController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\OfferController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
@@ -58,19 +61,22 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/user/email/initiate', [AuthController::class, 'initiateEmailUpdate']);
     Route::post('/user/email/complete', [AuthController::class, 'completeEmailUpdate']);
 
-    Route::post('/media/upload', [MediaController::class, 'storeItem']);
-    Route::put('/media/category/{id}', [MediaController::class, 'updateCategory']);
-    Route::delete('/media/item/{id}', [MediaController::class, 'deleteItem']);
-    Route::delete('/media/category/{id}', [MediaController::class, 'deleteCategory']);
+    // Media + MMS updates are SUPER ADMIN only (plain admins cannot upload/edit).
+    Route::middleware(['active', 'role:super_admin'])->group(function () {
+        Route::post('/media/upload', [MediaController::class, 'storeItem']);
+        Route::put('/media/category/{id}', [MediaController::class, 'updateCategory']);
+        Route::delete('/media/item/{id}', [MediaController::class, 'deleteItem']);
+        Route::delete('/media/category/{id}', [MediaController::class, 'deleteCategory']);
 
-    Route::post('/updates', [MmsUpdateController::class, 'store']);
-    Route::put('/updates/{id}', [MmsUpdateController::class, 'update']);
-    Route::delete('/updates/{id}', [MmsUpdateController::class, 'destroy']);
+        Route::post('/updates', [MmsUpdateController::class, 'store']);
+        Route::put('/updates/{id}', [MmsUpdateController::class, 'update']);
+        Route::delete('/updates/{id}', [MmsUpdateController::class, 'destroy']);
+    });
 });
 
 // Authenticated staff portal API for the procurement module.
 // Gated by Sanctum auth + active account + spatie role.
-Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
+Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
     ->prefix('portal')
     ->group(function () {
         // Smoke endpoint — confirms auth + active + role gating works end to end.
@@ -109,10 +115,25 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::post('rfqs/{rfq}/purchase-orders', [PurchaseOrderController::class, 'generate']);
         Route::get('purchase-orders', [PurchaseOrderController::class, 'index']);
         Route::get('purchase-orders/{purchaseOrder}/pdf', [PurchaseOrderController::class, 'pdf']);
+        Route::get('purchase-orders/{purchaseOrder}/final-invoice', [PurchaseOrderController::class, 'finalInvoice']);
         Route::post('purchase-orders/{purchaseOrder}/email', [PurchaseOrderController::class, 'email']);
         Route::get('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'show']);
         Route::patch('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'update']);
         Route::delete('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'destroy']);
+
+        // Purchase order attachments — vendor invoice + supporting files (R2)
+        Route::post('purchase-orders/{purchaseOrder}/attachments', [PurchaseOrderController::class, 'uploadAttachment']);
+        Route::get('purchase-orders/{purchaseOrder}/attachments/{attachment}', [PurchaseOrderController::class, 'attachmentUrl']);
+        Route::delete('purchase-orders/{purchaseOrder}/attachments/{attachment}', [PurchaseOrderController::class, 'deleteAttachment']);
+
+        // Return notes — goods returned to a vendor (credits the PO payable)
+        Route::post('purchase-orders/{purchaseOrder}/return-note', [ReturnNoteController::class, 'storeForPo']);
+        Route::get('return-notes', [ReturnNoteController::class, 'index']);
+        Route::get('return-notes/{returnNote}/pdf', [ReturnNoteController::class, 'pdf']);
+        Route::post('return-notes/{returnNote}/email', [ReturnNoteController::class, 'email']);
+        Route::get('return-notes/{returnNote}', [ReturnNoteController::class, 'show']);
+        Route::match(['put', 'patch'], 'return-notes/{returnNote}', [ReturnNoteController::class, 'update']);
+        Route::delete('return-notes/{returnNote}', [ReturnNoteController::class, 'destroy']);
 
         // Offers — customer quotation with markup (built from an enquiry's awards)
         Route::post('rfqs/{rfq}/offer', [OfferController::class, 'generate']);
@@ -127,9 +148,21 @@ Route::middleware(['auth:sanctum', 'active', 'role:admin|staff'])
         Route::post('offers/{offer}/delivery-order', [DeliveryOrderController::class, 'generate']);
         Route::get('delivery-orders', [DeliveryOrderController::class, 'index']);
         Route::get('delivery-orders/{deliveryOrder}/pdf', [DeliveryOrderController::class, 'pdf']);
+        Route::get('delivery-orders/{deliveryOrder}/proforma', [DeliveryOrderController::class, 'proforma']);
         Route::get('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'show']);
         Route::match(['put', 'patch'], 'delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'update']);
         Route::delete('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'destroy']);
+
+        // Staff management — SUPER ADMIN only
+        Route::middleware('role:super_admin')->group(function () {
+            Route::get('users', [UserController::class, 'index']);
+            Route::post('users', [UserController::class, 'store']);
+            Route::match(['put', 'patch'], 'users/{user}', [UserController::class, 'update']);
+            Route::delete('users/{user}', [UserController::class, 'destroy']);
+        });
+
+        // Sent log — record/proof of every document email sent (visible to all staff)
+        Route::get('sent-logs', [SentLogController::class, 'index']);
 
         // Reports / analytics
         Route::get('reports/spend', [ReportsController::class, 'spend']);
