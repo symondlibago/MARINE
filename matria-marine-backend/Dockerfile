@@ -21,10 +21,11 @@ COPY . .
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# --prefer-install=auto: try the dist (GitHub zip) first, but fall back to a git
-# clone of the source if the zip download fails (e.g. GitHub returns HTTP 400 for
-# masterminds/html5). --prefer-dist would disable that fallback and fail the build.
-RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-install=auto
+# --prefer-source: git-clone each package from github.com instead of downloading
+# zip archives from codeload.github.com, which intermittently returns HTTP 400 on
+# Railway's build network (Composer 2's batch downloader won't fall back to source
+# on a dist 400, so we skip dist entirely). git is installed above.
+RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-source
 
 EXPOSE 8080
 
