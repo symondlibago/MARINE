@@ -17,7 +17,6 @@ class CompanySeeder extends Seeder
             return;
         }
 
-        // Guard against running twice and duplicating the whole list.
         if (DB::table('vendors')->count() > 50 || DB::table('customers')->count() > 50) {
             $this->command->warn('vendors/customers already populated — skipping CompanySeeder to avoid duplicates.');
 

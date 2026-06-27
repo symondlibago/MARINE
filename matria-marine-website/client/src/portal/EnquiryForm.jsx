@@ -55,7 +55,6 @@ export default function EnquiryForm({ params }) {
   });
   const [items, setItems] = useState([{ description: "", qty: "", unit: "" }]);
 
-  // When editing, load the existing enquiry and prefill (items keep their id).
   const { data: existing } = useQuery({
     queryKey: ["rfq", editId],
     queryFn: async () => (await rfqsAPI.get(editId)).data.data,
