@@ -138,6 +138,7 @@
                         <td>
                             {!! nl2br(e($line->description)) !!}
                             @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
+                            @if($line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif
                         </td>
                         <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
                         <td>{{ $line->unit }}</td>

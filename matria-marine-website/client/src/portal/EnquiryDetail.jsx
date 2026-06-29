@@ -80,7 +80,6 @@ export default function EnquiryDetail({ params }) {
   if (isLoading || !rfq) return <PageLoader />;
 
   const sentVendors = rfq.rfq_vendors || [];
-  const hasQuotes = (rfq.quotes || []).length > 0;
   const toggle = (vid) => setSelected((s) => (s.includes(vid) ? s.filter((x) => x !== vid) : [...s, vid]));
   const vendorResults = vendors || [];
   // Selected vendors stay visible regardless of the current search filter.
@@ -99,11 +98,10 @@ export default function EnquiryDetail({ params }) {
           </h1>
         </div>
         <div className="flex gap-2">
-          {hasQuotes && (
-            <Link href={`/enquiries/${id}/compare`} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63]">
-              <BarChart3 className="h-4 w-4" /> Compare &amp; Award
-            </Link>
-          )}
+          {/* Always available — staff can key in prices for vendors who email quotes directly. */}
+          <Link href={`/enquiries/${id}/compare`} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63]">
+            <BarChart3 className="h-4 w-4" /> Compare &amp; Award
+          </Link>
           <Link href={`/enquiries/${id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
             <Pencil className="h-4 w-4" /> Edit
           </Link>

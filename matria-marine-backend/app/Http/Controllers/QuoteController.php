@@ -85,34 +85,25 @@ class QuoteController extends Controller
         }
 
         $data = $request->validate([
-            'quotation_number' => ['required', 'string', 'max:100'],
+            // Prices are optional — vendors may submit blank and staff key the
+            // prices in on the Compare & Award grid (some vendors email directly).
+            'quotation_number' => ['nullable', 'string', 'max:100'],
             'currency' => ['required', 'string', 'size:3'],
             'valid_until' => ['nullable', 'date'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.rfq_item_id' => ['required', 'integer'],
-            // A price on every item is now mandatory — vendors must quote each line.
-            'lines.*.unit_cost' => ['required', 'numeric', 'min:0'],
+            'lines.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
             'lines.*.remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $rfq = $rv->rfq;
         $validItemIds = $rfq->items->pluck('id');
 
-        // Guard: every requested item must carry a price (no missing lines).
-        $pricedItemIds = collect($data['lines'])->pluck('rfq_item_id');
-        $missing = $validItemIds->diff($pricedItemIds);
-        if ($missing->isNotEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Please enter a price for every item before submitting.',
-            ], 422);
-        }
-
         DB::transaction(function () use ($rv, $rfq, $data, $validItemIds) {
             $quote = Quote::updateOrCreate(
                 ['rfq_id' => $rfq->id, 'vendor_id' => $rv->vendor_id],
                 [
-                    'quotation_number' => $data['quotation_number'],
+                    'quotation_number' => $data['quotation_number'] ?? null,
                     'currency' => strtoupper($data['currency']),
                     'valid_until' => $data['valid_until'] ?? null,
                     'status' => 'submitted',
@@ -124,9 +115,13 @@ class QuoteController extends Controller
                 if (! $validItemIds->contains($line['rfq_item_id'])) {
                     continue;
                 }
+                $cost = $line['unit_cost'] ?? null;
+                if ($cost === null || $cost === '') {
+                    continue; // price left blank — staff will key it in on Compare & Award
+                }
                 QuoteItem::updateOrCreate(
                     ['quote_id' => $quote->id, 'rfq_item_id' => $line['rfq_item_id']],
-                    ['unit_cost' => $line['unit_cost'], 'remarks' => $line['remarks'] ?? null]
+                    ['unit_cost' => $cost, 'remarks' => $line['remarks'] ?? null]
                 );
             }
 

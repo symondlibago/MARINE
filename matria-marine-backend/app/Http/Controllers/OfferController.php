@@ -75,6 +75,7 @@ class OfferController extends Controller
                     'markup_pct' => 0,
                     'unit_price' => round($base, 2),
                     'line_total' => round($base * $qty, 2),
+                    'remarks' => $item->award?->quoteItem?->remarks, // carry the vendor's remark through
                     'sort' => $sort++,
                 ]);
             }
