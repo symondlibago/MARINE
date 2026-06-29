@@ -19,6 +19,10 @@ return [
             'verify_peer_name' => false,
         ],
 
+        'resend' => [
+            'transport' => 'resend',
+        ],
+
         'ses' => [
             'transport' => 'ses',
         ],
