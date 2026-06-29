@@ -190,17 +190,19 @@ class ReturnNoteController extends Controller
     {
         $returnNote->load(['items', 'purchaseOrder:id,po_number', 'vendor']);
 
-        if (! $returnNote->vendor?->email) {
-            return response()->json(['success' => false, 'message' => 'This vendor has no email on file.'], 422);
+        $emails = \App\Support\Recipients::emails($returnNote->vendor?->email);
+        if (! $emails) {
+            return response()->json(['success' => false, 'message' => 'This vendor has no valid email on file.'], 422);
         }
+        $to = implode(', ', $emails);
 
         $staff = $request->user();
         try {
-            Mail::to($returnNote->vendor->email)->send(new ReturnNoteMail($returnNote, $staff));
+            Mail::to($emails)->send(new ReturnNoteMail($returnNote, $staff));
         } catch (\Throwable $e) {
             SentLog::record([
                 'type' => 'Return Note', 'reference' => $returnNote->rtn_number,
-                'recipient_name' => $returnNote->vendor->name, 'recipient_email' => $returnNote->vendor->email,
+                'recipient_name' => $returnNote->vendor->name, 'recipient_email' => $to,
                 'subject' => 'Return Note '.$returnNote->rtn_number,
                 'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
             ]);
@@ -210,7 +212,7 @@ class ReturnNoteController extends Controller
 
         SentLog::record([
             'type' => 'Return Note', 'reference' => $returnNote->rtn_number,
-            'recipient_name' => $returnNote->vendor->name, 'recipient_email' => $returnNote->vendor->email,
+            'recipient_name' => $returnNote->vendor->name, 'recipient_email' => $to,
             'subject' => 'Return Note '.$returnNote->rtn_number,
             'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
         ]);
@@ -219,7 +221,7 @@ class ReturnNoteController extends Controller
             $returnNote->update(['status' => 'issued', 'issued_at' => $returnNote->issued_at ?? now()]);
         }
 
-        return response()->json(['success' => true, 'message' => 'Return note emailed to '.$returnNote->vendor->email.'.']);
+        return response()->json(['success' => true, 'message' => 'Return note emailed to '.$to.'.']);
     }
 
     /** Next sequential return-note number (RTN-0001), independent of the row id. */

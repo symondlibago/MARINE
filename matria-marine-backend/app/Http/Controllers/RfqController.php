@@ -173,30 +173,32 @@ class RfqController extends Controller
             $rv->sent_at = now();
             $rv->save();
 
-            if (! $vendor->email) {
-                $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'sent' => false, 'error' => 'No email on file'];
+            $emails = \App\Support\Recipients::emails($vendor->email);
+            if (! $emails) {
+                $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'sent' => false, 'error' => 'No valid email on file'];
 
                 continue;
             }
+            $to = implode(', ', $emails);
 
             $link = rtrim(config('procurement.frontend_url'), '/').'/quote/'.$rv->token;
 
             try {
-                Mail::to($vendor->email)->send(
+                Mail::to($emails)->send(
                     new VendorQuoteRequest($rfq, $vendor, $link, $data['message'] ?? null, $data['subject'] ?? null, $staff)
                 );
-                $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $vendor->email, 'sent' => true];
+                $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $to, 'sent' => true];
                 SentLog::record([
                     'type' => 'RFQ', 'reference' => $rfq->reference,
-                    'recipient_name' => $vendor->name, 'recipient_email' => $vendor->email,
+                    'recipient_name' => $vendor->name, 'recipient_email' => $to,
                     'subject' => $data['subject'] ?? ('Request for Quotation — '.$rfq->reference),
                     'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
                 ]);
             } catch (\Throwable $e) {
-                $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $vendor->email, 'sent' => false, 'error' => $e->getMessage()];
+                $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $to, 'sent' => false, 'error' => $e->getMessage()];
                 SentLog::record([
                     'type' => 'RFQ', 'reference' => $rfq->reference,
-                    'recipient_name' => $vendor->name, 'recipient_email' => $vendor->email,
+                    'recipient_name' => $vendor->name, 'recipient_email' => $to,
                     'subject' => $data['subject'] ?? ('Request for Quotation — '.$rfq->reference),
                     'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
                 ]);

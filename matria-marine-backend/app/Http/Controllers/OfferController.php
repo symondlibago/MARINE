@@ -217,10 +217,11 @@ class OfferController extends Controller
     {
         $offer->load('customer:id,name,email');
 
-        $email = $offer->customer?->email;
-        if (! $email) {
-            return response()->json(['success' => false, 'message' => 'This customer has no email on file.'], 422);
+        $emails = \App\Support\Recipients::emails($offer->customer?->email);
+        if (! $emails) {
+            return response()->json(['success' => false, 'message' => 'This customer has no valid email on file.'], 422);
         }
+        $email = implode(', ', $emails);
 
         if (! $offer->token) {
             $offer->forceFill(['token' => Str::random(48)])->save();
@@ -229,7 +230,7 @@ class OfferController extends Controller
 
         $staff = $request->user();
         try {
-            Mail::to($email)->send(new OfferMail($offer, $staff, $link));
+            Mail::to($emails)->send(new OfferMail($offer, $staff, $link));
         } catch (\Throwable $e) {
             SentLog::record([
                 'type' => 'Quotation', 'reference' => $offer->offer_number,

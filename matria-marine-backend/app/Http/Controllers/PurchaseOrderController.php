@@ -276,9 +276,11 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder->load(['items', 'vendor']);
 
-        if (! $purchaseOrder->vendor?->email) {
-            return response()->json(['success' => false, 'message' => 'This vendor has no email on file.'], 422);
+        $emails = \App\Support\Recipients::emails($purchaseOrder->vendor?->email);
+        if (! $emails) {
+            return response()->json(['success' => false, 'message' => 'This vendor has no valid email on file.'], 422);
         }
+        $to = implode(', ', $emails);
 
         if (! $purchaseOrder->token) {
             $purchaseOrder->forceFill(['token' => Str::random(48)])->save();
@@ -287,11 +289,11 @@ class PurchaseOrderController extends Controller
 
         $staff = $request->user();
         try {
-            Mail::to($purchaseOrder->vendor->email)->send(new PurchaseOrderMail($purchaseOrder, $staff, $link));
+            Mail::to($emails)->send(new PurchaseOrderMail($purchaseOrder, $staff, $link));
         } catch (\Throwable $e) {
             SentLog::record([
                 'type' => 'Purchase Order', 'reference' => $purchaseOrder->po_number,
-                'recipient_name' => $purchaseOrder->vendor->name, 'recipient_email' => $purchaseOrder->vendor->email,
+                'recipient_name' => $purchaseOrder->vendor->name, 'recipient_email' => $to,
                 'subject' => 'Purchase Order '.$purchaseOrder->po_number,
                 'status' => 'failed', 'error' => $e->getMessage(), 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
             ]);
@@ -301,7 +303,7 @@ class PurchaseOrderController extends Controller
 
         SentLog::record([
             'type' => 'Purchase Order', 'reference' => $purchaseOrder->po_number,
-            'recipient_name' => $purchaseOrder->vendor->name, 'recipient_email' => $purchaseOrder->vendor->email,
+            'recipient_name' => $purchaseOrder->vendor->name, 'recipient_email' => $to,
             'subject' => 'Purchase Order '.$purchaseOrder->po_number,
             'status' => 'sent', 'sent_by' => $staff?->id, 'sent_by_name' => $staff?->name,
         ]);
