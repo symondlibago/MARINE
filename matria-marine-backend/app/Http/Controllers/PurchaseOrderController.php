@@ -289,7 +289,7 @@ class PurchaseOrderController extends Controller
 
         $staff = $request->user();
         try {
-            Mail::to($emails)->send(new PurchaseOrderMail($purchaseOrder, $staff, $link));
+            Mail::to($emails)->bcc(config('mail.from.address'))->send(new PurchaseOrderMail($purchaseOrder, $staff, $link));
         } catch (\Throwable $e) {
             SentLog::record([
                 'type' => 'Purchase Order', 'reference' => $purchaseOrder->po_number,

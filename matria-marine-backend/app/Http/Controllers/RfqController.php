@@ -184,7 +184,7 @@ class RfqController extends Controller
             $link = rtrim(config('procurement.frontend_url'), '/').'/quote/'.$rv->token;
 
             try {
-                Mail::to($emails)->send(
+                Mail::to($emails)->bcc(config('mail.from.address'))->send(
                     new VendorQuoteRequest($rfq, $vendor, $link, $data['message'] ?? null, $data['subject'] ?? null, $staff)
                 );
                 $results[] = ['vendor_id' => $vendorId, 'vendor' => $vendor->name, 'email' => $to, 'sent' => true];

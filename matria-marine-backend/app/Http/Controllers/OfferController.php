@@ -230,7 +230,7 @@ class OfferController extends Controller
 
         $staff = $request->user();
         try {
-            Mail::to($emails)->send(new OfferMail($offer, $staff, $link));
+            Mail::to($emails)->bcc(config('mail.from.address'))->send(new OfferMail($offer, $staff, $link));
         } catch (\Throwable $e) {
             SentLog::record([
                 'type' => 'Quotation', 'reference' => $offer->offer_number,

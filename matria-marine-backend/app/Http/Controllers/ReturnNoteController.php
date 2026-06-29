@@ -198,7 +198,7 @@ class ReturnNoteController extends Controller
 
         $staff = $request->user();
         try {
-            Mail::to($emails)->send(new ReturnNoteMail($returnNote, $staff));
+            Mail::to($emails)->bcc(config('mail.from.address'))->send(new ReturnNoteMail($returnNote, $staff));
         } catch (\Throwable $e) {
             SentLog::record([
                 'type' => 'Return Note', 'reference' => $returnNote->rtn_number,
