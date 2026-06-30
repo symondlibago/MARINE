@@ -100,7 +100,7 @@
         <tbody>
             @forelse($do->items as $line)
                 <tr>
-                    <td>{{ $line->description }}</td>
+                    <td>{{ $line->description }}@if($line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif</td>
                     <td>{{ $line->unit }}</td>
                     <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
                 </tr>

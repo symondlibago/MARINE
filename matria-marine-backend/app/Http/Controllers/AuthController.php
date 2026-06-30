@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -13,21 +14,31 @@ use App\Mail\EmailUpdateOtpMail;
 
 class AuthController extends Controller
 {
-    public function login(Request $request) 
+    public function login(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
+            'login' => 'required|string',   // username OR email
             'password' => 'required|string',
         ]);
 
-        // Attempt login
-        if (!Auth::attempt($request->only('email', 'password'))) {
+        $login = trim($request->input('login'));
+        $password = $request->input('password');
+
+        // 1) Username is unique → a direct lookup. 2) Otherwise the handle is an
+        // email, which several staff may share, so we check the password against
+        // each active account on that email and sign in the one that matches.
+        $candidates = User::where('is_active', true)
+            ->where(function ($q) use ($login) {
+                $q->where('username', $login)->orWhere('email', $login);
+            })
+            ->get();
+
+        $user = $candidates->first(fn (User $u) => Hash::check($password, $u->password));
+
+        if (! $user) {
             return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
         }
 
-        $user = Auth::user();
-        
-        // Generate the token for LocalStorage
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
@@ -98,7 +109,8 @@ class AuthController extends Controller
     public function initiateEmailUpdate(Request $request)
     {
         $request->validate([
-            'new_email' => ['required', 'email', 'unique:users,email'],
+            // Email is no longer unique (staff can share a mailbox), so no unique rule.
+            'new_email' => ['required', 'email'],
             'password' => ['required', 'current_password'],
         ]);
 

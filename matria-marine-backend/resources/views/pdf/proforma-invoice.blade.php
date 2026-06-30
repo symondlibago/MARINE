@@ -54,11 +54,14 @@
             <td style="width:45%; vertical-align:top;">
                 <table style="width:100%;">
                     <tr>
-                        <td class="bar" style="width:55%;">Proforma for DO</td>
+                        <td class="bar" style="width:55%;">Proforma No.</td>
                         <td class="bar">Date</td>
                     </tr>
                     <tr>
-                        <td class="val"><strong>{{ $do->do_number }}</strong></td>
+                        <td class="val">
+                            <strong>{{ $do->proforma_number ?: $do->do_number }}</strong>
+                            <br><span style="font-size:9px; color:#777;">for DO {{ $do->do_number }}</span>
+                        </td>
                         <td class="val">{{ optional($do->order_date)->format('n/j/Y') ?: $do->created_at->format('n/j/Y') }}</td>
                     </tr>
                 </table>
@@ -102,7 +105,7 @@
         <tbody>
             @forelse($do->items as $line)
                 <tr>
-                    <td>{{ $line->description }}</td>
+                    <td>{{ $line->description }}@if($line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif</td>
                     <td>{{ $line->unit }}</td>
                     <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
                     <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>

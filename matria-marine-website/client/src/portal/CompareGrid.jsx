@@ -74,15 +74,20 @@ export default function CompareGrid({ params }) {
   });
 
   const pricesMutation = useMutation({
-    mutationFn: ({ quoteId, rfq_item_id, unit_cost }) =>
-      rfqsAPI.saveVendorPrices(quoteId, [{ rfq_item_id, unit_cost }]),
+    mutationFn: ({ quoteId, line }) => rfqsAPI.saveVendorPrices(quoteId, [line]),
     onSuccess: () => refetch(),
-    onError: () => toast.error("Could not save the price."),
+    onError: () => toast.error("Could not save."),
   });
 
   const currencyMutation = useMutation({
     mutationFn: ({ quoteId, currency }) => rfqsAPI.updateQuoteCurrency(quoteId, currency),
     onSuccess: () => refetch(),
+  });
+
+  const quoteNumberMutation = useMutation({
+    mutationFn: ({ quoteId, quotation_number }) => rfqsAPI.updateQuoteNumber(quoteId, quotation_number),
+    onSuccess: () => refetch(),
+    onError: () => toast.error("Could not save the quotation number."),
   });
 
   // Auto-fill today's live exchange rate for any vendor quoting in a currency
@@ -202,12 +207,23 @@ export default function CompareGrid({ params }) {
   const setQty = (rfqItemId, qty) => setAwards((a) => ({ ...a, [rfqItemId]: { ...a[rfqItemId], qty_to_buy: qty } }));
 
   // Staff key in / change a vendor's unit price for one line (esp. file-only vendors).
-  const savePrice = (vendor, row, value) => {
+  // Staff key in a vendor's unit price + per-product remark together (esp. for
+  // vendors who just email their quotation instead of using the link). The remark
+  // prints below the item on the quotation/Offer, PO, DO, proforma and invoices.
+  const saveCell = (vendor, rfqItemId, { unit_cost, remarks }) => {
     if (locked) return;
-    const current = row.cells.find((c) => c.vendor_id === vendor.vendor_id)?.unit_cost ?? null;
-    const next = value === "" ? null : Number(value);
-    if ((next ?? null) === (current ?? null)) return;
-    pricesMutation.mutate({ quoteId: vendor.quote_id, rfq_item_id: row.rfq_item_id, unit_cost: next });
+    pricesMutation.mutate({
+      quoteId: vendor.quote_id,
+      line: { rfq_item_id: rfqItemId, unit_cost, remarks },
+    });
+  };
+
+  // Staff key in the vendor's own quotation/reference number (esp. when emailed).
+  const saveQuoteNumber = (vendor, value) => {
+    if (locked) return;
+    const next = value.trim();
+    if (next === (vendor.quotation_number ?? "").trim()) return;
+    quoteNumberMutation.mutate({ quoteId: vendor.quote_id, quotation_number: next || null });
   };
 
   // Open a vendor's uploaded file via a short-lived signed URL.
@@ -283,7 +299,7 @@ export default function CompareGrid({ params }) {
         <div>
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
           <p className="text-sm text-slate-500">
-            Base {data.rfq.base_currency}. Type a vendor's unit price in its cell (e.g. for a vendor who only uploaded a file 📎); prices convert at today's live FX rate (edit or click ↻ to override). Click a vendor's cell to award that line.
+            Base {data.rfq.base_currency}. Type a vendor's unit price in its cell (e.g. for a vendor who only uploaded a file 📎); prices convert at today's live FX rate (edit or click ↻ to override). Add a remark under any priced cell — it prints below the item on the quotation, PO and invoices. Click a vendor's cell to award that line.
             {locked && " (Locked)"}
           </p>
         </div>
@@ -321,6 +337,18 @@ export default function CompareGrid({ params }) {
                       <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium normal-case ${v.complete ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`} title={v.complete ? "Priced every line" : "Some lines not priced"}>
                         {v.complete ? "Complete" : `Incomplete ${v.quoted_count}/${v.item_count}`}
                       </span>
+                    </div>
+                    <div className="mt-1">
+                      <input
+                        type="text"
+                        key={`q-${v.quote_id}-${v.quotation_number ?? ""}`}
+                        defaultValue={v.quotation_number ?? ""}
+                        disabled={locked}
+                        placeholder="Quotation no."
+                        onBlur={(e) => saveQuoteNumber(v, e.target.value)}
+                        className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-normal normal-case text-slate-700 disabled:bg-slate-50"
+                        title="Vendor's quotation / reference number — key it in if they emailed it"
+                      />
                     </div>
                     <div className="mt-1 flex items-center gap-1 text-[10px] font-normal normal-case text-slate-400">
                       <select
@@ -403,31 +431,16 @@ export default function CompareGrid({ params }) {
                             isAwarded ? "bg-[#28364b]" : isLowest ? "bg-green-50/60 hover:bg-green-100/70" : "hover:bg-slate-50"
                           }`}
                         >
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              step="0.0001"
-                              min="0"
-                              key={`p-${v.quote_id}-${row.rfq_item_id}-${cell?.unit_cost ?? ""}`}
-                              defaultValue={cell?.quoted ? cell.unit_cost : ""}
-                              disabled={locked}
-                              placeholder="—"
-                              onClick={(e) => e.stopPropagation()}
-                              onBlur={(e) => savePrice(v, row, e.target.value)}
-                              className="w-20 rounded border border-slate-200 bg-white px-1.5 py-1 text-sm text-slate-800 disabled:bg-slate-50"
-                              title="Vendor unit price — staff can enter or override"
-                            />
-                            <span className={`text-[10px] ${isAwarded ? "text-slate-300" : "text-slate-400"}`}>{v.currency}</span>
-                          </div>
-                          {cell?.quoted ? (
-                            <div className={`mt-1 text-xs ${isAwarded ? "font-semibold text-white" : "text-slate-500"}`}>
-                              = {cell.base_cost.toFixed(2)} {data.rfq.base_currency}
-                              {isAwarded ? " ✓ awarded" : isLowest ? " ↓" : ""}
-                            </div>
-                          ) : (
-                            <div className="mt-1 text-[10px] text-slate-400">enter a price</div>
-                          )}
-                          {cell?.remarks && <div className={`mt-0.5 text-[10px] ${isAwarded ? "text-slate-300" : "text-slate-400"}`}>{cell.remarks}</div>}
+                          <PriceRemarkCell
+                            key={`cell-${v.quote_id}-${row.rfq_item_id}-${cell?.unit_cost ?? ""}-${cell?.remarks ?? ""}`}
+                            cell={cell}
+                            vendorCurrency={v.currency}
+                            baseCurrency={data.rfq.base_currency}
+                            isAwarded={isAwarded}
+                            isLowest={isLowest}
+                            locked={locked}
+                            onSave={(payload) => saveCell(v, row.rfq_item_id, payload)}
+                          />
                         </td>
                       );
                     })}
@@ -522,5 +535,69 @@ export default function CompareGrid({ params }) {
         </motion.div>
       )}
     </motion.div>
+  );
+}
+
+// One compare-grid cell: the vendor's unit price with the per-product remark box
+// right below it. Both are editable from the start (even before a price exists,
+// e.g. a vendor who just emailed their quotation) and save together on blur.
+function PriceRemarkCell({ cell, vendorCurrency, baseCurrency, isAwarded, isLowest, locked, onSave }) {
+  const quoted = !!cell?.quoted;
+  const [price, setPrice] = useState(quoted ? String(cell.unit_cost) : "");
+  const [remark, setRemark] = useState(cell?.remarks ?? "");
+
+  const commit = () => {
+    if (locked) return;
+    const nextPrice = price.trim() === "" ? null : Number(price);
+    const nextRemark = remark.trim() || null;
+    const curPrice = quoted ? Number(cell.unit_cost) : null;
+    const curRemark = (cell?.remarks ?? "").trim() || null;
+    if ((nextPrice ?? null) === (curPrice ?? null) && nextRemark === curRemark) return;
+    // A remark must attach to a priced line. With no price yet, hold the remark
+    // in the box and wait — it saves together once a price is typed.
+    if (nextPrice === null && curPrice === null) return;
+    onSave({ unit_cost: nextPrice, remarks: nextRemark });
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          step="0.0001"
+          min="0"
+          value={price}
+          disabled={locked}
+          placeholder="—"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setPrice(e.target.value)}
+          onBlur={commit}
+          className="w-20 rounded border border-slate-200 bg-white px-1.5 py-1 text-sm text-slate-800 disabled:bg-slate-50"
+          title="Vendor unit price — staff can enter or override"
+        />
+        <span className={`text-[10px] ${isAwarded ? "text-slate-300" : "text-slate-400"}`}>{vendorCurrency}</span>
+      </div>
+      {quoted ? (
+        <div className={`mt-1 text-xs ${isAwarded ? "font-semibold text-white" : "text-slate-500"}`}>
+          = {cell.base_cost.toFixed(2)} {baseCurrency}
+          {isAwarded ? " ✓ awarded" : isLowest ? " ↓" : ""}
+        </div>
+      ) : (
+        <div className="mt-1 text-[10px] text-slate-400">enter a price</div>
+      )}
+      <input
+        type="text"
+        value={remark}
+        disabled={locked}
+        placeholder="Remark…"
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => setRemark(e.target.value)}
+        onBlur={commit}
+        className={`mt-1 w-full rounded border px-1.5 py-0.5 text-[11px] disabled:bg-slate-50 ${
+          isAwarded ? "border-slate-500 bg-[#28364b] text-slate-100 placeholder:text-slate-400" : "border-slate-200 bg-white text-slate-600 placeholder:text-slate-300"
+        }`}
+        title="Remark for this product — prints below the item on the quotation, PO and invoices"
+      />
+    </>
   );
 }

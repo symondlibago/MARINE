@@ -33,9 +33,10 @@ export default function ManageStaff() {
       singular="Staff member"
       queryKey="users"
       api={usersAPI}
-      emptyRow={{ name: "", email: "", password: "", phone: "", role: "admin", is_active: true }}
+      emptyRow={{ name: "", email: "", username: "", password: "", phone: "", role: "admin", is_active: true }}
       columns={[
         { key: "name", label: "Name" },
+        { key: "username", label: "Username" },
         { key: "email", label: "Email" },
         { key: "phone", label: "Phone" },
         { key: "role", label: "Role", render: roleBadge },
@@ -43,7 +44,8 @@ export default function ManageStaff() {
       ]}
       fields={[
         { name: "name", label: "Full name", required: true },
-        { name: "email", label: "Email (login)", type: "email", required: true },
+        { name: "username", label: "Username (login)", required: true },
+        { name: "email", label: "Email (shared mailbox OK)", type: "email", required: true },
         { name: "password", label: "Password (min 8 — leave blank when editing to keep)", type: "password" },
         { name: "phone", label: "Phone number" },
         { name: "role", label: "Role", type: "select", options: ROLES, required: true },

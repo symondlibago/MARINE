@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('rfq_id')->constrained('rfqs')->cascadeOnDelete();
             $table->foreignId('vendor_id')->constrained('vendors')->cascadeOnDelete();
             $table->string('token', 64)->unique();           // vendor's unique magic-link token
+            $table->unsignedInteger('seq')->nullable();       // per-enquiry vendor index → RFQ number suffix (-01, -02…)
             $table->timestamp('sent_at')->nullable();
             $table->timestamp('opened_at')->nullable();
             $table->timestamp('responded_at')->nullable();

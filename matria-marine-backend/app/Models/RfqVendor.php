@@ -12,6 +12,7 @@ class RfqVendor extends Model
         'rfq_id',
         'vendor_id',
         'token',
+        'seq',
         'sent_at',
         'opened_at',
         'responded_at',

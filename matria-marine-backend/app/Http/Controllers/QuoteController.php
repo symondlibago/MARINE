@@ -6,6 +6,7 @@ use App\Models\Quote;
 use App\Models\QuoteAttachment;
 use App\Models\QuoteItem;
 use App\Models\RfqVendor;
+use App\Support\DocNumber;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -50,6 +51,8 @@ class QuoteController extends Controller
                     : [],
                 'rfq' => [
                     'reference' => $rfq->reference,
+                    // What this vendor sees as their RFQ number: MMS-QTN-2026-00001-01.
+                    'vendor_reference' => DocNumber::vendorSuffix($rfq->reference, $rv->seq ?: 1),
                     'ship_name' => $rfq->ship_name,
                     'delivery_port' => $rfq->delivery_port,
                     // Requirements ARE shown to vendors so they quote correctly.

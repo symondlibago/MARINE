@@ -8,6 +8,7 @@ use App\Models\PurchaseOrderAttachment;
 use App\Models\Quote;
 use App\Models\SentLog;
 use App\Models\Rfq;
+use App\Support\DocNumber;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -119,7 +120,7 @@ class PurchaseOrderController extends Controller
                     'status' => 'draft',
                     'created_by' => $request->user()?->id,
                 ]);
-                $po->po_number = 'PO-'.str_pad((string) $po->id, 4, '0', STR_PAD_LEFT);
+                $po->po_number = DocNumber::next('PO'); // MMS-PO-2026-000001
                 $po->save();
 
                 $subtotal = 0;
@@ -137,6 +138,7 @@ class PurchaseOrderController extends Controller
                         'qty' => $qty,
                         'unit_cost' => $cost,
                         'line_total' => $lineTotal,
+                        'remarks' => $item->award->quoteItem?->remarks, // carry the awarded vendor's remark
                         'sort' => $sort,
                     ]);
                 }
@@ -248,14 +250,22 @@ class PurchaseOrderController extends Controller
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
-        return Pdf::loadView('pdf.purchase-order', ['po' => $purchaseOrder, 'logo' => $logo])
-            ->download(($purchaseOrder->po_number ?: 'PO').'.pdf');
+        return Pdf::loadView('pdf.purchase-order', [
+            'po' => $purchaseOrder,
+            'company' => config('procurement.company'),
+            'logo' => $logo,
+        ])->download(($purchaseOrder->po_number ?: 'PO').'.pdf');
     }
 
     /** Final invoice PDF — order line items less any returns = the net amount payable to the vendor. */
     public function finalInvoice(PurchaseOrder $purchaseOrder)
     {
         $purchaseOrder->load(['items', 'vendor', 'returnNote.items']);
+
+        // Assign the MMS-INV number the first time the invoice is generated.
+        if (! $purchaseOrder->invoice_number) {
+            $purchaseOrder->update(['invoice_number' => DocNumber::next('INV')]);
+        }
 
         $returnsTotal = (float) ($purchaseOrder->returnNote?->subtotal ?? 0);
         $netPayable = round((float) $purchaseOrder->subtotal - $returnsTotal, 4);

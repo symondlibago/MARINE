@@ -10,7 +10,8 @@ return new class extends Migration
     {
         Schema::create('purchase_orders', function (Blueprint $table) {
             $table->id();
-            $table->string('po_number')->nullable()->unique();          // e.g. PO-0001
+            $table->string('po_number')->nullable()->unique();          // e.g. MMS-PO-2026-000001
+            $table->string('invoice_number')->nullable()->unique();     // MMS-INV-… assigned when the final invoice is first generated
             $table->string('token', 64)->nullable()->unique();          // vendor acceptance magic link
             $table->foreignId('rfq_id')->nullable()->constrained('rfqs')->nullOnDelete();
             $table->foreignId('vendor_id')->constrained('vendors')->cascadeOnDelete();

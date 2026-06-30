@@ -3,7 +3,7 @@ import { X, ShipWheel, Lock, User, Loader2, AlertCircle, Eye, EyeOff, CheckCircl
 import { authAPI } from '../pages/api'; //
 
 export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
-  const [email, setEmail] = useState('');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false); // New state for password visibility
   
@@ -22,7 +22,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
   
     try {
       // Direct login - no CSRF call needed anymore
-      const response = await authAPI.login(email, password);
+      const response = await authAPI.login(login, password);
       const user = response.data.user;
       
       sessionStorage.setItem('user_name', user.name);
@@ -35,7 +35,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
         if (onLoginSuccess) onLoginSuccess();
         setTimeout(() => {
             setIsSuccess(false);
-            setEmail('');
+            setLogin('');
             setPassword('');
         }, 300);
       }, 2000);
@@ -91,15 +91,17 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
-                    <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Email Address</label>
+                    <label className="text-xs font-bold text-[#28364b] uppercase tracking-wider">Email or Username</label>
                     <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <input 
-                        type="email" 
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                    <input
+                        type="text"
+                        value={login}
+                        onChange={(e) => setLogin(e.target.value)}
                         className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-[#cebd88] focus:ring-1 focus:ring-[#cebd88] transition-all font-raleway"
-                        placeholder="admin@matriamarine.com"
+                        placeholder="username or email"
+                        autoCapitalize="none"
+                        autoCorrect="off"
                         required
                     />
                     </div>

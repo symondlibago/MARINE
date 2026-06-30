@@ -40,7 +40,11 @@ class PurchaseOrderMail extends Mailable
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
-        $pdf = Pdf::loadView('pdf.purchase-order', ['po' => $this->po, 'logo' => $logo]);
+        $pdf = Pdf::loadView('pdf.purchase-order', [
+            'po' => $this->po,
+            'company' => config('procurement.company'),
+            'logo' => $logo,
+        ]);
 
         return [
             Attachment::fromData(fn () => $pdf->output(), ($this->po->po_number ?: 'PO').'.pdf')

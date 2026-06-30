@@ -9,6 +9,7 @@ class PurchaseOrder extends Model
 {
     protected $fillable = [
         'po_number',
+        'invoice_number',
         'token',
         'rfq_id',
         'vendor_id',

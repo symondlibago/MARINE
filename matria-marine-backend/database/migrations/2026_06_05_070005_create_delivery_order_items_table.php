@@ -19,6 +19,7 @@ return new class extends Migration
             $table->decimal('unit_price', 14, 2)->default(0);       // customer price per unit
             $table->decimal('discount_amount', 14, 2)->default(0);  // per unit
             $table->decimal('line_total', 16, 2)->default(0);
+            $table->text('remarks')->nullable();                    // carried from the offer line
             $table->integer('sort')->default(0);
             $table->timestamps();
         });

@@ -18,6 +18,7 @@ return new class extends Migration
             $table->decimal('qty', 12, 3)->default(0);
             $table->decimal('unit_cost', 14, 4)->default(0);             // in PO currency
             $table->decimal('line_total', 16, 4)->default(0);            // qty * unit_cost
+            $table->text('remarks')->nullable();                         // carried from the awarded vendor's quote line
             $table->integer('sort')->default(0);
             $table->timestamps();
         });

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\VendorQuoteRequest;
 use App\Models\Award;
 use App\Models\SentLog;
+use App\Support\DocNumber;
 use App\Models\Quote;
 use App\Models\QuoteAttachment;
 use App\Models\QuoteItem;
@@ -50,7 +51,7 @@ class RfqController extends Controller
                 'notes' => $data['notes'] ?? null,
                 'created_by' => $request->user()->id,
             ]);
-            $rfq->reference = 'RFQ-'.str_pad((string) $rfq->id, 4, '0', STR_PAD_LEFT);
+            $rfq->reference = DocNumber::next('QTN'); // MMS-QTN-2026-00001 — reused by the customer Offer
             $rfq->save();
 
             $this->syncItems($rfq, $data['items'] ?? []);
@@ -169,6 +170,10 @@ class RfqController extends Controller
             if (! $rv->token) {
                 $rv->token = Str::random(48);
             }
+            if (! $rv->seq) {
+                // Per-enquiry vendor index → the RFQ-number suffix (-01, -02…).
+                $rv->seq = (int) RfqVendor::where('rfq_id', $rfq->id)->max('seq') + 1;
+            }
             $rv->status = 'requested';
             $rv->sent_at = now();
             $rv->save();
@@ -222,6 +227,21 @@ class RfqController extends Controller
      */
     public function compare(Rfq $rfq)
     {
+        // Vendors only get a Quote row when they submit through the link. In
+        // practice many vendors ignore the link and just email their quotation,
+        // so back-fill an empty quote for every vendor the RFQ was sent to —
+        // that way each shows as a column staff can key the price + remark into.
+        $rfq->loadMissing(['rfqVendors', 'quotes']);
+        $quotedVendorIds = $rfq->quotes->pluck('vendor_id')->all();
+        foreach ($rfq->rfqVendors as $rv) {
+            if (! in_array($rv->vendor_id, $quotedVendorIds, true)) {
+                Quote::firstOrCreate(
+                    ['rfq_id' => $rfq->id, 'vendor_id' => $rv->vendor_id],
+                    ['currency' => $rfq->base_currency, 'exchange_rate' => 1, 'status' => 'draft']
+                );
+            }
+        }
+
         $rfq->load(['items.award', 'quotes.vendor', 'quotes.items', 'quotes.attachments']);
 
         $quotes = $rfq->quotes;
@@ -244,6 +264,7 @@ class RfqController extends Controller
                 'vendor_id' => $q->vendor_id,
                 'vendor_name' => $q->vendor->name,
                 'quote_id' => $q->id,
+                'quotation_number' => $q->quotation_number,
                 'currency' => $q->currency,
                 'exchange_rate' => (float) $q->exchange_rate,
                 'total_base' => round($total, 2),
@@ -318,6 +339,7 @@ class RfqController extends Controller
         $data = $request->validate([
             'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
             'currency' => ['sometimes', 'string', 'size:3'],
+            'quotation_number' => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
         $update = [];
@@ -326,6 +348,10 @@ class RfqController extends Controller
         }
         if (array_key_exists('currency', $data)) {
             $update['currency'] = strtoupper($data['currency']);
+        }
+        if (array_key_exists('quotation_number', $data)) {
+            // Staff key in the vendor's quote/reference number (for vendors who emailed it).
+            $update['quotation_number'] = $data['quotation_number'] ?: null;
         }
         if ($update) {
             $quote->update($update);

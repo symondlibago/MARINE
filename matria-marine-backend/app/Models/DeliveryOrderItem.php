@@ -16,6 +16,7 @@ class DeliveryOrderItem extends Model
         'unit_price',
         'discount_amount',
         'line_total',
+        'remarks',
         'sort',
     ];
 

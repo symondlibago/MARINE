@@ -143,7 +143,7 @@ export default function QuotePage({ token }) {
       <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
         <div className="grid gap-3 text-sm sm:grid-cols-3">
           <div><span className="text-slate-400">Vendor:</span> <span className="font-medium text-[#28364b]">{data.vendor?.name}</span></div>
-          <div><span className="text-slate-400">Reference:</span> <span className="font-medium text-[#28364b]">{data.rfq?.reference}</span></div>
+          <div><span className="text-slate-400">Reference:</span> <span className="font-medium text-[#28364b]">{data.rfq?.vendor_reference || data.rfq?.reference}</span></div>
           <div><span className="text-slate-400">Vessel:</span> <span className="font-medium text-[#28364b]">{data.rfq?.ship_name || "—"}</span></div>
         </div>
 

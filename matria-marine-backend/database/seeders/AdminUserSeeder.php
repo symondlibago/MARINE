@@ -17,9 +17,10 @@ class AdminUserSeeder extends Seeder
 
         // Primary account — the Super Admin (can do everything, incl. Media + MMS).
         $admin = User::firstOrCreate(
-            ['email' => 'sales@matriamarine.com'],   // Login Email
+            ['username' => 'dyu'],                    // Super admin login handle
             [
                 'name' => 'Matria Admin',
+                'email' => 'sales@matriamarine.com',  // Login email (shared mailbox)
                 'password' => Hash::make('M@tria_2025'), // only set on first create
                 'role' => 'super_admin',
                 'phone' => '(65) 82277151',

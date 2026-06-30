@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DeliveryOrder;
 use App\Models\Offer;
+use App\Support\DocNumber;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -116,6 +117,11 @@ class DeliveryOrderController extends Controller
     public function proforma(DeliveryOrder $deliveryOrder)
     {
         $deliveryOrder->load(['items', 'creator:id,name,phone']);
+
+        // Assign the MMS-ProINV number the first time the proforma is generated.
+        if (! $deliveryOrder->proforma_number) {
+            $deliveryOrder->update(['proforma_number' => DocNumber::next('ProINV')]);
+        }
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;

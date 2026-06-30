@@ -22,6 +22,7 @@ class UserController extends Controller
                 'id' => $u->id,
                 'name' => $u->name,
                 'email' => $u->email,
+                'username' => $u->username,
                 'phone' => $u->phone,
                 'role' => $u->role,
                 'is_active' => (bool) $u->is_active,
@@ -35,7 +36,9 @@ class UserController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            // Email may be shared between staff → not unique. Username is the unique handle.
+            'email' => ['required', 'email', 'max:255'],
+            'username' => ['required', 'string', 'max:100', 'alpha_dash', 'unique:users,username'],
             'password' => ['required', 'string', 'min:8'],
             'phone' => ['nullable', 'string', 'max:50'],
             'role' => ['required', Rule::in($this->roles)],
@@ -44,6 +47,7 @@ class UserController extends Controller
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
+            'username' => $data['username'],
             'password' => Hash::make($data['password']),
             'phone' => $data['phone'] ?? null,
             'role' => $data['role'],
@@ -63,7 +67,8 @@ class UserController extends Controller
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'email' => ['sometimes', 'email', 'max:255'],
+            'username' => ['sometimes', 'string', 'max:100', 'alpha_dash', Rule::unique('users', 'username')->ignore($user->id)],
             'password' => ['nullable', 'string', 'min:8'],
             'phone' => ['nullable', 'string', 'max:50'],
             'role' => ['sometimes', Rule::in($this->roles)],
@@ -82,6 +87,9 @@ class UserController extends Controller
         }
         if (array_key_exists('email', $data)) {
             $user->email = $data['email'];
+        }
+        if (array_key_exists('username', $data)) {
+            $user->username = $data['username'];
         }
         if (array_key_exists('phone', $data)) {
             $user->phone = $data['phone'];

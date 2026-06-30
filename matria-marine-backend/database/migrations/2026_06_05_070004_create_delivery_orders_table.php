@@ -10,7 +10,8 @@ return new class extends Migration
     {
         Schema::create('delivery_orders', function (Blueprint $table) {
             $table->id();
-            $table->string('do_number')->unique();              // DO-0001
+            $table->string('do_number')->unique();              // MMS-DO-2026-000001
+            $table->string('proforma_number')->nullable()->unique(); // MMS-ProINV-… assigned when the proforma is first generated
             $table->foreignId('offer_id')->nullable()->constrained('offers')->nullOnDelete();
             $table->foreignId('rfq_id')->nullable()->constrained('rfqs')->nullOnDelete();
             $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();

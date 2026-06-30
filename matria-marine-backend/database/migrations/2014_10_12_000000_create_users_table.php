@@ -11,7 +11,10 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('email')->unique();
+            // Email is intentionally NOT unique — several staff may share one
+            // mailbox (e.g. sales@). They are told apart by username + password.
+            $table->string('email')->index();
+            $table->string('username')->nullable()->unique(); // alternative login handle
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->string('role')->default('admin'); // super_admin | admin

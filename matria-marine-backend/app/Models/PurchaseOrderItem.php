@@ -15,6 +15,7 @@ class PurchaseOrderItem extends Model
         'qty',
         'unit_cost',
         'line_total',
+        'remarks',
         'sort',
     ];
 

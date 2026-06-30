@@ -51,7 +51,7 @@ class OfferController extends Controller
 
         $offer = DB::transaction(function () use ($rfq, $request) {
             $offer = Offer::create([
-                'offer_number' => $this->nextNumber(),
+                'offer_number' => $rfq->reference, // Offer to client reuses the enquiry's MMS-QTN number
                 'rfq_id' => $rfq->id,
                 'customer_id' => $rfq->customer_id,
                 'customer_name' => $rfq->customer?->name,
@@ -255,18 +255,6 @@ class OfferController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Quotation emailed to '.$email.'.']);
-    }
-
-    /** Next sequential offer number (OFR-0001), computed up front (independent of the row id). */
-    private function nextNumber(): string
-    {
-        $last = Offer::orderByDesc('id')->value('offer_number');
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = (int) $m[1] + 1;
-        }
-
-        return 'OFR-'.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 
     /** Base unit cost in the enquiry's base currency: the awarded price, else the lowest quote. */

@@ -1,20 +1,20 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: 'https://marine-production.up.railway.app',
-  headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  }
-});
-
 // const api = axios.create({
-//   baseURL: 'http://localhost:8000',
+//   baseURL: 'https://marine-production.up.railway.app',
 //   headers: {
 //     'Accept': 'application/json',
 //     'Content-Type': 'application/json',
 //   }
 // });
+
+const api = axios.create({
+  baseURL: 'http://localhost:8000',
+  headers: {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  }
+});
 
 // Interceptor to attach the token from LocalStorage to every request
 api.interceptors.request.use(config => {
@@ -31,8 +31,8 @@ export const authAPI = {
   // getCsrf is no longer required for Token Auth
   getCsrf: () => Promise.resolve(), 
   
-  login: async (email, password) => {
-    const response = await api.post(apiUrl('/login'), { email, password });
+  login: async (login, password) => {
+    const response = await api.post(apiUrl('/login'), { login, password });
     if (response.data.access_token) {
         // Store token in LocalStorage
         localStorage.setItem('auth_token', response.data.access_token);
@@ -135,6 +135,8 @@ export const rfqsAPI = {
     api.patch(apiUrl(`/portal/quotes/${quoteId}`), { exchange_rate }),
   updateQuoteCurrency: (quoteId, currency) =>
     api.patch(apiUrl(`/portal/quotes/${quoteId}`), { currency }),
+  updateQuoteNumber: (quoteId, quotation_number) =>
+    api.patch(apiUrl(`/portal/quotes/${quoteId}`), { quotation_number }),
   saveVendorPrices: (quoteId, items) =>
     api.patch(apiUrl(`/portal/quotes/${quoteId}/prices`), { items }),
   attachmentUrl: (quoteId, attachmentId) =>

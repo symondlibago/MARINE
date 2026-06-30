@@ -9,6 +9,7 @@ class DeliveryOrder extends Model
 {
     protected $fillable = [
         'do_number',
+        'proforma_number',
         'offer_id',
         'rfq_id',
         'customer_id',
@@ -103,6 +104,7 @@ class DeliveryOrder extends Model
                     'unit_price' => $it->unit_price,
                     'discount_amount' => $it->discount_amount,
                     'line_total' => $it->line_total,
+                    'remarks' => $it->remarks, // carry the offer line's remark through
                     'sort' => $sort++,
                 ]);
             }
@@ -117,15 +119,9 @@ class DeliveryOrder extends Model
         });
     }
 
-    /** Next sequential DO number (DO-0001), computed up front. */
+    /** Next delivery-order number: MMS-DO-2026-000001. */
     public static function nextNumber(): string
     {
-        $last = static::orderByDesc('id')->value('do_number');
-        $seq = 1;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $seq = (int) $m[1] + 1;
-        }
-
-        return 'DO-'.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        return \App\Support\DocNumber::next('DO');
     }
 }
