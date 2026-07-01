@@ -1,14 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, Users, GitBranch, Download, ShoppingCart, FileText, PiggyBank } from "lucide-react";
+import { TrendingUp, Users, GitBranch, Download, ShoppingCart, FileText, PiggyBank, Calculator, ChevronRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { reportsAPI } from "@/pages/api";
 import { PageLoader } from "./ui/Loading";
+import DatePicker from "./ui/DatePicker";
+import Select from "./ui/Select";
+import { fetchRates } from "@/lib/fx";
 
 /* ----------------------------- helpers ----------------------------- */
 
 const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 
 const PRESETS = [
   { key: "month", label: "This month" },
@@ -303,9 +309,251 @@ function PipelineReport({ range }) {
   );
 }
 
+// Invoice-driven P&L: revenue (customer invoices) → COGS (vendor POs) → job expenses
+// = gross profit → overhead = net profit, plus A/R and A/P. Own from/to range.
+function AccountingReport() {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [open, setOpen] = useState(null);
+  const [showCur, setShowCur] = useState(""); // "" = report's own base currency
+  const [fx, setFx] = useState({ factor: 1, date: "", loading: false, error: "" });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["report-accounting", from, to],
+    queryFn: async () => (await reportsAPI.accounting({ ...(from ? { from } : {}), ...(to ? { to } : {}) })).data.data,
+  });
+
+  const rows = data?.rows ?? [];
+  const t = data?.totals;
+  const oh = data?.overhead_items ?? [];
+  const base = data?.base_currency;               // the currency the report is computed in
+  const cur = showCur || base;                    // the currency we display in
+  const curOptions = base ? [base, ...CURRENCIES.filter((c) => c !== base)] : CURRENCIES;
+
+  // Pull the base→display rate whenever the display currency changes.
+  useEffect(() => {
+    let cancelled = false;
+    if (!base || !showCur || showCur === base) {
+      setFx({ factor: 1, date: "", loading: false, error: "" });
+      return;
+    }
+    setFx((s) => ({ ...s, loading: true, error: "" }));
+    fetchRates(base)
+      .then((r) => {
+        if (cancelled) return;
+        const f = Number(r.rates?.[showCur]); // units of display per 1 base
+        if (!f || f <= 0) { setFx({ factor: 1, date: "", loading: false, error: `No live rate for ${showCur}` }); return; }
+        setFx({ factor: f, date: r.date || "", loading: false, error: "" });
+      })
+      .catch(() => { if (!cancelled) setFx({ factor: 1, date: "", loading: false, error: "Rate lookup failed" }); });
+    return () => { cancelled = true; };
+  }, [showCur, base]);
+
+  const conv = (n) => Number(n || 0) * fx.factor;  // base value → display currency
+  const m = (n) => money(conv(n));
+
+  const exportCsv = () =>
+    downloadCsv(
+      "accounting.csv",
+      ["Invoice", "Job", "Customer", "Vessel", "Date", "Currency", `Revenue (${cur})`, `Vendor cost (${cur})`, `Expenses (${cur})`, `Markup (${cur})`, `Net (${cur})`, "Invoice paid", "POs paid"],
+      rows.map((r) => [r.invoice_number, r.qtn, r.customer, r.vessel, r.date, r.currency, conv(r.gross), conv(r.vendor_cost), conv(r.expenses), conv(r.markup), conv(r.net), r.invoice_paid ? "paid" : "unpaid", `${r.pos_paid}/${r.po_count}`])
+    );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">From</label>
+          <div className="mt-1 w-44"><DatePicker value={from} onChange={setFrom} placeholder="Start date" /></div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">To</label>
+          <div className="mt-1 w-44"><DatePicker value={to} onChange={setTo} placeholder="End date" /></div>
+        </div>
+        {(from || to) && (
+          <button onClick={() => { setFrom(""); setTo(""); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Clear</button>
+        )}
+        <div className="ml-auto">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Show in</label>
+          <div className="mt-1 w-28"><Select value={cur} onChange={setShowCur} options={curOptions} /></div>
+          <div className="mt-1 h-3 text-[10px] leading-3 text-slate-400">
+            {fx.loading ? "fetching rate…" : fx.error ? <span className="text-amber-600">{fx.error}</span> : showCur && showCur !== base ? `×${fx.factor.toFixed(4)}${fx.date ? ` · ${fx.date}` : ""}` : ""}
+          </div>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <PageLoader />
+      ) : !data ? null : (
+        <>
+          {data.multi_base && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Invoices span multiple currencies; totals are summed as {cur}-equivalent.</p>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Kpi label={`Revenue · ${cur}`} value={m(t.revenue)} />
+            <Kpi label={`Gross profit · ${cur}`} value={m(t.gross_profit)} />
+            <Kpi label={`Overhead · ${cur}`} value={m(t.overhead)} />
+            <Kpi label={`Net profit · ${cur}`} value={m(t.net_profit)} accent={t.net_profit >= 0 ? "text-green-700" : "text-red-600"} />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="mb-3 text-sm font-bold text-[#28364b]">Income statement ({cur})</h3>
+              <dl className="space-y-1.5 text-sm">
+                <PLine label="Revenue (ex-GST)" value={m(t.revenue)} />
+                <PLine label="Cost of goods (vendors)" value={m(t.cogs)} neg />
+                <PLine label="Job expenses" value={m(t.job_expenses)} neg />
+                <PLine label="Gross profit" value={m(t.gross_profit)} strong divider />
+                <PLine label="Overhead" value={m(t.overhead)} neg />
+                <PLine label="Net profit" value={m(t.net_profit)} strong divider accent={t.net_profit >= 0 ? "text-green-700" : "text-red-600"} />
+              </dl>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="mb-3 text-sm font-bold text-[#28364b]">Cash position ({cur})</h3>
+              <dl className="space-y-1.5 text-sm">
+                <PLine label="Collected from customers" value={m(t.collected)} />
+                <PLine label="Receivables outstanding (A/R)" value={m(t.receivables)} accent="text-amber-600" />
+                <PLine label="Paid to vendors" value={m(t.cost_paid)} />
+                <PLine label="Payables outstanding (A/P)" value={m(t.payables)} accent="text-amber-600" />
+                <PLine label="Net cash (collected − paid)" value={m(t.collected - t.cost_paid)} strong divider />
+              </dl>
+            </div>
+          </div>
+
+          <Card title="Invoice-by-invoice profit & loss" action={rows.length > 0 && <ExportBtn onClick={exportCsv} />} className="overflow-x-auto">
+            {rows.length === 0 ? (
+              <EmptyMsg>No customer invoices in this period. Revenue is driven by invoices now — bill a job (or make a direct invoice) to see it here.</EmptyMsg>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-2 py-2 font-semibold">Invoice</th>
+                    <th className="px-2 py-2 font-semibold">Customer</th>
+                    <th className="px-2 py-2 text-right font-semibold">Revenue</th>
+                    <th className="px-2 py-2 text-right font-semibold">Vendor cost</th>
+                    <th className="px-2 py-2 text-right font-semibold">Expenses</th>
+                    <th className="px-2 py-2 text-right font-semibold">Markup</th>
+                    <th className="px-2 py-2 text-right font-semibold">Net</th>
+                    <th className="px-2 py-2 text-center font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => {
+                    const provisional = r.po_count > 0 && r.received < r.po_count;
+                    const expanded = open === i;
+                    return (
+                      <Fragment key={r.invoice_id}>
+                        <tr onClick={() => setOpen(expanded ? null : i)} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50">
+                          <td className="px-2 py-2.5">
+                            <div className="flex items-center gap-1 font-medium text-[#28364b]">
+                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${expanded ? "rotate-90" : ""} ${r.vendors.length === 0 ? "opacity-0" : ""}`} />
+                              {r.invoice_number || "—"}
+                            </div>
+                            <div className="pl-4 text-xs text-slate-400">{r.direct ? "Direct" : r.qtn}{r.date ? ` · ${r.date}` : ""}{r.vessel ? ` · ${r.vessel}` : ""}</div>
+                          </td>
+                          <td className="px-2 py-2.5 text-slate-600">{r.customer || "—"}</td>
+                          <td className="px-2 py-2.5 text-right text-slate-700">{m(r.gross)}</td>
+                          <td className="px-2 py-2.5 text-right text-slate-700">{m(r.vendor_cost)}</td>
+                          <td className="px-2 py-2.5 text-right text-slate-700">{m(r.expenses)}</td>
+                          <td className="px-2 py-2.5 text-right text-slate-700">{m(r.markup)}</td>
+                          <td className={`px-2 py-2.5 text-right font-semibold ${provisional ? "italic text-slate-400" : r.net >= 0 ? "text-green-700" : "text-red-600"}`}>
+                            {provisional ? "~" : ""}{m(r.net)}
+                          </td>
+                          <td className="px-2 py-2.5">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${r.invoice_paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{r.invoice_paid ? "Paid" : "Unpaid"}</span>
+                              {r.po_count > 0 && <span className="text-[10px] text-slate-400">vendor {r.pos_paid}/{r.po_count} paid</span>}
+                            </div>
+                          </td>
+                        </tr>
+                        {expanded && r.vendors.map((v, vi) => (
+                          <tr key={`${r.invoice_id}-v${vi}`} className="border-b border-slate-100 bg-slate-50/60 text-xs">
+                            <td className="px-2 py-1.5 pl-8 text-slate-500">{v.po_number}</td>
+                            <td className="px-2 py-1.5 text-slate-600">{v.vendor}</td>
+                            <td className="px-2 py-1.5 text-right text-slate-400" title="Awarded cost">{m(v.awarded)}</td>
+                            <td className="px-2 py-1.5 text-right text-slate-600">{m(v.cost)}</td>
+                            <td className="px-2 py-1.5 text-right text-slate-600">{m(v.expenses)}</td>
+                            <td className="px-2 py-1.5"></td>
+                            <td className="px-2 py-1.5"></td>
+                            <td className="px-2 py-1.5">
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${v.paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{v.paid ? "paid" : "unpaid"}</span>
+                                <span className={`text-[10px] ${v.has_receipt ? "text-green-600" : "text-slate-400"}`}>{v.has_receipt ? "receipt in" : "no receipt"}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-[#28364b]">
+                    <td className="px-2 py-2.5" colSpan={2}>Totals ({cur}) · {t.jobs} invoice{t.jobs === 1 ? "" : "s"}</td>
+                    <td className="px-2 py-2.5 text-right">{m(t.revenue)}</td>
+                    <td className="px-2 py-2.5 text-right">{m(t.cogs)}</td>
+                    <td className="px-2 py-2.5 text-right">{m(t.job_expenses)}</td>
+                    <td className="px-2 py-2.5 text-right">{m(t.revenue - t.cogs)}</td>
+                    <td className="px-2 py-2.5 text-right text-green-700">{m(t.gross_profit)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </Card>
+
+          <Card title={`Operating expenses (overhead) · ${cur}`} action={<Link href="/operating-expenses" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50">Manage</Link>}>
+            {oh.length === 0 ? (
+              <EmptyMsg>No overhead in this period. Add rent, salaries, etc. in Operating Expenses to complete your net profit.</EmptyMsg>
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {oh.map((e) => (
+                    <tr key={e.id} className="border-b border-slate-100 last:border-0">
+                      <td className="px-2 py-2 font-medium text-[#28364b]">{e.name}{e.category ? <span className="ml-1 text-xs font-normal text-slate-400">· {e.category}</span> : null}</td>
+                      <td className="px-2 py-2 text-slate-500">{e.recurring ? `monthly ×${e.months}` : "one-off"}</td>
+                      <td className="px-2 py-2 text-right text-slate-700">{m(e.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-[#28364b]">
+                    <td className="px-2 py-2.5" colSpan={2}>Total overhead</td>
+                    <td className="px-2 py-2.5 text-right">{m(t.overhead)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </Card>
+
+          <p className="text-xs text-slate-400">
+            Revenue = customer invoice total (ex-GST) · Cost of goods = the vendor receipt where recorded, otherwise the awarded cost · Gross profit − Overhead = Net profit.
+            A <span className="italic">~</span> net is provisional until every vendor's receipt is in. Click an invoice to see its vendors.
+            {showCur && showCur !== base && (
+              <> · Figures converted from {base} to {cur} at today's live rate (×{fx.factor.toFixed(4)}{fx.date ? `, ${fx.date}` : ""}).</>
+            )}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// One row in the Income-statement / Cash-position panels.
+function PLine({ label, value, neg = false, strong = false, divider = false, accent = "" }) {
+  return (
+    <div className={`flex items-center justify-between ${divider ? "border-t border-slate-200 pt-1.5" : ""}`}>
+      <dt className={strong ? "font-semibold text-[#28364b]" : "text-slate-500"}>{label}</dt>
+      <dd className={`tabular-nums ${accent || (strong ? "font-semibold text-[#28364b]" : "text-slate-700")}`}>{neg ? "− " : ""}{value}</dd>
+    </div>
+  );
+}
+
 /* ------------------------------ shell ------------------------------ */
 
 const TABS = [
+  { key: "accounting", label: "Accounting", icon: Calculator, Component: AccountingReport },
   { key: "spend", label: "Spend", icon: TrendingUp, Component: SpendReport },
   { key: "vendors", label: "Vendor scorecard", icon: Users, Component: VendorScorecard },
   { key: "pipeline", label: "Pipeline", icon: GitBranch, Component: PipelineReport },

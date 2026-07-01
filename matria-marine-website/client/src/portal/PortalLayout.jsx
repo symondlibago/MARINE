@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send } from "lucide-react";
+import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
 
@@ -8,9 +9,11 @@ const NAV = [
   { label: "Enquiries", to: "/enquiries", icon: FileText },
   { label: "Offers", to: "/offers", icon: Tag },
   { label: "Delivery Orders", to: "/delivery-orders", icon: Truck },
+  { label: "Invoices", to: "/invoices", icon: Receipt },
   { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
   { label: "Return Notes", to: "/return-notes", icon: Undo2 },
   { label: "Reports", to: "/reports", icon: BarChart3 },
+  { label: "Operating Expenses", to: "/operating-expenses", icon: Wallet },
   { label: "Customers", to: "/customers", icon: Users },
   { label: "Vendors", to: "/vendors", icon: Ship },
   { label: "Sent Log", to: "/sent-log", icon: Send },
@@ -20,6 +23,14 @@ const NAV = [
 export default function PortalLayout({ user, children }) {
   const [location] = useLocation();
   const nav = NAV.filter((item) => !item.superAdminOnly || user?.role === "super_admin");
+
+  // Collapsed state is remembered across page loads.
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("portal_sidebar_collapsed") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("portal_sidebar_collapsed", collapsed ? "1" : "0"); } catch { /* ignore */ }
+  }, [collapsed]);
 
   const handleLogout = async () => {
     try {
@@ -32,15 +43,22 @@ export default function PortalLayout({ user, children }) {
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-[#28364b]">
-      <aside className="hidden w-64 flex-col border-r border-slate-200 bg-white md:flex">
-        <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-5">
+      <aside
+        className={cn(
+          "sticky top-0 z-30 hidden h-screen shrink-0 flex-col self-start border-r border-slate-200 bg-white transition-[width] duration-200 md:flex",
+          collapsed ? "w-16" : "w-64"
+        )}
+      >
+        <div className={cn("flex h-16 items-center border-b border-slate-200", collapsed ? "justify-center px-2" : "gap-2.5 px-5")}>
           <img src="/logo.png" alt="Matria Marine" className="h-9 w-9 shrink-0 object-contain" />
-          <div className="flex flex-col leading-none">
-            <span className="text-sm font-bold tracking-[0.15em] text-[#28364b]">MATRIA</span>
-            <span className="text-[9px] tracking-[0.18em] text-slate-400">MARINE SERVICES</span>
-          </div>
+          {!collapsed && (
+            <div className="flex flex-col leading-none">
+              <span className="text-sm font-bold tracking-[0.15em] text-[#28364b]">MATRIA</span>
+              <span className="text-[9px] tracking-[0.18em] text-slate-400">MARINE SERVICES</span>
+            </div>
+          )}
         </div>
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {nav.map((item) => {
             const active = item.to === "/" ? location === "/" : location.startsWith(item.to);
             const Icon = item.icon;
@@ -48,23 +66,35 @@ export default function PortalLayout({ user, children }) {
               <Link
                 key={item.label}
                 href={item.to}
+                title={collapsed ? item.label : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  collapsed ? "justify-center" : "gap-3",
                   active ? "bg-[#28364b] text-white" : "text-slate-600 hover:bg-slate-100"
                 )}
               >
-                <Icon className="h-4 w-4" /> {item.label}
+                <Icon className="h-4 w-4 shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
         </nav>
-        <div className="border-t border-slate-200 p-3 text-xs text-slate-400">
-          Procurement module
+        <div className="border-t border-slate-200 p-3">
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn(
+              "flex w-full items-center rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100",
+              collapsed ? "justify-center" : "gap-2"
+            )}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <><PanelLeftClose className="h-4 w-4 shrink-0" /> <span>Collapse</span></>}
+          </button>
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="Matria Marine" className="h-7 w-7 object-contain md:hidden" />
             <span className="text-sm text-slate-500">Procurement &amp; Quotations</span>

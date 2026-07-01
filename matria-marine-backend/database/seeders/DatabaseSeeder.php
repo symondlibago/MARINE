@@ -12,5 +12,11 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
             CompanySeeder::class,
         ]);
+
+        // Ready-to-test sample data — LOCAL ONLY, so `migrate:fresh --seed` on
+        // production stays clean (super admin + company config only).
+        if (app()->environment('local')) {
+            $this->call(SampleDataSeeder::class);
+        }
     }
 }

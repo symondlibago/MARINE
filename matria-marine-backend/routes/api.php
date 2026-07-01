@@ -16,8 +16,10 @@ use App\Http\Controllers\ReturnNoteController;
 use App\Http\Controllers\SentLogController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\OfferController;
+use App\Http\Controllers\CustomerInvoiceController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\OperatingExpenseController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\FxController;
@@ -144,6 +146,16 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
         Route::delete('offers/{offer}', [OfferController::class, 'destroy']);
 
+        // Customer invoices (money in) — from an accepted offer OR created directly
+        Route::post('offers/{offer}/invoice', [CustomerInvoiceController::class, 'generateFromOffer']);
+        Route::get('invoices', [CustomerInvoiceController::class, 'index']);
+        Route::post('invoices', [CustomerInvoiceController::class, 'store']); // blank direct invoice
+        Route::get('invoices/{invoice}/pdf', [CustomerInvoiceController::class, 'pdf']);
+        Route::post('invoices/{invoice}/email', [CustomerInvoiceController::class, 'email']);
+        Route::get('invoices/{invoice}', [CustomerInvoiceController::class, 'show']);
+        Route::match(['put', 'patch'], 'invoices/{invoice}', [CustomerInvoiceController::class, 'update']);
+        Route::delete('invoices/{invoice}', [CustomerInvoiceController::class, 'destroy']);
+
         // Delivery Orders — customer order + delivery address (from an accepted offer)
         Route::post('offers/{offer}/delivery-order', [DeliveryOrderController::class, 'generate']);
         Route::get('delivery-orders', [DeliveryOrderController::class, 'index']);
@@ -168,6 +180,13 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('reports/spend', [ReportsController::class, 'spend']);
         Route::get('reports/vendors', [ReportsController::class, 'vendors']);
         Route::get('reports/pipeline', [ReportsController::class, 'pipeline']);
+        Route::get('reports/accounting', [ReportsController::class, 'accounting']);
+
+        // Operating expenses (business overhead — feeds the accounting net profit)
+        Route::get('operating-expenses', [OperatingExpenseController::class, 'index']);
+        Route::post('operating-expenses', [OperatingExpenseController::class, 'store']);
+        Route::match(['put', 'patch'], 'operating-expenses/{operatingExpense}', [OperatingExpenseController::class, 'update']);
+        Route::delete('operating-expenses/{operatingExpense}', [OperatingExpenseController::class, 'destroy']);
 
         // Documents — customer/vendor invoices, quotations, enquiries, delivery notes
         Route::apiResource('customers', CustomerController::class);

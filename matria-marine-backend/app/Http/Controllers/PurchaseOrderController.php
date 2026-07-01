@@ -174,6 +174,14 @@ class PurchaseOrderController extends Controller
             'issued_date' => ['nullable', 'date'],
             'expected_date' => ['nullable', 'date'],
             'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
+            'receipt_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'expenses' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'expense_items' => ['sometimes', 'nullable', 'array'],
+            'expense_items.*.name' => ['nullable', 'string', 'max:255'],
+            'expense_items.*.amount' => ['nullable', 'numeric', 'min:0'],
+            'expense_currency' => ['sometimes', 'nullable', 'string', 'size:3'],
+            'expense_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'paid_at' => ['sometimes', 'nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
@@ -185,10 +193,31 @@ class PurchaseOrderController extends Controller
 
         DB::transaction(function () use ($purchaseOrder, $data) {
             $attrs = [];
-            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date'] as $key) {
+            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'receipt_amount', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
                 if (array_key_exists($key, $data)) {
                     $attrs[$key] = $data[$key];
                 }
+            }
+            // expenses is non-nullable (defaults 0); a cleared field means zero.
+            if (array_key_exists('expenses', $attrs) && $attrs['expenses'] === null) {
+                $attrs['expenses'] = 0;
+            }
+            // Normalise the expenses currency + its rate to base (rate defaults to 1).
+            if (array_key_exists('expense_currency', $attrs)) {
+                $attrs['expense_currency'] = $attrs['expense_currency'] ? strtoupper($attrs['expense_currency']) : null;
+            }
+            if (array_key_exists('expense_rate', $attrs) && (! $attrs['expense_rate'] || $attrs['expense_rate'] <= 0)) {
+                $attrs['expense_rate'] = 1;
+            }
+            // Itemised expenses [{name, amount}] are the source of truth; the
+            // scalar `expenses` total is derived from them for the reports.
+            if (array_key_exists('expense_items', $data)) {
+                $items = collect($data['expense_items'] ?? [])
+                    ->map(fn ($e) => ['name' => trim((string) ($e['name'] ?? '')), 'amount' => round((float) ($e['amount'] ?? 0), 4)])
+                    ->filter(fn ($e) => $e['name'] !== '' || $e['amount'] > 0)
+                    ->values();
+                $attrs['expense_items'] = $items->all();
+                $attrs['expenses'] = round($items->sum('amount'), 4);
             }
             // Stamp the issued date the first time a PO is marked issued.
             if (($data['status'] ?? null) === 'issued' && empty($attrs['issued_date']) && ! $purchaseOrder->issued_date) {

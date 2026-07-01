@@ -28,7 +28,13 @@ return new class extends Migration
             $table->timestamp('accepted_at')->nullable();                // vendor confirmed
             $table->string('accepted_by_name')->nullable();
             $table->text('acceptance_note')->nullable();
-            $table->decimal('subtotal', 16, 4)->default(0);              // in PO currency
+            $table->decimal('subtotal', 16, 4)->default(0);              // awarded cost, in PO currency
+            $table->decimal('receipt_amount', 16, 4)->nullable();        // actual cost from the vendor's receipt (else falls back to subtotal)
+            $table->decimal('expenses', 16, 4)->default(0);              // total per-vendor expenses (sum of expense_items) deducted in accounting
+            $table->json('expense_items')->nullable();                   // itemised expenses [{name, amount}]
+            $table->char('expense_currency', 3)->nullable();             // currency the expense lines are in (defaults to the PO currency)
+            $table->decimal('expense_rate', 16, 8)->default(1);          // expense_currency -> base_currency
+            $table->timestamp('paid_at')->nullable();                    // when we paid the vendor (A/P settlement)
             $table->text('notes')->nullable();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();

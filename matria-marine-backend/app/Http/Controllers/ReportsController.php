@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Award;
+use App\Models\CustomerInvoice;
+use App\Models\Offer;
+use App\Models\OperatingExpense;
 use App\Models\PurchaseOrder;
 use App\Models\Quote;
 use App\Models\Rfq;
@@ -74,6 +77,220 @@ class ReportsController extends Controller
             'by_vessel' => $byVessel,
             'monthly' => $monthly,
         ]]);
+    }
+
+    /**
+     * Accounting P&L — driven by CUSTOMER INVOICES (the real bill), by issue date.
+     * Revenue = invoice total ex-GST; COGS = the vendor POs behind the job (receipt
+     * where recorded, else awarded cost); job expenses = per-PO expenses; overhead =
+     * business operating expenses in the range. Also surfaces A/R (unpaid invoices)
+     * and A/P (unpaid POs).
+     *
+     *   Revenue − COGS − Job expenses = Gross profit − Overhead = Net profit
+     *
+     * NOTE: revenue is taken at the invoice's face value (assumed base currency, like
+     * the prior report); only vendor costs carry a per-PO exchange rate.
+     */
+    public function accounting(Request $request)
+    {
+        [$from, $to] = $this->range($request);
+        $base = $this->baseCurrency();
+
+        // Revenue side: customer invoices whose issue date falls in the range.
+        $invoices = CustomerInvoice::with('rfq:id,reference,ship_name')
+            ->when($from, fn ($q) => $q->where('issue_date', '>=', $from))
+            ->when($to, fn ($q) => $q->where('issue_date', '<=', $to))
+            ->orderByDesc('issue_date')
+            ->get();
+
+        // Cost side: the POs behind each job, grouped by enquiry.
+        $rfqIds = $invoices->pluck('rfq_id')->filter()->unique()->all();
+        $posByRfq = PurchaseOrder::withCount('attachments')
+            ->with('vendor:id,name')
+            ->whereIn('rfq_id', $rfqIds)
+            ->where('status', '!=', 'cancelled')
+            ->get()
+            ->groupBy('rfq_id');
+
+        // A job's POs are attributed to the FIRST invoice seen for that enquiry, so a
+        // second invoice on the same job doesn't double-count the vendor cost.
+        $costedRfq = [];
+
+        $rows = $invoices->map(function (CustomerInvoice $inv) use ($posByRfq, &$costedRfq) {
+            $gross = (float) $inv->grand_total - (float) $inv->tax_amount; // ex-GST: tax isn't income
+            $invoicePaid = $inv->status === 'paid' || $inv->paid_at !== null;
+
+            $pos = ($inv->rfq_id && ! isset($costedRfq[$inv->rfq_id]))
+                ? $posByRfq->get($inv->rfq_id, collect())
+                : collect();
+            if ($inv->rfq_id) {
+                $costedRfq[$inv->rfq_id] = true;
+            }
+
+            $vendorCost = 0.0;
+            $expenses = 0.0;
+            $costPaid = 0.0;
+            $received = 0;
+            $posPaid = 0;
+
+            $vendors = $pos->map(function (PurchaseOrder $po) use (&$vendorCost, &$expenses, &$costPaid, &$received, &$posPaid) {
+                $rate = (float) ($po->exchange_rate ?: 1);
+                $cost = ($po->receipt_amount !== null ? (float) $po->receipt_amount : (float) $po->subtotal) * $rate;
+                $expRate = $po->expense_currency ? (float) ($po->expense_rate ?: 1) : $rate;
+                $exp = (float) $po->expenses * $expRate;
+                $hasReceipt = $po->receipt_amount !== null || $po->attachments_count > 0;
+                $paid = $po->paid_at !== null;
+
+                $vendorCost += $cost;
+                $expenses += $exp;
+                if ($hasReceipt) {
+                    $received++;
+                }
+                if ($paid) {
+                    $posPaid++;
+                    $costPaid += $cost + $exp;
+                }
+
+                return [
+                    'vendor' => $po->vendor?->name ?? '—',
+                    'po_number' => $po->po_number,
+                    'awarded' => round((float) $po->subtotal * $rate, 2),
+                    'cost' => round($cost, 2),
+                    'expenses' => round($exp, 2),
+                    'has_receipt' => $hasReceipt,
+                    'paid' => $paid,
+                ];
+            })->values();
+
+            $poCount = $pos->count();
+            $costIncurred = $vendorCost + $expenses;
+            $collected = $invoicePaid ? $gross : 0.0;
+
+            return [
+                'invoice_id' => $inv->id,
+                'invoice_number' => $inv->invoice_number,
+                'qtn' => $inv->rfq?->reference ?? '—',
+                'direct' => $inv->rfq_id === null,
+                'customer' => $inv->customer_name,
+                'vessel' => $inv->rfq?->ship_name,
+                'date' => optional($inv->issue_date)->toDateString(),
+                'currency' => $inv->currency,
+                'gross' => round($gross, 2),
+                'vendor_cost' => round($vendorCost, 2),
+                'expenses' => round($expenses, 2),
+                'markup' => round($gross - $vendorCost, 2),
+                'net' => round($gross - $costIncurred, 2),
+                'invoice_paid' => $invoicePaid,
+                'collected' => round($collected, 2),
+                'receivable' => round($gross - $collected, 2),
+                'cost_paid' => round($costPaid, 2),
+                'payable' => round($costIncurred - $costPaid, 2),
+                'received' => $received,
+                'pos_paid' => $posPaid,
+                'po_count' => $poCount,
+                'vendors' => $vendors,
+            ];
+        })->values();
+
+        [$overhead, $overheadItems] = $this->overheadForRange($from, $to);
+
+        $sum = fn ($k) => round($rows->sum($k), 2);
+        $revenue = $sum('gross');
+        $cogs = $sum('vendor_cost');
+        $jobExpenses = $sum('expenses');
+        $grossProfit = round($revenue - $cogs - $jobExpenses, 2);
+
+        return response()->json(['success' => true, 'data' => [
+            'base_currency' => $base,
+            'multi_base' => $invoices->pluck('currency')->filter()->unique()->count() > 1,
+            'rows' => $rows,
+            'overhead_items' => $overheadItems,
+            'totals' => [
+                'jobs' => $rows->count(),
+                'revenue' => $revenue,
+                'cogs' => $cogs,
+                'job_expenses' => $jobExpenses,
+                'gross_profit' => $grossProfit,
+                'overhead' => round($overhead, 2),
+                'net_profit' => round($grossProfit - $overhead, 2),
+                'collected' => $sum('collected'),
+                'receivables' => $sum('receivable'),
+                'cost_paid' => $sum('cost_paid'),
+                'payables' => $sum('payable'),
+            ],
+        ]]);
+    }
+
+    /**
+     * Total business overhead applying within [from, to], converted to base. One-off
+     * expenses count if their date is in range; recurring ones count once per calendar
+     * month they cover (capped at the current month for an open-ended range).
+     * Returns [total, breakdownRows].
+     */
+    private function overheadForRange(?Carbon $from, ?Carbon $to): array
+    {
+        $total = 0.0;
+        $rows = [];
+
+        foreach (OperatingExpense::orderByDesc('effective_date')->get() as $e) {
+            $baseAmt = $e->baseAmount();
+
+            if (! $e->recurring) {
+                $d = $e->effective_date;
+                if ($d && (! $from || $d->gte($from)) && (! $to || $d->lte($to))) {
+                    $total += $baseAmt;
+                    $rows[] = $this->overheadRow($e, $baseAmt, 1);
+                }
+
+                continue;
+            }
+
+            $months = $this->recurringMonths($e->effective_date, $e->end_date, $from, $to);
+            if ($months > 0) {
+                $total += $baseAmt * $months;
+                $rows[] = $this->overheadRow($e, $baseAmt * $months, $months);
+            }
+        }
+
+        return [$total, $rows];
+    }
+
+    /** Calendar months a recurring expense covers within the range. */
+    private function recurringMonths($effective, $end, ?Carbon $from, ?Carbon $to): int
+    {
+        if (! $effective) {
+            return 0;
+        }
+        $start = $effective->copy()->startOfMonth();
+        if ($from && $from->copy()->startOfMonth()->gt($start)) {
+            $start = $from->copy()->startOfMonth();
+        }
+        // Cap the open end at the current month so "all time" isn't infinite.
+        $stop = $to ? $to->copy()->startOfMonth() : Carbon::now()->startOfMonth();
+        if ($end) {
+            $endMonth = $end->copy()->startOfMonth();
+            if ($endMonth->lt($stop)) {
+                $stop = $endMonth;
+            }
+        }
+        if ($stop->lt($start)) {
+            return 0;
+        }
+
+        return $start->diffInMonths($stop) + 1;
+    }
+
+    private function overheadRow(OperatingExpense $e, float $baseAmount, int $months): array
+    {
+        return [
+            'id' => $e->id,
+            'name' => $e->name,
+            'category' => $e->category,
+            'currency' => $e->currency,
+            'recurring' => (bool) $e->recurring,
+            'months' => $months,
+            'amount' => round($baseAmount, 2), // base currency, total across counted months
+        ];
     }
 
     /** Vendor scorecard: response/win/acceptance rates + ordered value. */

@@ -199,6 +199,18 @@ export const deliveryOrdersAPI = {
   proforma: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}/proforma`), { responseType: 'blob' }),
 };
 
+// --- Customer invoices (money in): from an offer, or a direct invoice ---
+export const invoicesAPI = {
+  list: () => api.get(apiUrl('/portal/invoices')),
+  get: (id) => api.get(apiUrl(`/portal/invoices/${id}`)),
+  createDirect: (payload = {}) => api.post(apiUrl('/portal/invoices'), payload),
+  fromOffer: (offerId) => api.post(apiUrl(`/portal/offers/${offerId}/invoice`)),
+  update: (id, payload) => api.patch(apiUrl(`/portal/invoices/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/invoices/${id}`)),
+  pdf: (id) => api.get(apiUrl(`/portal/invoices/${id}/pdf`), { responseType: 'blob' }),
+  email: (id) => api.post(apiUrl(`/portal/invoices/${id}/email`)),
+};
+
 // --- Staff management (super admin only) ---
 export const usersAPI = {
   list: () => api.get(apiUrl('/portal/users')),
@@ -217,6 +229,15 @@ export const reportsAPI = {
   spend: (params = {}) => api.get(apiUrl('/portal/reports/spend'), { params }),
   vendors: (params = {}) => api.get(apiUrl('/portal/reports/vendors'), { params }),
   pipeline: (params = {}) => api.get(apiUrl('/portal/reports/pipeline'), { params }),
+  accounting: (params = {}) => api.get(apiUrl('/portal/reports/accounting'), { params }),
+};
+
+// --- Operating expenses (business overhead: rent, salaries, software…) ---
+export const operatingExpensesAPI = {
+  list: () => api.get(apiUrl('/portal/operating-expenses')),
+  create: (payload) => api.post(apiUrl('/portal/operating-expenses'), payload),
+  update: (id, payload) => api.patch(apiUrl(`/portal/operating-expenses/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/operating-expenses/${id}`)),
 };
 
 // --- Customers master (for outgoing documents) ---

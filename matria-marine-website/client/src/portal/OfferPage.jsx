@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt } from "lucide-react";
 import { toast } from "sonner";
-import { offersAPI, customersAPI, deliveryOrdersAPI } from "@/pages/api";
+import { offersAPI, customersAPI, deliveryOrdersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
@@ -156,6 +156,17 @@ export default function OfferPage({ params }) {
     makeDo.mutate();
   };
 
+  const makeInvoice = useMutation({
+    mutationFn: () => invoicesAPI.fromOffer(id),
+    onSuccess: (res) => { toast.success(res.data.message || "Invoice ready."); setLocation(`/invoices/${res.data.data.id}`); },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not create the invoice."),
+  });
+  // Save the markup first, then turn the offer into a customer invoice.
+  const createInvoice = async () => {
+    try { await save.mutateAsync(); } catch { return; }
+    makeInvoice.mutate();
+  };
+
   // Save the markup first, then email the quotation + acceptance link to the customer.
   const sendEmail = useMutation({
     mutationFn: () => offersAPI.email(id),
@@ -212,6 +223,9 @@ export default function OfferPage({ params }) {
           </button>
           <button onClick={createDo} disabled={save.isLoading || makeDo.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-70" title="Save & turn this offer into a delivery order">
             {makeDo.isLoading ? <Spinner className="h-4 w-4" /> : <Truck className="h-4 w-4" />} Create Delivery Order
+          </button>
+          <button onClick={createInvoice} disabled={save.isLoading || makeInvoice.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-3 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70" title="Save & create a customer invoice from this offer">
+            {makeInvoice.isLoading ? <Spinner className="h-4 w-4" /> : <Receipt className="h-4 w-4" />} Create Invoice
           </button>
         </div>
       </div>

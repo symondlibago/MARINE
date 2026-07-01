@@ -27,6 +27,12 @@ class PurchaseOrder extends Model
         'accepted_by_name',
         'acceptance_note',
         'subtotal',
+        'receipt_amount',
+        'expenses',
+        'expense_items',
+        'expense_currency',
+        'expense_rate',
+        'paid_at',
         'notes',
         'created_by',
     ];
@@ -36,8 +42,11 @@ class PurchaseOrder extends Model
         'expected_date' => 'date',
         'opened_at' => 'datetime',
         'accepted_at' => 'datetime',
+        'paid_at' => 'datetime',
         'exchange_rate' => 'decimal:8',
+        'expense_rate' => 'decimal:8',
         'subtotal' => 'decimal:4',
+        'expense_items' => 'array',
     ];
 
     protected static function booted(): void

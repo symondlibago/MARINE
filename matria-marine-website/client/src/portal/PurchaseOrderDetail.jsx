@@ -2,12 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { purchaseOrdersAPI, returnNotesAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
+import { fetchRates, rateToBase } from "@/lib/fx";
+
+const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
@@ -33,6 +36,12 @@ export default function PurchaseOrderDetail({ params }) {
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState("");
   const [expected, setExpected] = useState("");
+  const [receiptAmount, setReceiptAmount] = useState("");
+  const [expenseItems, setExpenseItems] = useState([]); // [{ name, amount }]
+  const [expenseCurrency, setExpenseCurrency] = useState(""); // currency of the expense lines
+  const [expenseRate, setExpenseRate] = useState(1);          // expense_currency -> base
+  const [rateLoading, setRateLoading] = useState(false);
+  const [paidAt, setPaidAt] = useState(""); // date we paid the vendor (A/P)
   const [returns, setReturns] = useState([]); // [{ po_item_id, description, unit, ordered, unit_cost, qty, reason }]
   const [returnDate, setReturnDate] = useState("");
   const [returnNotes, setReturnNotes] = useState("");
@@ -53,6 +62,11 @@ export default function PurchaseOrderDetail({ params }) {
     })));
     setNotes(po.notes || "");
     setExpected(po.expected_date ? String(po.expected_date).slice(0, 10) : "");
+    setReceiptAmount(po.receipt_amount != null ? String(Number(po.receipt_amount)) : "");
+    setExpenseItems((po.expense_items || []).map((e) => ({ name: e.name ?? "", amount: e.amount != null ? String(Number(e.amount)) : "" })));
+    setExpenseCurrency(po.expense_currency || po.currency);
+    setExpenseRate(po.expense_currency ? Number(po.expense_rate) || 1 : Number(po.exchange_rate) || 1);
+    setPaidAt(po.paid_at ? String(po.paid_at).slice(0, 10) : "");
 
     // Returns: one row per PO line, pre-filled from any existing return note.
     const existing = new Map((po.return_note?.items || []).map((ri) => [ri.purchase_order_item_id, ri]));
@@ -109,6 +123,24 @@ export default function PurchaseOrderDetail({ params }) {
     }
   };
 
+  // Pick the currency the expense lines are recorded in, and fetch its rate to base.
+  const changeExpenseCurrency = async (cur) => {
+    setExpenseCurrency(cur);
+    if (cur === po.base_currency) { setExpenseRate(1); return; }
+    if (cur === po.currency) { setExpenseRate(Number(po.exchange_rate) || 1); return; }
+    setRateLoading(true);
+    try {
+      const rates = await fetchRates(po.base_currency);
+      const r = rateToBase(rates, cur); // base units per 1 `cur`
+      if (r) setExpenseRate(Number(r.toFixed(6)));
+      else toast.error(`No live rate for ${cur} — enter it manually.`);
+    } catch {
+      toast.error("Could not fetch a live rate — enter it manually.");
+    } finally {
+      setRateLoading(false);
+    }
+  };
+
   const isDraft = po?.status === "draft";
   const isClosed = po?.status === "received" || po?.status === "cancelled";
 
@@ -117,6 +149,13 @@ export default function PurchaseOrderDetail({ params }) {
       purchaseOrdersAPI.update(id, {
         notes,
         expected_date: expected || null,
+        receipt_amount: receiptAmount === "" ? null : Number(receiptAmount),
+        paid_at: paidAt || null,
+        expense_currency: expenseCurrency || po.currency,
+        expense_rate: Number(expenseRate) || 1,
+        expense_items: expenseItems
+          .filter((e) => (e.name || "").trim() !== "" || e.amount !== "")
+          .map((e) => ({ name: e.name, amount: e.amount === "" ? 0 : Number(e.amount) })),
         ...(isDraft
           ? {
               items: items.map((it) => ({
@@ -231,6 +270,8 @@ export default function PurchaseOrderDetail({ params }) {
 
   if (isLoading || !po) return <PageLoader />;
 
+  const expenseCurrencyOptions = Array.from(new Set([po.currency, po.base_currency, ...CURRENCIES].filter(Boolean)));
+  const expensesTotal = expenseItems.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const grandTotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unit_cost) || 0), 0);
   const returnsTotal = returns.reduce((s, r) => s + Math.min(Number(r.qty) || 0, r.ordered) * (r.unit_cost || 0), 0);
   const netPayable = grandTotal - returnsTotal;
@@ -552,6 +593,125 @@ export default function PurchaseOrderDetail({ params }) {
             ))}
           </ul>
         )}
+
+        {/* Receipt reconciliation — the vendor's actual charge + expenses, feeds the Accounting report */}
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Receipt reconciliation</h3>
+          <p className="mb-3 text-xs text-slate-400">The vendor's actual charge (from the receipt above) and any expenses for this vendor. Leave the receipt blank to use the awarded cost. This feeds the Accounting report.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-xs font-medium text-slate-500">Awarded cost ({po.currency})</label>
+              <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">{Number(po.subtotal).toFixed(2)}</div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500">Receipt amount ({po.currency})</label>
+              <input type="number" step="0.01" value={receiptAmount} onChange={(e) => setReceiptAmount(e.target.value)} placeholder="Actual vendor charge" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </div>
+          </div>
+
+          {/* Vendor payment (A/P) — feeds the Accounting report's payables */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={!!paidAt} onChange={(e) => setPaidAt(e.target.checked ? new Date().toISOString().slice(0, 10) : "")} className="h-4 w-4 rounded border-slate-300" />
+              Paid to vendor
+            </label>
+            {paidAt ? (
+              <>
+                <span className="text-xs text-slate-400">on</span>
+                <div className="w-44"><DatePicker value={paidAt} onChange={setPaidAt} placeholder="Payment date" /></div>
+              </>
+            ) : (
+              <span className="text-xs text-amber-600">Unpaid — shows as a payable in the Accounting report.</span>
+            )}
+          </div>
+
+          {/* Itemised expenses — name + amount per line, in their own currency */}
+          <div className="mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-slate-500">Expenses</label>
+                <select
+                  value={expenseCurrency || po.currency}
+                  onChange={(e) => changeExpenseCurrency(e.target.value)}
+                  title="Currency these expense lines are in"
+                  className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium uppercase text-[#28364b]"
+                >
+                  {expenseCurrencyOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {(expenseCurrency || po.currency) !== po.base_currency && (
+                  <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                    ×
+                    <input
+                      type="number" step="0.0001"
+                      value={expenseRate}
+                      onChange={(ev) => setExpenseRate(ev.target.value)}
+                      title={`Rate ${expenseCurrency || po.currency} → ${po.base_currency}`}
+                      className="w-16 rounded border border-slate-200 px-1 py-0.5 text-xs"
+                    />
+                    → {po.base_currency}
+                    <button type="button" onClick={() => changeExpenseCurrency(expenseCurrency || po.currency)} title="Fetch today's live rate" className="text-slate-400 transition-colors hover:text-[#28364b]">
+                      {rateLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    </button>
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpenseItems((arr) => [...arr, { name: "", amount: "" }])}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add expense
+              </button>
+            </div>
+            {expenseItems.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-400">No expenses — click "Add expense" to itemise freight, bank charges, customs, etc.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {expenseItems.map((e, idx) => (
+                  <div key={idx} className="flex gap-2">
+                    <input
+                      value={e.name}
+                      onChange={(ev) => setExpenseItems((arr) => arr.map((x, i) => (i === idx ? { ...x, name: ev.target.value } : x)))}
+                      placeholder="Expense name (e.g. Freight)"
+                      className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={e.amount}
+                      onChange={(ev) => setExpenseItems((arr) => arr.map((x, i) => (i === idx ? { ...x, amount: ev.target.value } : x)))}
+                      placeholder="0.00"
+                      className="w-32 shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-right text-sm"
+                    />
+                    <button type="button" onClick={() => setExpenseItems((arr) => arr.filter((_, i) => i !== idx))} className="shrink-0 rounded-lg px-2 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-sm">
+                  <span className="text-slate-500">Total expenses</span>
+                  <span className="font-semibold text-[#28364b]">
+                    {expensesTotal.toFixed(2)} {expenseCurrency || po.currency}
+                    {(expenseCurrency || po.currency) !== po.base_currency && (
+                      <span className="ml-1.5 text-xs font-normal text-slate-400">≈ {(expensesTotal * (Number(expenseRate) || 1)).toFixed(2)} {po.base_currency}</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+            <span className="text-xs text-slate-400">Saves the receipt amount &amp; expenses for the Accounting report.</span>
+            <button
+              onClick={() => save.mutate()}
+              disabled={save.isLoading}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70"
+            >
+              {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save receipt &amp; expenses
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Action bar */}

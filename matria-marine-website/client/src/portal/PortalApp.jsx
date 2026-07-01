@@ -13,6 +13,8 @@ import Offers from "./Offers";
 import OfferPage from "./OfferPage";
 import DeliveryOrders from "./DeliveryOrders";
 import DeliveryOrderPage from "./DeliveryOrderPage";
+import Invoices from "./Invoices";
+import InvoicePage from "./InvoicePage";
 import PurchaseOrders from "./PurchaseOrders";
 import PurchaseOrderDetail from "./PurchaseOrderDetail";
 import ReturnNotes from "./ReturnNotes";
@@ -20,6 +22,7 @@ import ReturnNoteDetail from "./ReturnNoteDetail";
 import ManageStaff from "./ManageStaff";
 import SentLog from "./SentLog";
 import Reports from "./Reports";
+import OperatingExpenses from "./OperatingExpenses";
 import Customers from "./Customers";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
@@ -85,11 +88,14 @@ export default function PortalApp() {
               <Route path="/offers/:id" component={OfferPage} />
               <Route path="/delivery-orders" component={DeliveryOrders} />
               <Route path="/delivery-orders/:id" component={DeliveryOrderPage} />
+              <Route path="/invoices" component={Invoices} />
+              <Route path="/invoices/:id" component={InvoicePage} />
               <Route path="/purchase-orders" component={PurchaseOrders} />
               <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
               <Route path="/return-notes" component={ReturnNotes} />
               <Route path="/return-notes/:id" component={ReturnNoteDetail} />
               <Route path="/reports" component={Reports} />
+              <Route path="/operating-expenses" component={OperatingExpenses} />
               <Route path="/customers" component={Customers} />
               <Route path="/staff" component={ManageStaff} />
               <Route path="/sent-log" component={SentLog} />
