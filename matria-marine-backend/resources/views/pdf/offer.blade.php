@@ -125,8 +125,9 @@
     @php
         $packing = (float) $offer->packing_cost;
         $transport = (float) $offer->transportation_cost;
-        $hasDelivery = $packing > 0 || $transport > 0;
-        $grand = $hasDelivery ? (float) $offer->grand_total : (float) $offer->subtotal;
+        $tax = (float) $offer->tax_amount;
+        $taxRate = (float) $offer->tax_rate;
+        $grand = (float) $offer->grand_total ?: (float) $offer->subtotal;
     @endphp
     <table style="width:100%; margin-top:10px;">
         <tr>
@@ -151,10 +152,12 @@
                         <td class="num">{{ number_format($transport, 2) }}</td>
                     </tr>
                     @endif
+                    @if($tax > 0)
                     <tr>
-                        <td style="text-align:right; color:#444;">GST Amount</td>
-                        <td class="num">&mdash;</td>
+                        <td style="text-align:right; color:#444;">GST {{ (float) $taxRate }}%</td>
+                        <td class="num">{{ number_format($tax, 2) }}</td>
                     </tr>
+                    @endif
                     <tr style="font-weight:bold; font-size:14px;">
                         <td class="navy" style="text-align:right; border-top:2px solid #28364b; padding-top:7px;">TOTAL ({{ $offer->currency }})</td>
                         <td class="num navy" style="border-top:2px solid #28364b; padding-top:7px;">{{ number_format($grand, 2) }}</td>

@@ -1,20 +1,20 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: 'https://marine-production.up.railway.app',
-  headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  }
-});
-
 // const api = axios.create({
-//   baseURL: 'http://localhost:8000',
+//   baseURL: 'https://marine-production.up.railway.app',
 //   headers: {
 //     'Accept': 'application/json',
 //     'Content-Type': 'application/json',
 //   }
 // });
+
+const api = axios.create({
+  baseURL: 'http://localhost:8000',
+  headers: {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  }
+});
 
 // Interceptor to attach the token from LocalStorage to every request
 api.interceptors.request.use(config => {

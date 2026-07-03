@@ -120,6 +120,7 @@
         $packing = (float) $invoice->packing_cost;
         $transport = (float) $invoice->transportation_cost;
         $tax = (float) $invoice->tax_amount;
+        $taxRate = (float) $invoice->tax_rate;
     @endphp
     <table style="width:100%; margin-top:10px;">
         <tr>
@@ -144,10 +145,12 @@
                         <td class="num">{{ number_format($transport, 2) }}</td>
                     </tr>
                     @endif
+                    @if($tax > 0)
                     <tr>
-                        <td style="text-align:right; color:#444;">GST Amount</td>
-                        <td class="num">{{ $tax > 0 ? number_format($tax, 2) : '—' }}</td>
+                        <td style="text-align:right; color:#444;">GST {{ (float) $taxRate }}%</td>
+                        <td class="num">{{ number_format($tax, 2) }}</td>
                     </tr>
+                    @endif
                     <tr style="font-weight:bold; font-size:14px;">
                         <td class="navy" style="text-align:right; border-top:2px solid #28364b; padding-top:7px;">TOTAL ({{ $invoice->currency }})</td>
                         <td class="num navy" style="border-top:2px solid #28364b; padding-top:7px;">{{ number_format((float) $invoice->grand_total, 2) }}</td>

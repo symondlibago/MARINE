@@ -59,7 +59,7 @@ export default function InvoicePage({ params }) {
       origin_type: data.origin_type ?? "",
       packing_cost: data.packing_cost ?? 0,
       transportation_cost: data.transportation_cost ?? 0,
-      tax_amount: data.tax_amount ?? 0,
+      tax_rate: data.tax_rate != null && Number(data.tax_rate) > 0 ? String(Number(data.tax_rate)) : "",
       notes: data.notes ?? "",
     });
     setLines((data.items || []).map((it) => ({
@@ -117,7 +117,10 @@ export default function InvoicePage({ params }) {
   };
 
   const subtotal = lines.reduce((s, l) => (l.is_heading ? s : s + (Number(l.qty) || 0) * (Number(l.unit_price) || 0)), 0);
-  const grand = subtotal + (Number(form.packing_cost) || 0) + (Number(form.transportation_cost) || 0) + (Number(form.tax_amount) || 0);
+  const delivery = (Number(form.packing_cost) || 0) + (Number(form.transportation_cost) || 0);
+  const taxRate = Number(form.tax_rate) || 0;
+  const taxAmount = ((subtotal + delivery) * taxRate) / 100;
+  const grand = subtotal + delivery + taxAmount;
   const cur = form.currency;
 
   const downloadPdf = async () => {
@@ -288,9 +291,15 @@ export default function InvoicePage({ params }) {
           <input type="number" step="0.01" value={form.transportation_cost} onChange={(e) => setField("transportation_cost", e.target.value)} className={cellInput + " w-28 text-right"} />
         </div>
         <div className="flex items-center justify-between text-sm">
-          <label className="text-slate-500">GST amount</label>
-          <input type="number" step="0.01" value={form.tax_amount} onChange={(e) => setField("tax_amount", e.target.value)} className={cellInput + " w-28 text-right"} />
+          <label className="text-slate-500">GST %</label>
+          <input type="number" step="0.001" min="0" max="100" value={form.tax_rate} onChange={(e) => setField("tax_rate", e.target.value)} placeholder="0 = zero-rated" className={cellInput + " w-28 text-right"} />
         </div>
+        {taxAmount > 0 && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-400">GST amount</span>
+            <span className="text-slate-600">{taxAmount.toFixed(2)} {cur}</span>
+          </div>
+        )}
         <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-base font-bold text-[#28364b]">
           <span>Total</span>
           <span>{grand.toFixed(2)} {cur}</span>

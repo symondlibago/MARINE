@@ -4,16 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\OperatingExpense;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OperatingExpenseController extends Controller
 {
     public function index(Request $request)
     {
-        $rows = OperatingExpense::with('creator:id,name')
-            ->orderByDesc('effective_date')
+        $rows = OperatingExpense::with(['items', 'creator:id,name'])
+            ->orderByDesc('period_start')
             ->orderByDesc('id')
             ->get()
-            ->map(fn (OperatingExpense $e) => $this->present($e));
+            ->map(fn (OperatingExpense $g) => $this->present($g));
 
         return response()->json(['success' => true, 'data' => $rows]);
     }
@@ -21,65 +22,109 @@ class OperatingExpenseController extends Controller
     public function store(Request $request)
     {
         $data = $this->validated($request);
-        $data['created_by'] = $request->user()?->id;
 
-        $expense = OperatingExpense::create($data);
+        $group = DB::transaction(function () use ($data, $request) {
+            $group = OperatingExpense::create([
+                'label' => $data['label'] ?? null,
+                'period_start' => $data['period_start'],
+                'period_end' => $data['period_end'],
+                'currency' => $data['currency'],
+                'exchange_rate' => $data['exchange_rate'],
+                'notes' => $data['notes'] ?? null,
+                'created_by' => $request->user()?->id,
+            ]);
+            $this->syncItems($group, $data['items']);
 
-        return response()->json(['success' => true, 'message' => 'Operating expense added.', 'data' => $this->present($expense)]);
+            return $group;
+        });
+
+        return response()->json(['success' => true, 'message' => 'Expenses saved.', 'data' => $this->present($group->fresh('items'))], 201);
     }
 
     public function update(Request $request, OperatingExpense $operatingExpense)
     {
-        $operatingExpense->update($this->validated($request));
+        $data = $this->validated($request);
 
-        return response()->json(['success' => true, 'message' => 'Operating expense updated.', 'data' => $this->present($operatingExpense->fresh())]);
+        DB::transaction(function () use ($operatingExpense, $data) {
+            $operatingExpense->update([
+                'label' => $data['label'] ?? null,
+                'period_start' => $data['period_start'],
+                'period_end' => $data['period_end'],
+                'currency' => $data['currency'],
+                'exchange_rate' => $data['exchange_rate'],
+                'notes' => $data['notes'] ?? null,
+            ]);
+            $operatingExpense->items()->delete();
+            $this->syncItems($operatingExpense, $data['items']);
+        });
+
+        return response()->json(['success' => true, 'message' => 'Expenses updated.', 'data' => $this->present($operatingExpense->fresh('items'))]);
     }
 
     public function destroy(OperatingExpense $operatingExpense)
     {
-        $operatingExpense->delete();
+        $operatingExpense->delete(); // items cascade
 
-        return response()->json(['success' => true, 'message' => 'Operating expense removed.']);
+        return response()->json(['success' => true, 'message' => 'Expense group removed.']);
+    }
+
+    private function syncItems(OperatingExpense $group, array $items): void
+    {
+        $sort = 0;
+        foreach ($items as $item) {
+            $name = trim((string) ($item['name'] ?? ''));
+            if ($name === '' && (float) ($item['amount'] ?? 0) === 0.0) {
+                continue;
+            }
+            $group->items()->create([
+                'name' => $name !== '' ? $name : 'Expense',
+                'category' => $item['category'] ?? null,
+                'amount' => round((float) ($item['amount'] ?? 0), 4),
+                'sort' => $sort++,
+            ]);
+        }
     }
 
     private function validated(Request $request): array
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'category' => ['nullable', 'string', 'max:100'],
-            'amount' => ['required', 'numeric', 'min:0'],
+            'label' => ['nullable', 'string', 'max:255'],
+            'period_start' => ['required', 'date'],
+            'period_end' => ['required', 'date', 'after_or_equal:period_start'],
             'currency' => ['required', 'string', 'size:3'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0'],
-            'effective_date' => ['required', 'date'],
-            'recurring' => ['boolean'],
-            'end_date' => ['nullable', 'date', 'after_or_equal:effective_date'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.name' => ['nullable', 'string', 'max:255'],
+            'items.*.category' => ['nullable', 'string', 'max:100'],
+            'items.*.amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $data['currency'] = strtoupper($data['currency']);
         $data['exchange_rate'] = (! empty($data['exchange_rate']) && $data['exchange_rate'] > 0) ? $data['exchange_rate'] : 1;
-        $data['recurring'] = (bool) ($data['recurring'] ?? false);
-        if (! $data['recurring']) {
-            $data['end_date'] = null;
-        }
 
         return $data;
     }
 
-    private function present(OperatingExpense $e): array
+    private function present(OperatingExpense $g): array
     {
         return [
-            'id' => $e->id,
-            'name' => $e->name,
-            'category' => $e->category,
-            'amount' => (float) $e->amount,
-            'currency' => $e->currency,
-            'exchange_rate' => (float) $e->exchange_rate,
-            'effective_date' => $e->effective_date?->toDateString(),
-            'recurring' => (bool) $e->recurring,
-            'end_date' => $e->end_date?->toDateString(),
-            'notes' => $e->notes,
-            'created_by' => $e->creator?->name,
+            'id' => $g->id,
+            'label' => $g->label,
+            'period_start' => $g->period_start?->toDateString(),
+            'period_end' => $g->period_end?->toDateString(),
+            'currency' => $g->currency,
+            'exchange_rate' => (float) $g->exchange_rate,
+            'notes' => $g->notes,
+            'total' => round($g->total(), 2),
+            'total_base' => round($g->totalBase(), 2),
+            'items' => $g->items->map(fn ($i) => [
+                'id' => $i->id,
+                'name' => $i->name,
+                'category' => $i->category,
+                'amount' => (float) $i->amount,
+            ])->values(),
+            'created_by' => $g->creator?->name,
         ];
     }
 }

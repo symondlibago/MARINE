@@ -511,8 +511,8 @@ function AccountingReport() {
                 <tbody>
                   {oh.map((e) => (
                     <tr key={e.id} className="border-b border-slate-100 last:border-0">
-                      <td className="px-2 py-2 font-medium text-[#28364b]">{e.name}{e.category ? <span className="ml-1 text-xs font-normal text-slate-400">· {e.category}</span> : null}</td>
-                      <td className="px-2 py-2 text-slate-500">{e.recurring ? `monthly ×${e.months}` : "one-off"}</td>
+                      <td className="px-2 py-2 font-medium text-[#28364b]">{e.name}</td>
+                      <td className="px-2 py-2 text-slate-500">{e.period_start} → {e.period_end}</td>
                       <td className="px-2 py-2 text-right text-slate-700">{m(e.amount)}</td>
                     </tr>
                   ))}

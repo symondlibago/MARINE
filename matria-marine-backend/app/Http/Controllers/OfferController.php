@@ -103,6 +103,7 @@ class OfferController extends Controller
             'origin_type' => ['nullable', 'string', 'max:255'],
             'packing_cost' => ['nullable', 'numeric', 'min:0'],
             'transportation_cost' => ['nullable', 'numeric', 'min:0'],
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'status' => ['sometimes', 'string', 'in:draft,sent,accepted,declined'],
             'items' => ['sometimes', 'array'],
@@ -137,6 +138,7 @@ class OfferController extends Controller
                 'origin_type' => array_key_exists('origin_type', $data) ? $data['origin_type'] : $offer->origin_type,
                 'packing_cost' => array_key_exists('packing_cost', $data) ? ($data['packing_cost'] ?? 0) : $offer->packing_cost,
                 'transportation_cost' => array_key_exists('transportation_cost', $data) ? ($data['transportation_cost'] ?? 0) : $offer->transportation_cost,
+                'tax_rate' => array_key_exists('tax_rate', $data) ? ($data['tax_rate'] ?? 0) : $offer->tax_rate,
                 'notes' => array_key_exists('notes', $data) ? $data['notes'] : $offer->notes,
                 'status' => $data['status'] ?? $offer->status,
             ])->save();

@@ -40,7 +40,7 @@ export default function OfferPage({ params }) {
     queryFn: async () => (await offersAPI.get(id)).data.data,
   });
 
-  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "" });
+  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "", tax_rate: "" });
   const [items, setItems] = useState([]);
   const [bulk, setBulk] = useState("");
   const [pickedCustomerName, setPickedCustomerName] = useState(null);
@@ -59,6 +59,7 @@ export default function OfferPage({ params }) {
       notes: offer.notes || "",
       packing_cost: offer.packing_cost != null ? String(offer.packing_cost) : "",
       transportation_cost: offer.transportation_cost != null ? String(offer.transportation_cost) : "",
+      tax_rate: offer.tax_rate != null && Number(offer.tax_rate) > 0 ? String(Number(offer.tax_rate)) : "",
     });
     setItems(
       (offer.items || [])
@@ -108,7 +109,9 @@ export default function OfferPage({ params }) {
   const packing = Number(header.packing_cost) || 0;
   const transportation = Number(header.transportation_cost) || 0;
   const deliveryTotal = packing + transportation;
-  const grandTotal = custTotal + deliveryTotal;
+  const taxRate = Number(header.tax_rate) || 0;
+  const taxAmount = ((custTotal + deliveryTotal) * taxRate) / 100;
+  const grandTotal = custTotal + deliveryTotal + taxAmount;
 
   const custName = header.customer_id ? pickedCustomerName ?? offer?.customer_name ?? null : null;
 
@@ -123,6 +126,7 @@ export default function OfferPage({ params }) {
         origin_type: header.origin_type || null,
         packing_cost: Number(header.packing_cost) || 0,
         transportation_cost: Number(header.transportation_cost) || 0,
+        tax_rate: Number(header.tax_rate) || 0,
         status: header.status,
         notes: header.notes || null,
         items: items.map((it) => ({
@@ -258,7 +262,11 @@ export default function OfferPage({ params }) {
         <div className="rounded-xl border border-[#28364b] bg-[#28364b] p-4 text-white">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">Customer total</div>
           <div className="mt-1 text-2xl font-bold">{money(grandTotal)} <span className="text-sm font-normal text-slate-300">{header.currency}</span></div>
-          {deliveryTotal > 0 && <div className="mt-1 text-xs text-slate-300">incl. delivery {money(deliveryTotal)} ({money(custTotal)} items + {money(deliveryTotal)} delivery)</div>}
+          {(deliveryTotal > 0 || taxAmount > 0) && (
+            <div className="mt-1 text-xs text-slate-300">
+              {money(custTotal)} items{deliveryTotal > 0 ? ` + ${money(deliveryTotal)} delivery` : ""}{taxAmount > 0 ? ` + ${money(taxAmount)} GST` : ""}
+            </div>
+          )}
         </div>
       </div>
 
@@ -289,6 +297,19 @@ export default function OfferPage({ params }) {
               <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-right text-sm font-semibold text-[#28364b]">{money(deliveryTotal)}</div>
             </Field>
           </div>
+        </div>
+
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">GST / Tax</div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="GST %">
+              <input type="number" step="0.001" min="0" max="100" value={header.tax_rate} onChange={(e) => setH("tax_rate", e.target.value)} placeholder="0 = zero-rated" className={`${ci} text-right`} />
+            </Field>
+            <Field label="GST amount">
+              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-right text-sm font-semibold text-[#28364b]">{money(taxAmount)}</div>
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">Leave 0 for zero-rated marine supplies; enter the rate (e.g. 9) for taxable local sales. GST applies to items + delivery.</p>
         </div>
       </div>
 

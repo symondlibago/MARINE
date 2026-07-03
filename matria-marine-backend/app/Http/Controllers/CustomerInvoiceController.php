@@ -104,6 +104,7 @@ class CustomerInvoiceController extends Controller
                 'issue_date' => now()->toDateString(),
                 'packing_cost' => $offer->packing_cost,
                 'transportation_cost' => $offer->transportation_cost,
+                'tax_rate' => $offer->tax_rate,
                 'payment_terms' => $offer->payment_terms,
                 'delivery_terms' => $offer->delivery_terms,
                 'origin_type' => $offer->origin_type,
@@ -170,7 +171,7 @@ class CustomerInvoiceController extends Controller
             'origin_type' => ['nullable', 'string', 'max:255'],
             'packing_cost' => ['nullable', 'numeric', 'min:0'],
             'transportation_cost' => ['nullable', 'numeric', 'min:0'],
-            'tax_amount' => ['nullable', 'numeric', 'min:0'],
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
@@ -207,7 +208,7 @@ class CustomerInvoiceController extends Controller
                     $invoice->{$key} = $data[$key];
                 }
             }
-            foreach (['packing_cost', 'transportation_cost', 'tax_amount'] as $key) {
+            foreach (['packing_cost', 'transportation_cost', 'tax_rate'] as $key) {
                 if (array_key_exists($key, $data)) {
                     $invoice->{$key} = $data[$key] ?? 0;
                 }

@@ -22,6 +22,7 @@ class CustomerInvoice extends Model
         'subtotal',
         'packing_cost',
         'transportation_cost',
+        'tax_rate',
         'tax_amount',
         'grand_total',
         'issue_date',
@@ -43,6 +44,7 @@ class CustomerInvoice extends Model
         'subtotal' => 'decimal:2',
         'packing_cost' => 'decimal:2',
         'transportation_cost' => 'decimal:2',
+        'tax_rate' => 'decimal:3',
         'tax_amount' => 'decimal:2',
         'grand_total' => 'decimal:2',
     ];
@@ -91,10 +93,12 @@ class CustomerInvoice extends Model
     {
         $subtotal = $this->items()->where('is_heading', false)->get()->sum(fn ($i) => (float) $i->line_total);
         $delivery = (float) $this->packing_cost + (float) $this->transportation_cost;
+        $tax = round(($subtotal + $delivery) * (float) $this->tax_rate / 100, 2);
 
         $this->update([
             'subtotal' => round($subtotal, 2),
-            'grand_total' => round($subtotal + $delivery + (float) $this->tax_amount, 2),
+            'tax_amount' => $tax,
+            'grand_total' => round($subtotal + $delivery + $tax, 2),
         ]);
     }
 }

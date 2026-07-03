@@ -26,7 +26,8 @@ return new class extends Migration
             $table->decimal('subtotal', 16, 2)->default(0);
             $table->decimal('packing_cost', 16, 2)->default(0);
             $table->decimal('transportation_cost', 16, 2)->default(0);
-            $table->decimal('tax_amount', 16, 2)->default(0);            // GST amount
+            $table->decimal('tax_rate', 6, 3)->default(0);               // GST % the staff enters (0 = zero-rated)
+            $table->decimal('tax_amount', 16, 2)->default(0);            // computed: (subtotal + delivery) × tax_rate
             $table->decimal('grand_total', 16, 2)->default(0);
             $table->date('issue_date')->nullable();
             $table->date('due_date')->nullable();

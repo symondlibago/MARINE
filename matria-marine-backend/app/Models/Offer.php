@@ -25,6 +25,8 @@ class Offer extends Model
         'markup_total',
         'packing_cost',
         'transportation_cost',
+        'tax_rate',
+        'tax_amount',
         'grand_total',
         'notes',
         'opened_at',
@@ -43,6 +45,8 @@ class Offer extends Model
         'markup_total' => 'decimal:2',
         'packing_cost' => 'decimal:2',
         'transportation_cost' => 'decimal:2',
+        'tax_rate' => 'decimal:3',
+        'tax_amount' => 'decimal:2',
         'grand_total' => 'decimal:2',
     ];
 
@@ -83,12 +87,14 @@ class Offer extends Model
         $base = $lines->sum(fn ($i) => (float) $i->base_price * (float) $i->qty);
         $subtotal = $lines->sum(fn ($i) => (float) $i->line_total);
         $delivery = (float) $this->packing_cost + (float) $this->transportation_cost;
+        $tax = round(($subtotal + $delivery) * (float) $this->tax_rate / 100, 2);
 
         $this->update([
             'base_total' => round($base, 2),
             'subtotal' => round($subtotal, 2),
             'markup_total' => round($subtotal - $base, 2),
-            'grand_total' => round($subtotal + $delivery, 2),
+            'tax_amount' => $tax,
+            'grand_total' => round($subtotal + $delivery + $tax, 2),
         ]);
     }
 }

@@ -222,75 +222,34 @@ class ReportsController extends Controller
     }
 
     /**
-     * Total business overhead applying within [from, to], converted to base. One-off
-     * expenses count if their date is in range; recurring ones count once per calendar
-     * month they cover (capped at the current month for an open-ended range).
-     * Returns [total, breakdownRows].
+     * Total business overhead applying within [from, to], converted to base. Each
+     * overhead group carries a period; a group is included when its period overlaps
+     * the report range, counting its full total (no proration). Returns [total, rows].
      */
     private function overheadForRange(?Carbon $from, ?Carbon $to): array
     {
+        $groups = OperatingExpense::with('items')
+            ->when($from, fn ($q) => $q->whereDate('period_end', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('period_start', '<=', $to))
+            ->orderByDesc('period_start')
+            ->get();
+
         $total = 0.0;
         $rows = [];
 
-        foreach (OperatingExpense::orderByDesc('effective_date')->get() as $e) {
-            $baseAmt = $e->baseAmount();
-
-            if (! $e->recurring) {
-                $d = $e->effective_date;
-                if ($d && (! $from || $d->gte($from)) && (! $to || $d->lte($to))) {
-                    $total += $baseAmt;
-                    $rows[] = $this->overheadRow($e, $baseAmt, 1);
-                }
-
-                continue;
-            }
-
-            $months = $this->recurringMonths($e->effective_date, $e->end_date, $from, $to);
-            if ($months > 0) {
-                $total += $baseAmt * $months;
-                $rows[] = $this->overheadRow($e, $baseAmt * $months, $months);
-            }
+        foreach ($groups as $g) {
+            $amt = $g->totalBase();
+            $total += $amt;
+            $rows[] = [
+                'id' => $g->id,
+                'name' => $g->label ?: 'Overhead',
+                'period_start' => $g->period_start?->toDateString(),
+                'period_end' => $g->period_end?->toDateString(),
+                'amount' => round($amt, 2),
+            ];
         }
 
         return [$total, $rows];
-    }
-
-    /** Calendar months a recurring expense covers within the range. */
-    private function recurringMonths($effective, $end, ?Carbon $from, ?Carbon $to): int
-    {
-        if (! $effective) {
-            return 0;
-        }
-        $start = $effective->copy()->startOfMonth();
-        if ($from && $from->copy()->startOfMonth()->gt($start)) {
-            $start = $from->copy()->startOfMonth();
-        }
-        // Cap the open end at the current month so "all time" isn't infinite.
-        $stop = $to ? $to->copy()->startOfMonth() : Carbon::now()->startOfMonth();
-        if ($end) {
-            $endMonth = $end->copy()->startOfMonth();
-            if ($endMonth->lt($stop)) {
-                $stop = $endMonth;
-            }
-        }
-        if ($stop->lt($start)) {
-            return 0;
-        }
-
-        return $start->diffInMonths($stop) + 1;
-    }
-
-    private function overheadRow(OperatingExpense $e, float $baseAmount, int $months): array
-    {
-        return [
-            'id' => $e->id,
-            'name' => $e->name,
-            'category' => $e->category,
-            'currency' => $e->currency,
-            'recurring' => (bool) $e->recurring,
-            'months' => $months,
-            'amount' => round($baseAmount, 2), // base currency, total across counted months
-        ];
     }
 
     /** Vendor scorecard: response/win/acceptance rates + ordered value. */
