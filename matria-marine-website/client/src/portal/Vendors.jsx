@@ -41,7 +41,7 @@ export default function Vendors() {
       fields={[
         { name: "name", label: "Name", required: true },
         { name: "contact_name", label: "Contact name" },
-        { name: "email", label: "Email", type: "email" },
+        { name: "email", label: "Email", placeholder: "sales@acme.com, orders@acme.com", hint: "You can enter multiple emails separated by commas — the enquiry goes to all of them." },
         { name: "phone", label: "Phone" },
         { name: "currency", label: "Currency", type: "select", options: CURRENCIES, required: true },
         { name: "address", label: "Address", type: "textarea" },

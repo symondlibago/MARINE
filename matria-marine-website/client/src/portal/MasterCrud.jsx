@@ -175,7 +175,7 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
                 {field.required && <span className="text-red-500"> *</span>}
               </label>
               {field.type === "textarea" ? (
-                <textarea id={field.name} value={form[field.name] ?? ""} onChange={(e) => setField(field.name, e.target.value)} className={inputCls} rows={2} />
+                <textarea id={field.name} value={form[field.name] ?? ""} onChange={(e) => setField(field.name, e.target.value)} placeholder={field.placeholder} className={inputCls} rows={2} />
               ) : field.type === "select" ? (
                 <Select value={form[field.name] ?? ""} onChange={(v) => setField(field.name, v)} options={field.options} placeholder={`Select ${field.label.toLowerCase()}`} />
               ) : field.type === "switch" ? (
@@ -190,8 +190,9 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
                   <span className="text-sm text-slate-500">{form[field.name] ? "Active" : "Inactive"}</span>
                 </div>
               ) : (
-                <input id={field.name} type={field.type || "text"} value={form[field.name] ?? ""} onChange={(e) => setField(field.name, e.target.value)} className={inputCls} />
+                <input id={field.name} type={field.type || "text"} value={form[field.name] ?? ""} onChange={(e) => setField(field.name, e.target.value)} placeholder={field.placeholder} className={inputCls} />
               )}
+              {field.hint && <p className="text-xs text-slate-400">{field.hint}</p>}
             </div>
           ))}
           <div className="flex justify-end gap-2 pt-2">

@@ -68,7 +68,7 @@ class RfqController extends Controller
 
     public function show(Rfq $rfq)
     {
-        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'quotes.vendor']);
+        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'rfqVendors.items:id', 'quotes.vendor']);
 
         return response()->json(['success' => true, 'data' => $rfq]);
     }
@@ -156,6 +156,10 @@ class RfqController extends Controller
         $data = $request->validate([
             'vendor_ids' => ['required', 'array', 'min:1'],
             'vendor_ids.*' => ['integer', 'exists:vendors,id'],
+            // Optional subset of line items to ask these vendors for (e.g. only
+            // the food lines for a food supplier). Omit = ask for everything.
+            'item_ids' => ['sometimes', 'array'],
+            'item_ids.*' => ['integer'],
             'subject' => ['nullable', 'string', 'max:255'],
             'message' => ['nullable', 'string', 'max:5000'],
         ]);
@@ -175,8 +179,11 @@ class RfqController extends Controller
                 $rv->seq = (int) RfqVendor::where('rfq_id', $rfq->id)->max('seq') + 1;
             }
             $rv->status = 'requested';
+            $rv->channel = 'email';
             $rv->sent_at = now();
             $rv->save();
+
+            $this->syncVendorItems($rv, $rfq, $data['item_ids'] ?? null);
 
             $emails = \App\Support\Recipients::emails($vendor->email);
             if (! $emails) {
@@ -222,6 +229,53 @@ class RfqController extends Controller
     }
 
     /**
+     * Add vendors to the enquiry as EXTERNAL sources — no email is sent. Use when the
+     * vendors were contacted outside the app; staff key their prices in Compare & Award.
+     * Only registers the vendor so they become an awardable column.
+     */
+    public function sendExternal(Request $request, Rfq $rfq)
+    {
+        $data = $request->validate([
+            'vendor_ids' => ['required', 'array', 'min:1'],
+            'vendor_ids.*' => ['integer', 'exists:vendors,id'],
+            'item_ids' => ['sometimes', 'array'],
+            'item_ids.*' => ['integer'],
+        ]);
+
+        $added = [];
+        foreach ($data['vendor_ids'] as $vendorId) {
+            $vendor = Vendor::find($vendorId);
+            $rv = RfqVendor::firstOrNew(['rfq_id' => $rfq->id, 'vendor_id' => $vendorId]);
+            if (! $rv->token) {
+                $rv->token = Str::random(48);
+            }
+            if (! $rv->seq) {
+                $rv->seq = (int) RfqVendor::where('rfq_id', $rfq->id)->max('seq') + 1;
+            }
+            // Don't downgrade a vendor that was already emailed.
+            if (! $rv->exists || ! $rv->sent_at) {
+                $rv->channel = 'external';
+                $rv->status = $rv->status ?: 'requested';
+            }
+            $rv->save();
+
+            $this->syncVendorItems($rv, $rfq, $data['item_ids'] ?? null);
+
+            $added[] = ['vendor_id' => $vendorId, 'vendor' => $vendor?->name];
+        }
+
+        if ($rfq->status === 'draft') {
+            $rfq->update(['status' => 'sent']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => count($added).' vendor(s) added as external — no email sent.',
+            'data' => ['results' => $added],
+        ]);
+    }
+
+    /**
      * Comparison grid: rows = line items, columns = vendors who quoted,
      * each cell = unit cost converted to the enquiry base currency.
      */
@@ -242,17 +296,31 @@ class RfqController extends Controller
             }
         }
 
-        $rfq->load(['items.award', 'quotes.vendor', 'quotes.items', 'quotes.attachments']);
+        $rfq->load(['items.award', 'quotes.vendor', 'quotes.items', 'quotes.attachments', 'rfqVendors.items:id']);
 
         $quotes = $rfq->quotes;
         $itemCount = $rfq->items->count();
 
+        // Which items each vendor was asked for. null = asked for all of them.
+        $askedMap = [];
+        foreach ($rfq->rfqVendors as $rv) {
+            $ids = $rv->items->pluck('id')->all();
+            $askedMap[$rv->vendor_id] = count($ids) ? $ids : null;
+        }
+        $isAsked = fn ($vendorId, $itemId) => ($askedMap[$vendorId] ?? null) === null
+            || in_array($itemId, $askedMap[$vendorId], true);
+
         // Per vendor: their total quote value (base currency) and whether they
         // priced every line (complete) or left some un-quoted (incomplete).
-        $vendors = $quotes->map(function (Quote $q) use ($rfq, $itemCount) {
+        $vendors = $quotes->map(function (Quote $q) use ($rfq, $itemCount, $askedMap, $isAsked) {
             $quoted = 0;
             $total = 0.0;
+            // Completeness is measured against what this vendor was asked for.
+            $askedCount = ($askedMap[$q->vendor_id] ?? null) === null ? $itemCount : count($askedMap[$q->vendor_id]);
             foreach ($rfq->items as $item) {
+                if (! $isAsked($q->vendor_id, $item->id)) {
+                    continue;
+                }
                 $qi = $q->items->firstWhere('rfq_item_id', $item->id);
                 if ($qi && $qi->unit_cost !== null) {
                     $quoted++;
@@ -269,8 +337,8 @@ class RfqController extends Controller
                 'exchange_rate' => (float) $q->exchange_rate,
                 'total_base' => round($total, 2),
                 'quoted_count' => $quoted,
-                'item_count' => $itemCount,
-                'complete' => $itemCount > 0 && $quoted === $itemCount,
+                'item_count' => $askedCount,
+                'complete' => $askedCount > 0 && $quoted === $askedCount,
                 'attachments' => $q->attachments->map(fn ($a) => [
                     'id' => $a->id,
                     'name' => $a->original_name,
@@ -279,11 +347,15 @@ class RfqController extends Controller
             ];
         })->values();
 
-        $rows = $rfq->items->map(function ($item) use ($quotes) {
-            $cells = $quotes->map(function (Quote $quote) use ($item) {
+        $rows = $rfq->items->map(function ($item) use ($quotes, $isAsked) {
+            $cells = $quotes->map(function (Quote $quote) use ($item, $isAsked) {
+                // Vendor wasn't sent this line — show it as not applicable.
+                if (! $isAsked($quote->vendor_id, $item->id)) {
+                    return ['vendor_id' => $quote->vendor_id, 'quoted' => false, 'asked' => false];
+                }
                 $qi = $quote->items->firstWhere('rfq_item_id', $item->id);
                 if (! $qi) {
-                    return ['vendor_id' => $quote->vendor_id, 'quoted' => false];
+                    return ['vendor_id' => $quote->vendor_id, 'quoted' => false, 'asked' => true];
                 }
 
                 $baseCost = (float) $qi->unit_cost * (float) $quote->exchange_rate;
@@ -293,6 +365,7 @@ class RfqController extends Controller
                     'quote_id' => $quote->id,
                     'quote_item_id' => $qi->id,
                     'quoted' => true,
+                    'asked' => true,
                     'unit_cost' => (float) $qi->unit_cost,
                     'currency' => $quote->currency,
                     'base_cost' => round($baseCost, 4),
@@ -500,6 +573,29 @@ class RfqController extends Controller
             'items.*.qty' => ['required', 'numeric', 'min:0'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
         ]);
+    }
+
+    /**
+     * Record which line items a vendor was asked to quote on. Storing NO rows
+     * means "all items" — so if the selection is empty or covers every line, we
+     * keep the pivot empty (the backward-compatible default).
+     */
+    private function syncVendorItems(RfqVendor $rv, Rfq $rfq, ?array $itemIds): void
+    {
+        if ($itemIds === null) {
+            return; // caller didn't scope — leave the vendor on "all items".
+        }
+
+        $allIds = $rfq->items()->pluck('id')->all();
+        $valid = array_values(array_intersect(array_map('intval', $itemIds), $allIds));
+
+        if (count($valid) === 0 || count($valid) === count($allIds)) {
+            $rv->items()->detach(); // all items → no rows.
+
+            return;
+        }
+
+        $rv->items()->sync($valid);
     }
 
     private function syncItems(Rfq $rfq, array $items): void

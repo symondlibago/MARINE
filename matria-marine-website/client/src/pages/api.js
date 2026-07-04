@@ -128,6 +128,7 @@ export const rfqsAPI = {
   update: (id, payload) => api.put(apiUrl(`/portal/rfqs/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/rfqs/${id}`)),
   send: (id, payload) => api.post(apiUrl(`/portal/rfqs/${id}/send`), payload),
+  sendExternal: (id, payload) => api.post(apiUrl(`/portal/rfqs/${id}/send-external`), payload),
   compare: (id) => api.get(apiUrl(`/portal/rfqs/${id}/compare`)),
   saveAwards: (id, awards) => api.post(apiUrl(`/portal/rfqs/${id}/awards`), { awards }),
   finish: (id) => api.post(apiUrl(`/portal/rfqs/${id}/finish`)),

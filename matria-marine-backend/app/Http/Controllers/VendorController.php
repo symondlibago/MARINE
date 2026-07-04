@@ -88,7 +88,15 @@ class VendorController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'contact_name' => ['nullable', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
+            // One OR MORE emails, comma/semicolon separated — each must be valid.
+            'email' => ['nullable', 'string', 'max:255', function ($attr, $value, $fail) {
+                foreach (preg_split('/[,;]+/', (string) $value) as $part) {
+                    $part = trim($part);
+                    if ($part !== '' && ! filter_var($part, FILTER_VALIDATE_EMAIL)) {
+                        $fail("“{$part}” is not a valid email address.");
+                    }
+                }
+            }],
             'phone' => ['nullable', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:1000'],
             'currency' => ['required', 'string', 'size:3'],
@@ -97,6 +105,12 @@ class VendorController extends Controller
         ]);
 
         $data['currency'] = strtoupper($data['currency']);
+
+        // Normalise the email list to a clean, comma-separated string.
+        if (! empty($data['email'])) {
+            $data['email'] = collect(preg_split('/[,;]+/', $data['email']))
+                ->map(fn ($e) => trim($e))->filter()->implode(', ');
+        }
 
         return $data;
     }

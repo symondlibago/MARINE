@@ -37,6 +37,10 @@ class QuoteController extends Controller
         $rfq = $rv->rfq;
         $vendor = $rv->vendor;
 
+        // Only show the items this vendor was asked for. No pivot rows = all items.
+        $askedIds = $rv->items()->pluck('rfq_items.id');
+        $items = $askedIds->isEmpty() ? $rfq->items : $rfq->items->whereIn('id', $askedIds->all());
+
         $existing = Quote::with(['items', 'attachments'])
             ->where('rfq_id', $rfq->id)
             ->where('vendor_id', $vendor->id)
@@ -59,7 +63,7 @@ class QuoteController extends Controller
                     // The customer is intentionally NOT exposed here.
                     'requirements' => $rfq->requirements ?? [],
                 ],
-                'items' => $rfq->items->map(fn ($i) => [
+                'items' => $items->map(fn ($i) => [
                     'rfq_item_id' => $i->id,
                     'description' => $i->description,
                     'qty' => (float) $i->qty,
@@ -100,7 +104,9 @@ class QuoteController extends Controller
         ]);
 
         $rfq = $rv->rfq;
-        $validItemIds = $rfq->items->pluck('id');
+        // Restrict to the items this vendor was asked for (all, if none scoped).
+        $askedIds = $rv->items()->pluck('rfq_items.id');
+        $validItemIds = $askedIds->isEmpty() ? $rfq->items->pluck('id') : $askedIds;
 
         DB::transaction(function () use ($rv, $rfq, $data, $validItemIds) {
             $quote = Quote::updateOrCreate(

@@ -104,6 +104,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::apiResource('rfqs', RfqController::class);
         Route::get('rfqs/{rfq}/compare', [RfqController::class, 'compare']);
         Route::post('rfqs/{rfq}/send', [RfqController::class, 'send']);
+        Route::post('rfqs/{rfq}/send-external', [RfqController::class, 'sendExternal']);
         Route::post('rfqs/{rfq}/awards', [RfqController::class, 'saveAwards']);
         Route::post('rfqs/{rfq}/finish', [RfqController::class, 'finish']);
         Route::post('rfqs/{rfq}/reopen', [RfqController::class, 'reopen']);

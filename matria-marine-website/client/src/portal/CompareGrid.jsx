@@ -420,8 +420,17 @@ export default function CompareGrid({ params }) {
                     <td className="px-3 py-3 text-right text-slate-500">{row.qty}</td>
                     {data.vendors.map((v) => {
                       const cell = row.cells.find((c) => c.vendor_id === v.vendor_id);
+                      const notAsked = cell && cell.asked === false;
                       const isLowest = cell?.quoted && cell.base_cost === row.lowest_base_cost;
                       const isAwarded = sel?.vendor_id === v.vendor_id;
+                      if (notAsked) {
+                        // This line wasn't sent to this vendor — nothing to price/award.
+                        return (
+                          <td key={v.vendor_id} className="px-3 py-3 align-top bg-slate-50/60 text-center" title="Not sent to this vendor">
+                            <span className="text-xs text-slate-300">n/a</span>
+                          </td>
+                        );
+                      }
                       return (
                         <td
                           key={v.vendor_id}

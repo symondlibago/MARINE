@@ -17,6 +17,7 @@ class RfqVendor extends Model
         'opened_at',
         'responded_at',
         'status',
+        'channel',
     ];
 
     protected $casts = [
@@ -33,5 +34,15 @@ class RfqVendor extends Model
     public function vendor()
     {
         return $this->belongsTo(Vendor::class);
+    }
+
+    /**
+     * The line items this vendor was asked to quote on. EMPTY means the vendor
+     * was asked for every item on the enquiry (the default when no subset was
+     * chosen at send time).
+     */
+    public function items()
+    {
+        return $this->belongsToMany(RfqItem::class, 'rfq_vendor_items');
     }
 }
