@@ -10,7 +10,10 @@
         table.meta { width: 100%; margin-bottom: 4px; }
         table.meta td { padding: 2px 0; vertical-align: top; width: 50%; }
         .req { margin-top: 10px; }
-        .req .chip { display: inline-block; background: #eef1f5; border-radius: 10px; padding: 2px 8px; margin: 0 4px 4px 0; font-size: 11px; }
+        .req strong { vertical-align: middle; }
+        .req .chip { display: inline-block; vertical-align: middle; background: #eef1f5; border-radius: 10px; padding: 2px 8px; margin: 0 4px 2px 2px; font-size: 11px; }
+        .prepared { margin-top: 6px; font-size: 11px; color: #444; }
+        .prepared .sep { color: #bbb; }
         table.items { width: 100%; border-collapse: collapse; margin-top: 14px; }
         table.items th, table.items td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
         table.items th { background: #28364b; color: #fff; }
@@ -49,6 +52,14 @@
             <td><strong>Base currency:</strong> {{ $rfq->base_currency ?: '—' }}</td>
         </tr>
     </table>
+
+    @if($rfq->creator)
+        <div class="prepared">
+            <strong>Prepared by:</strong> {{ $rfq->creator->name }}
+            @if($rfq->creator->email)<span class="sep">·</span> {{ $rfq->creator->email }}@endif
+            @if($rfq->creator->phone)<span class="sep">·</span> {{ $rfq->creator->phone }}@endif
+        </div>
+    @endif
 
     @if(is_array($rfq->requirements) && count($rfq->requirements))
         <div class="req">

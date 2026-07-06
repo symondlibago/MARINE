@@ -17,7 +17,7 @@ class RfqPdfController extends Controller
      */
     public function enquiryVendor(Rfq $rfq, Vendor $vendor)
     {
-        $rfq->load(['customer:id,name,address', 'items']);
+        $rfq->load(['customer:id,name,address', 'items', 'creator:id,name,email,phone']);
 
         // The vendor's scoped items. An empty pivot means "all items were sent".
         $rv = $rfq->rfqVendors()->where('vendor_id', $vendor->id)->with('items')->first();
