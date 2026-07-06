@@ -17,23 +17,10 @@ class RfqPdfController extends Controller
      */
     public function enquiryVendor(Rfq $rfq, Vendor $vendor)
     {
-        $rfq->load(['customer:id,name,address', 'items', 'creator:id,name,email,phone']);
-
-        // The vendor's scoped items. An empty pivot means "all items were sent".
-        $rv = $rfq->rfqVendors()->where('vendor_id', $vendor->id)->with('items')->first();
-        $scoped = $rv?->items;
-        $items = ($scoped && $scoped->isNotEmpty())
-            ? $rfq->items->whereIn('id', $scoped->pluck('id'))->values()
-            : $rfq->items;
-
-        $pdf = Pdf::loadView('pdf.enquiry', [
-            'rfq' => $rfq,
-            'vendor' => $vendor,
-            'items' => $items,
-            'logo' => $this->logo(),
+        return response(\App\Support\EnquiryPdf::render($rfq, $vendor), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.\App\Support\EnquiryPdf::filename($rfq, $vendor).'"',
         ]);
-
-        return $pdf->download('RFQ-'.$rfq->reference.'-'.Str::slug($vendor->name).'.pdf');
     }
 
     /** Per-vendor PDF: the line items awarded to this vendor on this enquiry. */

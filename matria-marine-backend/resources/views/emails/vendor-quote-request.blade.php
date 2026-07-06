@@ -19,6 +19,8 @@ Please use the button below to view the requested items and submit your prices. 
 Submit Your Quotation
 @endcomponent
 
+If the button or link does not open, a **PDF copy of this request is attached** to this email for your reference.
+
 Thank you,<br>
 {{ config('app.name') }}
 @endcomponent
