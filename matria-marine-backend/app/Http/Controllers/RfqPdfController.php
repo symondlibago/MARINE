@@ -10,6 +10,32 @@ use Illuminate\Support\Str;
 
 class RfqPdfController extends Controller
 {
+    /**
+     * Per-vendor Request for Quotation as a PDF (no prices) — just the line items
+     * this vendor was asked to quote, so staff can email each vendor their own RFQ
+     * manually (for vendors who don't use the portal link).
+     */
+    public function enquiryVendor(Rfq $rfq, Vendor $vendor)
+    {
+        $rfq->load(['customer:id,name,address', 'items']);
+
+        // The vendor's scoped items. An empty pivot means "all items were sent".
+        $rv = $rfq->rfqVendors()->where('vendor_id', $vendor->id)->with('items')->first();
+        $scoped = $rv?->items;
+        $items = ($scoped && $scoped->isNotEmpty())
+            ? $rfq->items->whereIn('id', $scoped->pluck('id'))->values()
+            : $rfq->items;
+
+        $pdf = Pdf::loadView('pdf.enquiry', [
+            'rfq' => $rfq,
+            'vendor' => $vendor,
+            'items' => $items,
+            'logo' => $this->logo(),
+        ]);
+
+        return $pdf->download('RFQ-'.$rfq->reference.'-'.Str::slug($vendor->name).'.pdf');
+    }
+
     /** Per-vendor PDF: the line items awarded to this vendor on this enquiry. */
     public function vendorAward(Rfq $rfq, Vendor $vendor)
     {

@@ -111,6 +111,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::patch('quotes/{quote}', [RfqController::class, 'updateQuoteRate']);
         Route::patch('quotes/{quote}/prices', [RfqController::class, 'saveVendorPrices']);
         Route::get('quotes/{quote}/attachments/{attachment}', [RfqController::class, 'attachmentUrl']);
+        Route::get('rfqs/{rfq}/vendors/{vendor}/enquiry-pdf', [RfqPdfController::class, 'enquiryVendor']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
         Route::get('rfqs/{rfq}/quotation-pdf', [RfqPdfController::class, 'summary']);
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Send, BarChart3, Trash2, Search, Pencil, UserPlus, ListChecks } from "lucide-react";
+import { ArrowLeft, Send, BarChart3, Trash2, Search, Pencil, UserPlus, ListChecks, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, vendorsAPI } from "@/pages/api";
 import Modal from "./ui/Modal";
@@ -89,6 +89,22 @@ export default function EnquiryDetail({ params }) {
       setLocation("/enquiries");
     },
   });
+
+  // Download a per-vendor RFQ PDF (no prices) — only the items sent to that
+  // vendor — so staff can email each vendor their own request manually.
+  const downloadVendorPdf = async (vendorId, vendorName) => {
+    try {
+      const res = await rfqsAPI.enquiryVendorPdf(id, vendorId);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `RFQ-${rfq.reference}-${vendorName}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Could not download PDF.");
+    }
+  };
 
   const handleDelete = async () => {
     if (await confirm({ title: `Delete ${rfq.reference}?`, message: "This enquiry and its quotes will be removed.", confirmText: "Delete", tone: "danger" })) {
@@ -204,11 +220,20 @@ export default function EnquiryDetail({ params }) {
                     </span>
                   )}
                 </span>
-                {rv.channel === "external" ? (
-                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">external{rv.responded_at ? " · quoted" : ""}</span>
-                ) : (
-                  <span className="text-xs text-slate-500">{rv.status}{rv.responded_at ? " · quoted" : rv.opened_at ? " · opened" : " · sent"}</span>
-                )}
+                <span className="flex items-center gap-2">
+                  {rv.channel === "external" ? (
+                    <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">external{rv.responded_at ? " · quoted" : ""}</span>
+                  ) : (
+                    <span className="text-xs text-slate-500">{rv.status}{rv.responded_at ? " · quoted" : rv.opened_at ? " · opened" : " · sent"}</span>
+                  )}
+                  <button
+                    onClick={() => downloadVendorPdf(rv.vendor?.id, rv.vendor?.name)}
+                    title="Download this vendor's RFQ as a PDF (only the items sent to them, no prices)"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                  >
+                    <FileDown className="h-3.5 w-3.5" /> PDF
+                  </button>
+                </span>
               </div>
             ))}
           </div>

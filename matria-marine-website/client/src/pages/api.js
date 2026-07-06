@@ -146,6 +146,8 @@ export const rfqsAPI = {
   vendorAwardPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/award-pdf`), { responseType: 'blob' }),
   reopen: (id) => api.post(apiUrl(`/portal/rfqs/${id}/reopen`)),
+  enquiryVendorPdf: (id, vendorId) =>
+    api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/enquiry-pdf`), { responseType: 'blob' }),
   summaryPdf: (id) => api.get(apiUrl(`/portal/rfqs/${id}/quotation-pdf`), { responseType: 'blob' }),
 };
 
