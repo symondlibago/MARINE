@@ -3,8 +3,13 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px; }
+        @page { margin: 28px 34px 100px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
+        /* Fixed page footer — repeats at the bottom of every page. DomPDF measures
+           a fixed element's `bottom` from the content box, so the negative offset
+           pulls it down into the page margin, flush to the bottom edge. */
+        .page-footer { position: fixed; bottom: -82px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #777; line-height: 1.45; }
+        .cover { margin-top: 14px; font-size: 11px; color: #333; line-height: 1.5; }
         .navy { color: #28364b; }
         .doc-title { font-size: 27px; font-weight: bold; letter-spacing: 1px; color: #28364b; }
         .bar { background: #28364b; color: #fff; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
@@ -74,14 +79,51 @@
                         <td class="val">{{ optional($offer->valid_until)->format('j/n/Y') ?: '—' }}</td>
                     </tr>
                 </table>
-                @if(optional($offer->creator)->name)
-                    <div style="margin-top:6px; font-size:9px; color:#777; text-align:right;">
-                        Prepared by {{ $offer->creator->name }}@if($offer->creator->phone) · {{ $offer->creator->phone }}@endif
-                    </div>
-                @endif
+                @php
+                    // Overall "Delivery" = the line-item lead time (usually one value
+                    // applied to every line via "Set all lead time"). List distinct values.
+                    $leadTimes = $offer->items->pluck('lead_time')->map(fn ($v) => trim((string) $v))->filter()->unique()->values();
+                    $deliveryLead = $leadTimes->isNotEmpty() ? $leadTimes->implode(', ') : null;
+                @endphp
+                <table style="width:100%; margin-top:8px;">
+                    <tr>
+                        <td class="bar" style="width:62%;">Delivery Terms</td>
+                        <td class="bar">Currency</td>
+                    </tr>
+                    <tr>
+                        <td class="val">{{ $offer->delivery_terms ?: '—' }}</td>
+                        <td class="val">{{ $offer->currency }}</td>
+                    </tr>
+                </table>
+                <table style="width:100%; margin-top:8px;">
+                    <tr>
+                        <td class="bar" style="width:62%;">Payment</td>
+                        <td class="bar">Delivery</td>
+                    </tr>
+                    <tr>
+                        <td class="val">{{ $offer->payment_terms ?: '—' }}</td>
+                        <td class="val">{{ $deliveryLead ?: '—' }}</td>
+                    </tr>
+                </table>
+                <table style="width:100%; margin-top:8px;">
+                    <tr>
+                        <td class="bar" style="width:62%;">Origin</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="val">{{ $offer->origin_type ?: '—' }}</td>
+                        <td></td>
+                    </tr>
+                </table>
             </td>
         </tr>
     </table>
+
+    {{-- Cover note (copied from the standard quotation letter) --}}
+    <div class="cover">
+        Dear Sirs,<br><br>
+        We have the pleasure in submitting our price and delivery terms for the items below. Please do not hesitate to contact us if you have any questions, and when ordering, please reference the quotation number above.
+    </div>
 
     {{-- Line items (customer-facing: no base price / markup shown) --}}
     <table class="items">
@@ -167,23 +209,27 @@
         </tr>
     </table>
 
-    {{-- Terms --}}
-    @if($offer->payment_terms || $offer->delivery_terms || $offer->origin_type)
-        <div style="margin-top:14px; font-size:10px; color:#444; line-height:1.6;">
-            @if($offer->delivery_terms)<strong class="navy">Delivery:</strong> {{ $offer->delivery_terms }}<br>@endif
-            @if($offer->payment_terms)<strong class="navy">Payment:</strong> {{ $offer->payment_terms }}<br>@endif
-            @if($offer->origin_type)<strong class="navy">Origin:</strong> {{ $offer->origin_type }}@endif
-        </div>
-    @endif
-
     @if($offer->notes)
         <p style="margin-top:12px; font-size:10px; color:#444; line-height:1.5;"><strong>Notes:</strong> {{ $offer->notes }}</p>
     @endif
 
-    {{-- Footer --}}
-    <div style="margin-top:24px; text-align:center;">
-        @if($logo)<img src="{{ $logo }}" style="height:30px;"><br>@endif
-        <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
+    {{-- Quoted by (staff signature, bottom-left) --}}
+    @if(optional($offer->creator)->name)
+        <div style="margin-top:26px; font-size:11px; line-height:1.6;">
+            <span class="navy" style="font-weight:bold;">Quoted by:</span><br>
+            {{ $offer->creator->name }}<br>
+            @if($offer->creator->email)<span style="color:#444;">{{ $offer->creator->email }}</span>@endif
+            @if($offer->creator->phone)@if($offer->creator->email) · @endif<span style="color:#444;">{{ $offer->creator->phone }}</span>@endif
+        </div>
+    @endif
+
+    {{-- Footer: full company details — fixed to the bottom of every page --}}
+    <div class="page-footer">
+        <div style="border-top:1px solid #ddd; padding-top:6px;">
+            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
+            {!! nl2br(e($company['address'])) !!}<br>
+            email: {{ $company['email'] }} &nbsp;·&nbsp; UEN: {{ $company['uen'] }}
+        </div>
     </div>
 
 </body>

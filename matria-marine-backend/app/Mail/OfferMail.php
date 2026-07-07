@@ -40,7 +40,7 @@ class OfferMail extends Mailable
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
-        $this->offer->loadMissing(['items', 'rfq:id,customer_reference,ship_name']);
+        $this->offer->loadMissing(['items', 'rfq:id,customer_reference,ship_name', 'creator:id,name,phone,email']);
 
         $pdf = Pdf::loadView('pdf.offer', [
             'offer' => $this->offer,

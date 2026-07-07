@@ -201,7 +201,7 @@ class OfferController extends Controller
 
     public function pdf(Offer $offer)
     {
-        $offer->load(['items', 'rfq:id,customer_reference,ship_name', 'creator:id,name,phone']);
+        $offer->load(['items', 'rfq:id,customer_reference,ship_name', 'creator:id,name,phone,email']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
