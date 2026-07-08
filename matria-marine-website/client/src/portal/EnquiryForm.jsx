@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { motion } from "framer-motion";
-import { Plus, Trash2, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ShieldCheck, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, customersAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -54,6 +54,10 @@ export default function EnquiryForm({ params }) {
     notes: "",
   });
   const [items, setItems] = useState([{ description: "", qty: "", unit: "" }]);
+  // Customer files (internal only): existing = already on the enquiry (edit mode),
+  // pending = picked in this session, uploaded right after the enquiry is saved.
+  const [existingFiles, setExistingFiles] = useState([]);
+  const [pendingFiles, setPendingFiles] = useState([]);
 
   const { data: existing } = useQuery({
     queryKey: ["rfq", editId],
@@ -77,6 +81,7 @@ export default function EnquiryForm({ params }) {
     });
     const loaded = (existing.items || []).map((it) => ({ id: it.id, description: it.description, qty: Number(it.qty), unit: it.unit || "" }));
     setItems(loaded.length ? loaded : [{ description: "", qty: "", unit: "" }]);
+    setExistingFiles(existing.attachments || []);
   }, [existing]);
 
   const { data: suggestions } = useQuery({
@@ -94,6 +99,29 @@ export default function EnquiryForm({ params }) {
   const addItem = () => setItems((its) => [...its, { description: "", qty: "", unit: "" }]);
   const removeItem = (i) => setItems((its) => its.filter((_, idx) => idx !== i));
 
+  // Customer file picking — only PDF / Word / Excel, max 10 MB each (mirrors the backend rule).
+  const pickFiles = (e) => {
+    const ok = [];
+    for (const f of Array.from(e.target.files || [])) {
+      if (!/\.(pdf|docx?|xlsx?)$/i.test(f.name)) { toast.error(`${f.name}: only PDF, Word or Excel files.`); continue; }
+      if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name}: file is over 10 MB.`); continue; }
+      ok.push(f);
+    }
+    if (ok.length) setPendingFiles((arr) => [...arr, ...ok]);
+    e.target.value = ""; // allow re-picking the same file
+  };
+  const removePending = (i) => setPendingFiles((arr) => arr.filter((_, idx) => idx !== i));
+  const removeExisting = async (attachmentId) => {
+    try {
+      const res = await rfqsAPI.deleteFile(editId, attachmentId);
+      setExistingFiles(res.data.data || []);
+      toast.success("File removed.");
+    } catch {
+      toast.error("Could not remove file.");
+    }
+  };
+  const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
   const save = useMutation({
     mutationFn: () => {
       const payload = {
@@ -106,9 +134,20 @@ export default function EnquiryForm({ params }) {
       };
       return editId ? rfqsAPI.update(editId, payload) : rfqsAPI.create(payload);
     },
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
+      const rid = editId || res.data.data.id;
+      // Upload any customer files picked in this session, then navigate.
+      if (pendingFiles.length) {
+        const fd = new FormData();
+        pendingFiles.forEach((f) => fd.append("files[]", f));
+        try {
+          await rfqsAPI.uploadFiles(rid, fd);
+        } catch {
+          toast.error("Enquiry saved, but the file upload failed — you can re-attach from Edit.");
+        }
+      }
       toast.success(editId ? "Enquiry updated." : "Enquiry created.");
-      setLocation(`/enquiries/${editId || res.data.data.id}`);
+      setLocation(`/enquiries/${rid}`);
     },
     onError: (err) => toast.error(err.response?.data?.message || "Could not save enquiry."),
   });
@@ -222,6 +261,53 @@ export default function EnquiryForm({ params }) {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Customer files — internal only, never shown to vendors or customers */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Customer files</h2>
+            <p className="text-xs text-slate-400">Attach the customer's original enquiry (PDF, Word or Excel, max 10 MB each).</p>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+            <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Internal — never shown to vendors or customers
+          </span>
+        </div>
+
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 transition-colors hover:border-[#28364b] hover:text-[#28364b]">
+          <Paperclip className="h-4 w-4" />
+          Click to choose files…
+          <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={pickFiles} className="hidden" />
+        </label>
+
+        {(existingFiles.length > 0 || pendingFiles.length > 0) && (
+          <div className="mt-3 space-y-1.5">
+            {existingFiles.map((f) => (
+              <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <Paperclip className="h-3.5 w-3.5 text-slate-400" /> {f.original_name}
+                  <span className="text-xs text-slate-400">{fmtSize(f.size)}</span>
+                </span>
+                <button type="button" onClick={() => removeExisting(f.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove this file">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            {pendingFiles.map((f, i) => (
+              <div key={`p-${i}`} className="flex items-center justify-between rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <Paperclip className="h-3.5 w-3.5 text-slate-400" /> {f.name}
+                  <span className="text-xs text-slate-400">{fmtSize(f.size)}</span>
+                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">uploads on save</span>
+                </span>
+                <button type="button" onClick={() => removePending(i)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-2">

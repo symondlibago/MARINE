@@ -66,4 +66,10 @@ class Rfq extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    /** Customer files staff attached to this enquiry — internal only. */
+    public function attachments()
+    {
+        return $this->hasMany(RfqAttachment::class);
+    }
 }

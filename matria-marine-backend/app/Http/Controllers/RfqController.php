@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Mail\VendorQuoteRequest;
 use App\Models\Award;
+use App\Models\Offer;
 use App\Models\SentLog;
 use App\Support\DocNumber;
 use App\Models\Quote;
 use App\Models\QuoteAttachment;
 use App\Models\QuoteItem;
 use App\Models\Rfq;
+use App\Models\RfqAttachment;
 use App\Models\RfqItem;
 use App\Models\RfqVendor;
 use App\Models\Vendor;
@@ -68,7 +70,7 @@ class RfqController extends Controller
 
     public function show(Rfq $rfq)
     {
-        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'rfqVendors.items:id', 'quotes.vendor']);
+        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'rfqVendors.items:id', 'quotes.vendor', 'attachments:id,rfq_id,original_name,size,created_at']);
 
         return response()->json(['success' => true, 'data' => $rfq]);
     }
@@ -468,6 +470,61 @@ class RfqController extends Controller
         return response()->json(['success' => true, 'message' => 'Prices saved.']);
     }
 
+    /**
+     * Staff upload the customer's original enquiry files (PDF / Word / Excel).
+     * Internal only — these are never exposed on the public vendor or customer
+     * endpoints, so only logged-in staff can ever see them.
+     */
+    public function uploadAttachments(Request $request, Rfq $rfq)
+    {
+        $request->validate([
+            'files' => ['required', 'array', 'max:10'],
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx'],
+        ]);
+
+        foreach ($request->file('files') as $file) {
+            $path = $file->store('rfqs/'.$rfq->id, 'r2');
+            $rfq->attachments()->create([
+                'disk' => 'r2',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'uploaded_by' => $request->user()?->id,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File(s) uploaded.',
+            'data' => $rfq->attachments()->get(['id', 'rfq_id', 'original_name', 'size', 'created_at']),
+        ]);
+    }
+
+    /** Short-lived signed URL so staff can open a customer file (R2 is private). */
+    public function rfqAttachmentUrl(Rfq $rfq, RfqAttachment $attachment)
+    {
+        abort_unless($attachment->rfq_id === $rfq->id, 404);
+
+        $url = Storage::disk($attachment->disk)->temporaryUrl($attachment->path, now()->addMinutes(10));
+
+        return response()->json(['success' => true, 'data' => ['url' => $url, 'name' => $attachment->original_name]]);
+    }
+
+    public function deleteAttachment(Rfq $rfq, RfqAttachment $attachment)
+    {
+        abort_unless($attachment->rfq_id === $rfq->id, 404);
+
+        Storage::disk($attachment->disk)->delete($attachment->path);
+        $attachment->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File removed.',
+            'data' => $rfq->attachments()->get(['id', 'rfq_id', 'original_name', 'size', 'created_at']),
+        ]);
+    }
+
     /** Short-lived signed URL so staff can open a vendor's uploaded file (R2 is private). */
     public function attachmentUrl(Quote $quote, QuoteAttachment $attachment)
     {
@@ -506,6 +563,20 @@ class RfqController extends Controller
                         'unit_cost' => $a['unit_cost'],
                     ]
                 );
+            }
+
+            $offer = Offer::where('rfq_id', $rfq->id)->first();
+            if ($offer) {
+                foreach ($data['awards'] as $a) {
+                    if (! $itemIds->contains($a['rfq_item_id'])) {
+                        continue;
+                    }
+                    $qi = ($a['quote_item_id'] ?? null) ? QuoteItem::find($a['quote_item_id']) : null;
+                    $remark = $qi?->remarks;
+                    if ($remark !== null && $remark !== '') {
+                        $offer->items()->where('rfq_item_id', $a['rfq_item_id'])->update(['remarks' => $remark]);
+                    }
+                }
             }
 
             if ($rfq->status !== 'closed') {

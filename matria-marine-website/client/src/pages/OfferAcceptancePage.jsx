@@ -72,7 +72,7 @@ function OfferCard({ data }) {
             )}
           </tbody>
           <tfoot>
-            {(Number(data.packing_cost) > 0 || Number(data.transportation_cost) > 0) && (
+            {(Number(data.packing_cost) > 0 || Number(data.transportation_cost) > 0 || Number(data.tax_amount) > 0) && (
               <>
                 <tr className="border-t border-slate-200">
                   <td colSpan={3} className="px-3 py-1.5 text-right text-sm text-slate-500">Subtotal</td>
@@ -88,6 +88,12 @@ function OfferCard({ data }) {
                   <tr>
                     <td colSpan={3} className="px-3 py-1.5 text-right text-sm text-slate-500">Transportation cost</td>
                     <td className="px-3 py-1.5 text-right text-sm text-slate-600">{money(data.transportation_cost)}</td>
+                  </tr>
+                )}
+                {Number(data.tax_amount) > 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-1.5 text-right text-sm text-slate-500">GST {Number(data.tax_rate)}%</td>
+                    <td className="px-3 py-1.5 text-right text-sm text-slate-600">{money(data.tax_amount)}</td>
                   </tr>
                 )}
               </>

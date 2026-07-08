@@ -89,9 +89,11 @@ class PublicOfferController extends Controller
             'subtotal' => (float) $offer->subtotal,
             'packing_cost' => (float) $offer->packing_cost,
             'transportation_cost' => (float) $offer->transportation_cost,
-            'grand_total' => ((float) $offer->packing_cost + (float) $offer->transportation_cost) > 0
-                ? (float) $offer->grand_total
-                : (float) $offer->subtotal,
+            'tax_rate' => (float) $offer->tax_rate,
+            'tax_amount' => (float) $offer->tax_amount,
+            // grand_total always includes delivery + GST (recalcTotals); fall back
+            // to the subtotal only for legacy rows where it was never computed.
+            'grand_total' => (float) $offer->grand_total ?: (float) $offer->subtotal,
             'opened_at' => $offer->opened_at?->toIso8601String(),
             'accepted_at' => $offer->accepted_at?->toIso8601String(),
             'accepted_by_name' => $offer->accepted_by_name,

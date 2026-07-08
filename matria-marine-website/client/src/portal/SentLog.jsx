@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { motion } from "framer-motion";
 import { Search, Send, CheckCircle2, AlertCircle } from "lucide-react";
 import { sentLogsAPI } from "@/pages/api";
@@ -92,7 +93,15 @@ export default function SentLog() {
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_STYLES[r.type] || "bg-slate-100 text-slate-600"}`}>{r.type}</span>
                   </td>
-                  <td className="px-4 py-3 font-medium text-[#28364b]">{r.reference || "—"}</td>
+                  <td className="px-4 py-3 font-medium text-[#28364b]">
+                    {r.link ? (
+                      <Link href={r.link} title="Open this document" className="underline decoration-slate-300 underline-offset-2 transition-colors hover:text-blue-700 hover:decoration-blue-400">
+                        {r.reference}
+                      </Link>
+                    ) : (
+                      r.reference || "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-slate-700">
                     {r.recipient_name || "—"}
                     {r.recipient_email && <span className="block text-xs text-slate-400">{r.recipient_email}</span>}

@@ -27,7 +27,7 @@ export default function Customers() {
       fields={[
         { name: "name", label: "Customer name", required: true },
         { name: "address", label: "Address (shown on quotations & orders)", type: "textarea" },
-        { name: "email", label: "Email", type: "email" },
+        { name: "email", label: "Email", placeholder: "accounts@acme.com, purchasing@acme.com", hint: "You can enter multiple emails separated by commas — quotations go to all of them." },
         { name: "phone", label: "Phone" },
         { name: "currency", label: "Default currency", type: "select", options: CURRENCIES, required: true },
         { name: "notes", label: "Notes", type: "textarea" },

@@ -146,6 +146,13 @@ export const rfqsAPI = {
   vendorAwardPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/award-pdf`), { responseType: 'blob' }),
   reopen: (id) => api.post(apiUrl(`/portal/rfqs/${id}/reopen`)),
+  // Customer files on an enquiry (internal only — staff portal, never vendors)
+  uploadFiles: (id, formData) =>
+    api.post(apiUrl(`/portal/rfqs/${id}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  deleteFile: (id, attachmentId) => api.delete(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`)),
+  fileUrl: (id, attachmentId) => api.get(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`)),
   enquiryVendorPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/enquiry-pdf`), { responseType: 'blob' }),
   summaryPdf: (id) => api.get(apiUrl(`/portal/rfqs/${id}/quotation-pdf`), { responseType: 'blob' }),

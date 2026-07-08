@@ -111,6 +111,10 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::patch('quotes/{quote}', [RfqController::class, 'updateQuoteRate']);
         Route::patch('quotes/{quote}/prices', [RfqController::class, 'saveVendorPrices']);
         Route::get('quotes/{quote}/attachments/{attachment}', [RfqController::class, 'attachmentUrl']);
+        // Customer files on an enquiry — staff-only (internal, never shown to vendors)
+        Route::post('rfqs/{rfq}/attachments', [RfqController::class, 'uploadAttachments']);
+        Route::get('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'rfqAttachmentUrl']);
+        Route::delete('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'deleteAttachment']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/enquiry-pdf', [RfqPdfController::class, 'enquiryVendor']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
         Route::get('rfqs/{rfq}/quotation-pdf', [RfqPdfController::class, 'summary']);

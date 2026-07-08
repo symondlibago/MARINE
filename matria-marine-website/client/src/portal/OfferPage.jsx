@@ -198,7 +198,9 @@ export default function OfferPage({ params }) {
 
   if (isLoading || !offer) return <PageLoader />;
 
-  const th = "px-2 py-2.5 font-semibold whitespace-nowrap";
+  const th = "px-1.5 py-2.5 font-semibold whitespace-nowrap";
+  // Hide the number-input spinner arrows — they steal ~20px inside each field.
+  const num = "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
   const internal = "bg-amber-50/50"; // tint for internal (cost/markup) columns
 
   return (
@@ -334,10 +336,10 @@ export default function OfferPage({ params }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1600px] text-sm">
+          <table className="w-full min-w-[1380px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className={`${th} min-w-[200px]`}>Description</th>
+                <th className={`${th} sticky left-0 z-10 bg-white min-w-[170px]`}>Description</th>
                 <th className={th}>Code</th>
                 <th className={th}>Customs</th>
                 <th className={th}>Unit</th>
@@ -358,22 +360,22 @@ export default function OfferPage({ params }) {
             <tbody>
               {rows.map((r, idx) => (
                 <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">
-                  <td className="px-2 py-2"><input className={ci} value={r.description} onChange={(e) => setItem(idx, { description: e.target.value })} /></td>
-                  <td className="px-2 py-2"><input className={`${ci} w-20`} value={r.code} onChange={(e) => setItem(idx, { code: e.target.value })} /></td>
-                  <td className="px-2 py-2"><input className={`${ci} w-20`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} /></td>
-                  <td className="px-2 py-2"><input className={`${ci} w-16`} value={r.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} /></td>
-                  <td className="px-2 py-2"><input type="number" step="0.001" className={`${ci} w-20 text-right`} value={r.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} /></td>
-                  <td className={`px-2 py-2 ${internal}`}><input type="number" step="0.0001" className={`${ci} w-24 text-right`} value={r.base_price} onChange={(e) => setItem(idx, { base_price: e.target.value })} /></td>
-                  <td className={`px-2 py-2 text-right text-slate-500 whitespace-nowrap ${internal}`}>{money(r.base_line)}</td>
-                  <td className={`px-2 py-2 ${internal}`}><input type="number" step="0.1" className={`${ci} w-20 text-right`} value={r.markup_pct} onChange={(e) => setItem(idx, { markup_pct: e.target.value })} /></td>
-                  <td className="px-2 py-2 text-right font-medium text-[#28364b] whitespace-nowrap">{money(r.unit_price)}</td>
-                  <td className="px-2 py-2"><input type="number" step="0.1" className={`${ci} w-16 text-right`} value={r.discount_pct} onChange={(e) => setItem(idx, { discount_pct: e.target.value })} /></td>
-                  <td className="px-2 py-2 text-right text-slate-500 whitespace-nowrap">{money(r.disc_amount)}</td>
-                  <td className={`px-2 py-2 text-right font-medium text-green-700 whitespace-nowrap ${internal}`}>{money(r.markup_amount)}</td>
-                  <td className="px-2 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">{money(r.line_total)}</td>
-                  <td className="px-2 py-2"><input className={`${ci} w-24`} value={r.lead_time} onChange={(e) => setItem(idx, { lead_time: e.target.value })} placeholder="e.g. 2 days" /></td>
-                  <td className="px-2 py-2"><input className={`${ci} w-28`} value={r.delivery_location} onChange={(e) => setItem(idx, { delivery_location: e.target.value })} /></td>
-                  <td className="px-2 py-2"><input className={`${ci} w-32`} value={r.remarks} onChange={(e) => setItem(idx, { remarks: e.target.value })} /></td>
+                  <td className="px-1.5 py-2 sticky left-0 z-10 bg-white"><input className={ci} value={r.description} onChange={(e) => setItem(idx, { description: e.target.value })} /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.code} onChange={(e) => setItem(idx, { code: e.target.value })} /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-14`} value={r.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} /></td>
+                  <td className="px-1.5 py-2"><input type="number" step="0.001" className={`${ci} ${num} min-w-[4.5rem] text-right`} value={r.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} /></td>
+                  <td className={`px-1.5 py-2 ${internal}`}><input type="number" step="0.0001" className={`${ci} ${num} min-w-[7rem] text-right`} value={r.base_price} onChange={(e) => setItem(idx, { base_price: e.target.value })} /></td>
+                  <td className={`px-1.5 py-2 text-right text-slate-500 whitespace-nowrap ${internal}`}>{money(r.base_line)}</td>
+                  <td className={`px-1.5 py-2 ${internal}`}><input type="number" step="0.1" className={`${ci} ${num} min-w-[4rem] text-right`} value={r.markup_pct} onChange={(e) => setItem(idx, { markup_pct: e.target.value })} /></td>
+                  <td className="px-1.5 py-2 text-right font-medium text-[#28364b] whitespace-nowrap">{money(r.unit_price)}</td>
+                  <td className="px-1.5 py-2"><input type="number" step="0.1" className={`${ci} ${num} min-w-[3.5rem] text-right`} value={r.discount_pct} onChange={(e) => setItem(idx, { discount_pct: e.target.value })} /></td>
+                  <td className="px-1.5 py-2 text-right text-slate-500 whitespace-nowrap">{money(r.disc_amount)}</td>
+                  <td className={`px-1.5 py-2 text-right font-medium text-green-700 whitespace-nowrap ${internal}`}>{money(r.markup_amount)}</td>
+                  <td className="px-1.5 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">{money(r.line_total)}</td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.lead_time} onChange={(e) => setItem(idx, { lead_time: e.target.value })} placeholder="e.g. 2 days" /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.delivery_location} onChange={(e) => setItem(idx, { delivery_location: e.target.value })} /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-24`} value={r.remarks} onChange={(e) => setItem(idx, { remarks: e.target.value })} /></td>
                 </tr>
               ))}
               {rows.length === 0 && (
@@ -381,29 +383,40 @@ export default function OfferPage({ params }) {
               )}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-slate-200 bg-slate-50">
-                <td colSpan={11} className="px-2 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Items subtotal ({header.currency})</td>
-                <td className="px-2 py-2 text-right text-xs font-semibold text-green-700 whitespace-nowrap">{money(profit)}</td>
-                <td className="px-2 py-2 text-right text-sm font-semibold text-[#28364b] whitespace-nowrap">{money(custTotal)}</td>
+              <tr className="border-t-2 border-slate-200 bg-slate-50 align-bottom">
+                <td colSpan={6} className="px-1.5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Items subtotal ({header.currency})</td>
+                <td className="px-1.5 py-2 text-right whitespace-nowrap">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total base</div>
+                  <div className="text-xs font-semibold text-slate-600">{money(baseTotal)}</div>
+                </td>
+                <td colSpan={4}></td>
+                <td className="px-1.5 py-2 text-right whitespace-nowrap">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total mark-up</div>
+                  <div className="text-xs font-semibold text-green-700">{money(profit)} ({profitPct.toFixed(1)}%)</div>
+                </td>
+                <td className="px-1.5 py-2 text-right whitespace-nowrap">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">After mark-up</div>
+                  <div className="text-sm font-semibold text-[#28364b]">{money(custTotal)}</div>
+                </td>
                 <td colSpan={3}></td>
               </tr>
               {packing > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={12} className="px-2 py-1 text-right text-xs text-slate-500">Packing cost</td>
-                  <td className="px-2 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(packing)}</td>
+                  <td colSpan={12} className="px-1.5 py-1 text-right text-xs text-slate-500">Packing cost</td>
+                  <td className="px-1.5 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(packing)}</td>
                   <td colSpan={3}></td>
                 </tr>
               )}
               {transportation > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={12} className="px-2 py-1 text-right text-xs text-slate-500">Transportation cost</td>
-                  <td className="px-2 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(transportation)}</td>
+                  <td colSpan={12} className="px-1.5 py-1 text-right text-xs text-slate-500">Transportation cost</td>
+                  <td className="px-1.5 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(transportation)}</td>
                   <td colSpan={3}></td>
                 </tr>
               )}
               <tr className="border-t border-slate-200 bg-slate-50">
-                <td colSpan={12} className="px-2 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
-                <td className="px-2 py-3 text-right text-base font-bold text-[#28364b] whitespace-nowrap">{money(grandTotal)}</td>
+                <td colSpan={12} className="px-1.5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
+                <td className="px-1.5 py-3 text-right text-base font-bold text-[#28364b] whitespace-nowrap">{money(grandTotal)}</td>
                 <td colSpan={3}></td>
               </tr>
             </tfoot>

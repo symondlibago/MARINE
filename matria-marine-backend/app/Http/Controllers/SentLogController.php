@@ -28,10 +28,33 @@ class SentLogController extends Controller
             });
         }
 
-        $rows = $query->limit(500)->get()->map(fn (SentLog $l) => [
+        $logs = $query->limit(500)->get();
+
+        // Resolve each reference to its record (one query per document type) so
+        // the UI can link the reference straight to the page it lives on.
+        $maps = [
+            'RFQ' => [\App\Models\Rfq::class, 'reference', '/enquiries/'],
+            'Quotation' => [\App\Models\Offer::class, 'offer_number', '/offers/'],
+            'Purchase Order' => [\App\Models\PurchaseOrder::class, 'po_number', '/purchase-orders/'],
+            'Return Note' => [\App\Models\ReturnNote::class, 'rtn_number', '/return-notes/'],
+            'Invoice' => [\App\Models\CustomerInvoice::class, 'invoice_number', '/invoices/'],
+        ];
+        $links = [];
+        foreach ($maps as $type => [$model, $col, $prefix]) {
+            $refs = $logs->where('type', $type)->pluck('reference')->filter()->unique()->values();
+            if ($refs->isEmpty()) {
+                continue;
+            }
+            foreach ($model::whereIn($col, $refs)->pluck('id', $col) as $ref => $recordId) {
+                $links[$type.'|'.$ref] = $prefix.$recordId;
+            }
+        }
+
+        $rows = $logs->map(fn (SentLog $l) => [
             'id' => $l->id,
             'type' => $l->type,
             'reference' => $l->reference,
+            'link' => $links[$l->type.'|'.$l->reference] ?? null,
             'recipient_name' => $l->recipient_name,
             'recipient_email' => $l->recipient_email,
             'subject' => $l->subject,
