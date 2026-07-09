@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DeliveryOrder;
 use App\Models\Offer;
+use App\Models\PurchaseOrder;
 use App\Support\DocNumber;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ class DeliveryOrderController extends Controller
 {
     public function index()
     {
-        $orders = DeliveryOrder::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name'])
+        $orders = DeliveryOrder::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name', 'purchaseOrder:id,po_number'])
             ->orderByDesc('id')
             ->get();
 
@@ -22,7 +23,7 @@ class DeliveryOrderController extends Controller
 
     public function show(DeliveryOrder $deliveryOrder)
     {
-        $deliveryOrder->load(['items', 'offer:id,offer_number', 'rfq:id,reference,ship_name', 'customer:id,name,address,email']);
+        $deliveryOrder->load(['items', 'offer:id,offer_number', 'rfq:id,reference,ship_name', 'customer:id,name,address,email', 'purchaseOrder:id,po_number']);
 
         return response()->json(['success' => true, 'data' => $deliveryOrder]);
     }
@@ -37,6 +38,20 @@ class DeliveryOrderController extends Controller
         return response()->json([
             'success' => true,
             'message' => $existed ? 'Delivery order already exists for this offer.' : 'Delivery order created.',
+            'data' => $do->load('items'),
+        ], $existed ? 200 : 201);
+    }
+
+    /** New flow: build (or return the existing) delivery order for ONE purchase order. */
+    public function generateForPo(Request $request, PurchaseOrder $purchaseOrder)
+    {
+        $existed = DeliveryOrder::where('purchase_order_id', $purchaseOrder->id)->exists();
+
+        $do = DeliveryOrder::generateFromPurchaseOrder($purchaseOrder, $request->user()?->id);
+
+        return response()->json([
+            'success' => true,
+            'message' => $existed ? 'A delivery order already exists for this PO.' : 'Delivery order created for '.$purchaseOrder->po_number.'.',
             'data' => $do->load('items'),
         ], $existed ? 200 : 201);
     }
@@ -56,6 +71,13 @@ class DeliveryOrderController extends Controller
         ]);
 
         DB::transaction(function () use ($deliveryOrder, $data) {
+            // The DO's delivery address is the source of truth — carry it onto the
+            // linked purchase order so the vendor ships to the right place.
+            if (array_key_exists('delivery_address', $data) && $deliveryOrder->purchase_order_id) {
+                PurchaseOrder::whereKey($deliveryOrder->purchase_order_id)
+                    ->update(['delivery_address' => $data['delivery_address']]);
+            }
+
             $deliveryOrder->fill([
                 'delivery_address' => array_key_exists('delivery_address', $data) ? $data['delivery_address'] : $deliveryOrder->delivery_address,
                 'customer_reference' => array_key_exists('customer_reference', $data) ? $data['customer_reference'] : $deliveryOrder->customer_reference,
@@ -99,7 +121,7 @@ class DeliveryOrderController extends Controller
 
     public function pdf(DeliveryOrder $deliveryOrder)
     {
-        $deliveryOrder->load(['items', 'creator:id,name,phone']);
+        $deliveryOrder->load(['items', 'creator:id,name,phone,email']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;

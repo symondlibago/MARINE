@@ -56,7 +56,7 @@
             @forelse($lines as $idx => $line)
                 <tr>
                     <td>{{ $idx + 1 }}</td>
-                    <td>{{ $line['description'] }}</td>
+                    <td>{{ $line['description'] }}@if(!empty($line['remarks']))<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line['remarks'])) !!}</span>@endif</td>
                     <td>{{ $line['unit'] ?: '—' }}</td>
                     <td class="num">{{ number_format($line['qty'], 2) }}</td>
                     <td class="num">{{ number_format($line['unit_cost'], 2) }}</td>

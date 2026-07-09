@@ -125,6 +125,8 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('purchase-orders/{purchaseOrder}/pdf', [PurchaseOrderController::class, 'pdf']);
         Route::get('purchase-orders/{purchaseOrder}/final-invoice', [PurchaseOrderController::class, 'finalInvoice']);
         Route::post('purchase-orders/{purchaseOrder}/email', [PurchaseOrderController::class, 'email']);
+        // New flow: each PO gets its own delivery order (PO first, then DO)
+        Route::post('purchase-orders/{purchaseOrder}/delivery-order', [DeliveryOrderController::class, 'generateForPo']);
         Route::get('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'show']);
         Route::patch('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'update']);
         Route::delete('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'destroy']);

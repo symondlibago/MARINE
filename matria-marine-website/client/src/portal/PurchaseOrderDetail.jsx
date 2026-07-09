@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2, RefreshCw, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { purchaseOrdersAPI, returnNotesAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
@@ -36,6 +36,7 @@ export default function PurchaseOrderDetail({ params }) {
   const [items, setItems] = useState([]);
   const [notes, setNotes] = useState("");
   const [expected, setExpected] = useState("");
+  const [deliverTo, setDeliverTo] = useState("");
   const [receiptAmount, setReceiptAmount] = useState("");
   const [expenseItems, setExpenseItems] = useState([]); // [{ name, amount }]
   const [expenseCurrency, setExpenseCurrency] = useState(""); // currency of the expense lines
@@ -62,6 +63,7 @@ export default function PurchaseOrderDetail({ params }) {
     })));
     setNotes(po.notes || "");
     setExpected(po.expected_date ? String(po.expected_date).slice(0, 10) : "");
+    setDeliverTo(po.delivery_address || "");
     setReceiptAmount(po.receipt_amount != null ? String(Number(po.receipt_amount)) : "");
     setExpenseItems((po.expense_items || []).map((e) => ({ name: e.name ?? "", amount: e.amount != null ? String(Number(e.amount)) : "" })));
     setExpenseCurrency(po.expense_currency || po.currency);
@@ -149,6 +151,7 @@ export default function PurchaseOrderDetail({ params }) {
       purchaseOrdersAPI.update(id, {
         notes,
         expected_date: expected || null,
+        delivery_address: deliverTo || null,
         receipt_amount: receiptAmount === "" ? null : Number(receiptAmount),
         paid_at: paidAt || null,
         expense_currency: expenseCurrency || po.currency,
@@ -182,6 +185,16 @@ export default function PurchaseOrderDetail({ params }) {
     mutationFn: () => purchaseOrdersAPI.email(id),
     onSuccess: (res) => { toast.success(res.data.message || "Emailed to vendor."); refetch(); },
     onError: (e) => toast.error(e?.response?.data?.message || "Email failed."),
+  });
+
+  // New flow: this PO gets its own delivery order (customer prices from the offer).
+  const makeDo = useMutation({
+    mutationFn: () => purchaseOrdersAPI.createDeliveryOrder(id),
+    onSuccess: (res) => {
+      toast.success(res.data.message || "Delivery order ready.");
+      setLocation(`/delivery-orders/${res.data.data.id}`);
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || e?.response?.data?.errors?.offer?.[0] || "Could not create the delivery order."),
   });
 
   const del = useMutation({
@@ -308,6 +321,9 @@ export default function PurchaseOrderDetail({ params }) {
           <button onClick={handleEmail} disabled={emailPo.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60">
             {emailPo.isLoading ? <Spinner className="h-4 w-4" /> : <Mail className="h-4 w-4" />} Email vendor
           </button>
+          <button onClick={() => makeDo.mutate()} disabled={makeDo.isLoading} title="Create this PO's delivery order (uses the customer prices from the offer)" className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-70">
+            {makeDo.isLoading ? <Spinner className="h-4 w-4" /> : <Truck className="h-4 w-4" />} Delivery Order
+          </button>
           <button onClick={copyLink} disabled={!po.token} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60" title="Copy the vendor's acceptance link">
             <Copy className="h-4 w-4" /> Copy link
           </button>
@@ -351,7 +367,22 @@ export default function PurchaseOrderDetail({ params }) {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Info label="Vessel" value={po.ship_name} />
             <Info label="Delivery port" value={po.delivery_port} />
-            <Info label="Deliver to" value={po.delivery_address} />
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Deliver to</div>
+              <div className="mt-1">
+                {isClosed ? (
+                  <div className="whitespace-pre-line text-sm text-[#28364b]">{po.delivery_address || "—"}</div>
+                ) : (
+                  <textarea
+                    rows={2}
+                    value={deliverTo}
+                    onChange={(e) => setDeliverTo(e.target.value)}
+                    placeholder="Warehouse / port / forwarder address the vendor ships to"
+                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]"
+                  />
+                )}
+              </div>
+            </div>
             <Info label="Currency" value={`${po.currency}${po.currency !== po.base_currency ? ` · ×${Number(po.exchange_rate)} → ${po.base_currency}` : ""}`} />
             <Info label="Issued" value={po.issued_date ? String(po.issued_date).slice(0, 10) : "—"} />
             <div>

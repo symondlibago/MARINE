@@ -539,7 +539,9 @@ class RfqController extends Controller
     public function saveAwards(Request $request, Rfq $rfq)
     {
         $data = $request->validate([
-            'awards' => ['required', 'array'],
+            // 'present' (not 'required') so an empty list is valid — staff can
+            // un-award everything and save to undo accidental clicks.
+            'awards' => ['present', 'array'],
             'awards.*.rfq_item_id' => ['required', 'integer'],
             'awards.*.vendor_id' => ['required', 'integer'],
             'awards.*.quote_item_id' => ['nullable', 'integer'],
@@ -550,6 +552,7 @@ class RfqController extends Controller
         $itemIds = $rfq->items()->pluck('id');
 
         DB::transaction(function () use ($data, $rfq, $itemIds) {
+            $keptItemIds = [];
             foreach ($data['awards'] as $a) {
                 if (! $itemIds->contains($a['rfq_item_id'])) {
                     continue;
@@ -563,7 +566,14 @@ class RfqController extends Controller
                         'unit_cost' => $a['unit_cost'],
                     ]
                 );
+                $keptItemIds[] = (int) $a['rfq_item_id'];
             }
+
+            // The grid posts the FULL award state, so any line missing from the
+            // payload was un-awarded on screen — remove its saved award too.
+            Award::whereIn('rfq_item_id', $itemIds)
+                ->whereNotIn('rfq_item_id', $keptItemIds)
+                ->delete();
 
             $offer = Offer::where('rfq_id', $rfq->id)->first();
             if ($offer) {
@@ -580,7 +590,8 @@ class RfqController extends Controller
             }
 
             if ($rfq->status !== 'closed') {
-                $rfq->update(['status' => 'awarded']);
+                // No awards left after this save → drop back to "quoting".
+                $rfq->update(['status' => count($keptItemIds) ? 'awarded' : 'quoting']);
             }
         });
 

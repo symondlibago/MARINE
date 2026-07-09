@@ -168,6 +168,8 @@ export const purchaseOrdersAPI = {
   pdf: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}/pdf`), { responseType: 'blob' }),
   finalInvoice: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}/final-invoice`), { responseType: 'blob' }),
   email: (id) => api.post(apiUrl(`/portal/purchase-orders/${id}/email`)),
+  // New flow: each PO gets its own delivery order
+  createDeliveryOrder: (id) => api.post(apiUrl(`/portal/purchase-orders/${id}/delivery-order`)),
   uploadFiles: (id, formData) =>
     api.post(apiUrl(`/portal/purchase-orders/${id}/attachments`), formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

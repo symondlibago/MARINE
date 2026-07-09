@@ -173,6 +173,7 @@ class PurchaseOrderController extends Controller
             'status' => ['sometimes', 'in:draft,issued,received,cancelled'],
             'issued_date' => ['nullable', 'date'],
             'expected_date' => ['nullable', 'date'],
+            'delivery_address' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
             'receipt_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'expenses' => ['sometimes', 'nullable', 'numeric', 'min:0'],
@@ -193,7 +194,7 @@ class PurchaseOrderController extends Controller
 
         DB::transaction(function () use ($purchaseOrder, $data) {
             $attrs = [];
-            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'receipt_amount', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
+            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'delivery_address', 'receipt_amount', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
                 if (array_key_exists($key, $data)) {
                     $attrs[$key] = $data[$key];
                 }
@@ -274,7 +275,7 @@ class PurchaseOrderController extends Controller
 
     public function pdf(PurchaseOrder $purchaseOrder)
     {
-        $purchaseOrder->load(['items', 'vendor', 'creator:id,name,phone']);
+        $purchaseOrder->load(['items', 'vendor', 'creator:id,name,phone,email']);
 
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;

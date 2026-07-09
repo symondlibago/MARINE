@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt } from "lucide-react";
 import { toast } from "sonner";
-import { offersAPI, customersAPI, deliveryOrdersAPI, invoicesAPI } from "@/pages/api";
+import { offersAPI, customersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
@@ -148,18 +148,6 @@ export default function OfferPage({ params }) {
     onError: (e) => toast.error(e?.response?.data?.message || "Could not save."),
   });
 
-  const makeDo = useMutation({
-    mutationFn: () => deliveryOrdersAPI.generate(id),
-    onSuccess: (res) => { toast.success(res.data.message || "Delivery order ready."); setLocation(`/delivery-orders/${res.data.data.id}`); },
-    onError: (e) => toast.error(e?.response?.data?.message || "Could not create delivery order."),
-  });
-
-  // Save the markup first, then turn the offer into a delivery order.
-  const createDo = async () => {
-    try { await save.mutateAsync(); } catch { return; }
-    makeDo.mutate();
-  };
-
   const makeInvoice = useMutation({
     mutationFn: () => invoicesAPI.fromOffer(id),
     onSuccess: (res) => { toast.success(res.data.message || "Invoice ready."); setLocation(`/invoices/${res.data.data.id}`); },
@@ -227,9 +215,6 @@ export default function OfferPage({ params }) {
           <button onClick={() => save.mutate()} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save
           </button>
-          <button onClick={createDo} disabled={save.isLoading || makeDo.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-70" title="Save & turn this offer into a delivery order">
-            {makeDo.isLoading ? <Spinner className="h-4 w-4" /> : <Truck className="h-4 w-4" />} Create Delivery Order
-          </button>
           <button onClick={createInvoice} disabled={save.isLoading || makeInvoice.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-3 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70" title="Save & create a customer invoice from this offer">
             {makeInvoice.isLoading ? <Spinner className="h-4 w-4" /> : <Receipt className="h-4 w-4" />} Create Invoice
           </button>
@@ -243,7 +228,7 @@ export default function OfferPage({ params }) {
             <span className="font-semibold">Accepted by the customer</span>
             {offer.accepted_by_name ? ` (${offer.accepted_by_name})` : ""} on {new Date(offer.accepted_at).toLocaleString()}.
             {offer.acceptance_note ? <em className="block text-green-700">“{offer.acceptance_note}”</em> : null}
-            {" "}A delivery order has been created automatically.
+            {" "}Generate the purchase orders in Compare &amp; Award, then create each PO's delivery order from its page.
           </span>
         </div>
       )}

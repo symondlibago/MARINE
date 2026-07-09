@@ -117,6 +117,16 @@
         <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $do->notes }}</p>
     @endif
 
+    {{-- Prepared by (staff signature, bottom-left — same block as the quotation) --}}
+    @if(optional($do->creator)->name)
+        <div style="margin-top:26px; font-size:11px; line-height:1.6;">
+            <span class="navy" style="font-weight:bold;">Prepared by:</span><br>
+            {{ $do->creator->name }}<br>
+            @if($do->creator->email)<span style="color:#444;">{{ $do->creator->email }}</span>@endif
+            @if($do->creator->phone)@if($do->creator->email) · @endif<span style="color:#444;">{{ $do->creator->phone }}</span>@endif
+        </div>
+    @endif
+
     {{-- Footer --}}
     <div style="margin-top:26px; text-align:center;">
         @if($logo)<img src="{{ $logo }}" style="height:34px;"><br>@endif

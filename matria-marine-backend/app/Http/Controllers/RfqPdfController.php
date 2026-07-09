@@ -26,7 +26,7 @@ class RfqPdfController extends Controller
     /** Per-vendor PDF: the line items awarded to this vendor on this enquiry. */
     public function vendorAward(Rfq $rfq, Vendor $vendor)
     {
-        $rfq->load(['items.award']);
+        $rfq->load(['items.award.quoteItem']);
 
         $lines = $rfq->items
             ->filter(fn ($i) => $i->award && (int) $i->award->vendor_id === (int) $vendor->id)
@@ -36,6 +36,7 @@ class RfqPdfController extends Controller
                 'qty' => (float) $i->award->qty_to_buy,
                 'unit_cost' => (float) $i->award->unit_cost,
                 'line_total' => (float) $i->award->qty_to_buy * (float) $i->award->unit_cost,
+                'remarks' => $i->award->quoteItem?->remarks,
             ])->values();
 
         $quote = Quote::where('rfq_id', $rfq->id)->where('vendor_id', $vendor->id)->first();
@@ -73,6 +74,7 @@ class RfqPdfController extends Controller
                     'unit_cost' => (float) $i->award->unit_cost,
                     'currency' => $quote?->currency ?? $rfq->base_currency,
                     'line_total_base' => (float) $i->award->qty_to_buy * $unitBase,
+                    'remarks' => $i->award->quoteItem?->remarks,
                 ];
             })->values();
 

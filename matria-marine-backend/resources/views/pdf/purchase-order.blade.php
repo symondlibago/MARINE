@@ -150,6 +150,16 @@
         <p style="margin-top:12px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $po->notes }}</p>
     @endif
 
+    {{-- Prepared by (staff signature, bottom-left — same block as the quotation) --}}
+    @if(optional($po->creator)->name)
+        <div style="margin-top:26px; font-size:11px; line-height:1.6;">
+            <span class="navy" style="font-weight:bold;">Prepared by:</span><br>
+            {{ $po->creator->name }}<br>
+            @if($po->creator->email)<span style="color:#444;">{{ $po->creator->email }}</span>@endif
+            @if($po->creator->phone)@if($po->creator->email) · @endif<span style="color:#444;">{{ $po->creator->phone }}</span>@endif
+        </div>
+    @endif
+
     {{-- Footer --}}
     <div style="margin-top:24px; text-align:center;">
         @if($logo)<img src="{{ $logo }}" style="height:30px;"><br>@endif

@@ -194,15 +194,22 @@ export default function CompareGrid({ params }) {
   const locked = data.rfq.status === "closed";
   const pickAward = (row, cell) => {
     if (locked || !cell?.quoted) return;
-    setAwards((a) => ({
-      ...a,
-      [row.rfq_item_id]: {
-        vendor_id: cell.vendor_id,
-        quote_item_id: cell.quote_item_id,
-        unit_cost: cell.unit_cost,
-        qty_to_buy: a[row.rfq_item_id]?.qty_to_buy ?? row.qty,
-      },
-    }));
+    setAwards((a) => {
+      // Clicking the cell that's already awarded un-awards the line (undo).
+      if (a[row.rfq_item_id]?.vendor_id === cell.vendor_id) {
+        const { [row.rfq_item_id]: _removed, ...rest } = a;
+        return rest;
+      }
+      return {
+        ...a,
+        [row.rfq_item_id]: {
+          vendor_id: cell.vendor_id,
+          quote_item_id: cell.quote_item_id,
+          unit_cost: cell.unit_cost,
+          qty_to_buy: a[row.rfq_item_id]?.qty_to_buy ?? row.qty,
+        },
+      };
+    });
   };
   const setQty = (rfqItemId, qty) => setAwards((a) => ({ ...a, [rfqItemId]: { ...a[rfqItemId], qty_to_buy: qty } }));
 
@@ -299,7 +306,7 @@ export default function CompareGrid({ params }) {
         <div>
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
           <p className="text-sm text-slate-500">
-            Base {data.rfq.base_currency}. Type a vendor's unit price in its cell (e.g. for a vendor who only uploaded a file 📎); prices convert at today's live FX rate (edit or click ↻ to override). Add a remark under any priced cell — it prints below the item on the quotation, PO and invoices. Click a vendor's cell to award that line.
+            Base {data.rfq.base_currency}. Type a vendor's unit price in its cell (e.g. for a vendor who only uploaded a file 📎); prices convert at today's live FX rate (edit or click ↻ to override). Add a remark under any priced cell — it prints below the item on the quotation, PO and invoices. Click a vendor's cell to award that line; click it again to un-award.
             {locked && " (Locked)"}
           </p>
         </div>
@@ -435,7 +442,7 @@ export default function CompareGrid({ params }) {
                         <td
                           key={v.vendor_id}
                           onClick={() => pickAward(row, cell)}
-                          title={cell?.quoted && !locked ? (isAwarded ? "Awarded to this vendor" : "Click to award this line") : undefined}
+                          title={cell?.quoted && !locked ? (isAwarded ? "Awarded — click again to un-award" : "Click to award this line") : undefined}
                           className={`px-3 py-3 align-top transition-colors ${cell?.quoted && !locked ? "cursor-pointer" : ""} ${
                             isAwarded ? "bg-[#28364b]" : isLowest ? "bg-green-50/60 hover:bg-green-100/70" : "hover:bg-slate-50"
                           }`}

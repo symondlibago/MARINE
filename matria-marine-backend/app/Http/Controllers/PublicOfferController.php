@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\DeliveryOrder;
 use App\Models\Offer;
 use Illuminate\Http\Request;
 
@@ -61,8 +60,8 @@ class PublicOfferController extends Controller
             'status' => 'accepted',
         ])->save();
 
-        // Acceptance turns the quotation into an order — create the Delivery Order.
-        DeliveryOrder::generateFromOffer($offer);
+        // Acceptance just marks the order confirmed. Delivery orders are created
+        // per purchase order by staff (new flow: PO first, then its own DO).
 
         return response()->json([
             'success' => true,

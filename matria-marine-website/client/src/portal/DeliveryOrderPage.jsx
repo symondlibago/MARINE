@@ -122,7 +122,15 @@ export default function DeliveryOrderPage({ params }) {
             {doc.do_number}
             <span className={`ml-3 inline-flex rounded-full px-2 py-0.5 align-middle text-xs font-medium ${STATUS_STYLES[header.status] || "bg-slate-100"}`}>{header.status}</span>
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Order for <span className="font-medium text-[#28364b]">{doc.customer_name || "—"}</span></p>
+          <p className="mt-1 text-sm text-slate-500">
+            Order for <span className="font-medium text-[#28364b]">{doc.customer_name || "—"}</span>
+            {doc.purchase_order?.po_number && (
+              <>
+                {" "}· from PO{" "}
+                <Link href={`/purchase-orders/${doc.purchase_order_id}`} className="font-medium text-[#28364b] underline">{doc.purchase_order.po_number}</Link>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50" title="Quantities only — no prices">
@@ -198,32 +206,42 @@ export default function DeliveryOrderPage({ params }) {
         <textarea rows={2} value={header.notes} onChange={(e) => setH("notes", e.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
       </div>
 
-      {/* Purchase orders to the vendor */}
+      {/* Purchase order(s): a per-PO delivery order shows ONLY its own PO.
+          Legacy offer-level DOs keep the old generate-all section. */}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Purchase Orders to vendor</h2>
-            <p className="text-xs text-slate-400">Creates one PO per awarded vendor, stamped with the delivery address above.</p>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{doc.purchase_order_id ? "Purchase Order" : "Purchase Orders to vendor"}</h2>
+            <p className="text-xs text-slate-400">
+              {doc.purchase_order_id
+                ? "This delivery order belongs to this purchase order only."
+                : "Creates one PO per awarded vendor, stamped with the delivery address above."}
+            </p>
           </div>
-          <button onClick={() => generatePos.mutate()} disabled={generatePos.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
-            {generatePos.isLoading ? <Spinner className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />} Generate Purchase Orders
-          </button>
+          {!doc.purchase_order_id && (
+            <button onClick={() => generatePos.mutate()} disabled={generatePos.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
+              {generatePos.isLoading ? <Spinner className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />} Generate Purchase Orders
+            </button>
+          )}
         </div>
-        {pos && pos.length > 0 ? (
-          <div className="space-y-1.5">
-            {pos.map((po) => (
-              <Link key={po.id} href={`/purchase-orders/${po.id}`} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm transition-colors hover:bg-slate-50">
-                <span className="font-medium text-[#28364b]">{po.po_number} · {po.vendor}</span>
-                <span className="flex items-center gap-2 text-xs text-slate-500">
-                  {Number(po.subtotal).toFixed(2)} {po.currency}
-                  <span className={`rounded-full px-2 py-0.5 ${PO_BADGE[po.status] || "bg-slate-100"}`}>{po.status}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-400">No purchase orders yet — set the delivery address, then generate.</p>
-        )}
+        {(() => {
+          const shown = doc.purchase_order_id ? (pos || []).filter((po) => po.id === doc.purchase_order_id) : (pos || []);
+          return shown.length > 0 ? (
+            <div className="space-y-1.5">
+              {shown.map((po) => (
+                <Link key={po.id} href={`/purchase-orders/${po.id}`} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm transition-colors hover:bg-slate-50">
+                  <span className="font-medium text-[#28364b]">{po.po_number} · {po.vendor}</span>
+                  <span className="flex items-center gap-2 text-xs text-slate-500">
+                    {Number(po.subtotal).toFixed(2)} {po.currency}
+                    <span className={`rounded-full px-2 py-0.5 ${PO_BADGE[po.status] || "bg-slate-100"}`}>{po.status}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No purchase orders yet — set the delivery address, then generate.</p>
+          );
+        })()}
       </div>
     </motion.div>
   );
