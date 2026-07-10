@@ -16,7 +16,6 @@ export default function Home() {
   // Start with isLoading as true so it shows immediately on refresh
   const [isLoading, setIsLoading] = useState(true);
 
-  // Effect to handle the initial website load
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsLoading(false);
