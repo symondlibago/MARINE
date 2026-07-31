@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus } from "lucide-react";
 import { toast } from "sonner";
-import { invoicesAPI, customersAPI } from "@/pages/api";
+import { invoicesAPI, customersAPI, creditMemosAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
@@ -42,6 +42,9 @@ export default function InvoicePage({ params }) {
 
   const [form, setForm] = useState(null);
   const [lines, setLines] = useState([]);
+  // Credit memo editor: one row per SAVED invoice line (credit qty defaults to 0).
+  const [cmLines, setCmLines] = useState([]);
+  const [cmReason, setCmReason] = useState("");
 
   useEffect(() => {
     if (!data) return;
@@ -72,7 +75,50 @@ export default function InvoicePage({ params }) {
       unit_price: it.is_heading ? "" : it.unit_price ?? "",
       remarks: it.remarks ?? "",
     })));
+    const existingCm = (data.credit_memos || [])[0];
+    const byInvItem = Object.fromEntries((existingCm?.items || []).map((x) => [x.customer_invoice_item_id, x]));
+    setCmLines((data.items || []).filter((it) => !it.is_heading).map((it) => {
+      const ex = byInvItem[it.id];
+      return {
+        customer_invoice_item_id: it.id,
+        description: it.description,
+        unit: it.unit,
+        invoiced_qty: Number(it.qty) || 0,
+        invoiced_price: Number(it.unit_price) || 0,
+        qty: ex ? Number(ex.qty) : 0,
+        unit_price: ex ? Number(ex.unit_price) : Number(it.unit_price) || 0,
+        reason: ex?.reason || "",
+      };
+    }));
+    setCmReason(existingCm?.reason || "");
   }, [data]);
+
+  const saveCm = useMutation({
+    mutationFn: () =>
+      creditMemosAPI.saveForInvoice(id, {
+        reason: cmReason || null,
+        lines: cmLines.map((l) => ({
+          customer_invoice_item_id: l.customer_invoice_item_id,
+          qty: Number(l.qty) || 0,
+          unit_price: Number(l.unit_price) || 0,
+          reason: l.reason || null,
+        })),
+      }),
+    onSuccess: (res) => { toast.success(res.data.message || "Credit memo saved."); refetch(); },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not save the credit memo."),
+  });
+
+  const cmStatus = useMutation({
+    mutationFn: ({ cmId, status }) => creditMemosAPI.update(cmId, { status }),
+    onSuccess: (_r, v) => { toast.success(v.status === "issued" ? "Credit memo issued — it now reduces this sale in the reports." : "Back to draft."); refetch(); },
+    onError: () => toast.error("Could not update the credit memo."),
+  });
+
+  const delCm = useMutation({
+    mutationFn: (cmId) => creditMemosAPI.remove(cmId),
+    onSuccess: () => { toast.success("Credit memo deleted."); refetch(); },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not delete."),
+  });
 
   const save = useMutation({
     mutationFn: () => invoicesAPI.update(id, { ...form, customer_id: form.customer_id || null, items: lines }),
@@ -305,6 +351,125 @@ export default function InvoicePage({ params }) {
           <span>{grand.toFixed(2)} {cur}</span>
         </div>
       </div>
+
+      {/* Credit memo — credit part of this invoice back to the customer */}
+      {(() => {
+        const cm = (data.credit_memos || [])[0] || null;
+        const cmIssued = cm?.status === "issued";
+        const cmSubtotal = cmLines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unit_price) || 0), 0);
+        const cmTax = (cmSubtotal * (Number(data.tax_rate) || 0)) / 100;
+        return (
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  <FileMinus className="h-4 w-4" /> Credit Memo
+                  {cm && (
+                    <span className="normal-case tracking-normal">
+                      <span className="ml-1 font-bold text-[#28364b]">{cm.cm_number}</span>
+                      <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium ${cmIssued ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"}`}>{cm.status}</span>
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-slate-400">Credit lines that were damaged, not delivered or over-billed. Issued credits reduce this sale in the reports (net sales = invoice − credit).</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {cm && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await creditMemosAPI.pdf(cm.id);
+                        const url = URL.createObjectURL(res.data);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `${cm.cm_number}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch { toast.error("Could not download the PDF."); }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50"
+                  >
+                    <Download className="h-4 w-4" /> PDF
+                  </button>
+                )}
+                {cm && (cmIssued ? (
+                  <button onClick={() => cmStatus.mutate({ cmId: cm.id, status: "draft" })} disabled={cmStatus.isLoading} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-70">
+                    Back to draft
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={() => cmStatus.mutate({ cmId: cm.id, status: "issued" })} disabled={cmStatus.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-70">
+                      <CheckCircle2 className="h-4 w-4" /> Issue
+                    </button>
+                    <button onClick={() => delCm.mutate(cm.id)} disabled={delCm.isLoading} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-70" title="Delete this draft credit memo">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
+                ))}
+                {!cmIssued && (
+                  <button onClick={() => saveCm.mutate()} disabled={saveCm.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-70">
+                    {saveCm.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save credit memo
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {cmLines.length === 0 ? (
+              <p className="py-4 text-center text-sm text-slate-400">Save the invoice's line items first — then you can credit them here.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="px-3 py-2 font-semibold">Description</th>
+                      <th className="px-3 py-2 text-right font-semibold">Invoiced</th>
+                      <th className="px-3 py-2 text-right font-semibold">Credit qty</th>
+                      <th className="px-3 py-2 text-right font-semibold">Credit unit price</th>
+                      <th className="px-3 py-2 text-right font-semibold">Credit</th>
+                      <th className="px-3 py-2 font-semibold">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cmLines.map((l, i) => (
+                      <tr key={l.customer_invoice_item_id} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2 text-slate-700">{l.description}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-500">{l.invoiced_qty}{l.unit ? ` ${l.unit}` : ""} × {l.invoiced_price.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">
+                          <input type="number" step="0.001" min="0" max={l.invoiced_qty} disabled={cmIssued} value={l.qty} onChange={(e) => setCmLines((ls) => ls.map((x, xi) => (xi === i ? { ...x, qty: e.target.value } : x)))} className={cellInput + " w-24 text-right disabled:bg-slate-50 disabled:text-slate-400"} />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input type="number" step="0.01" min="0" max={l.invoiced_price} disabled={cmIssued} value={l.unit_price} onChange={(e) => setCmLines((ls) => ls.map((x, xi) => (xi === i ? { ...x, unit_price: e.target.value } : x)))} className={cellInput + " w-28 text-right disabled:bg-slate-50 disabled:text-slate-400"} />
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-red-600">
+                          {((Number(l.qty) || 0) * (Number(l.unit_price) || 0)) > 0 ? `− ${((Number(l.qty) || 0) * (Number(l.unit_price) || 0)).toFixed(2)}` : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <input disabled={cmIssued} value={l.reason} onChange={(e) => setCmLines((ls) => ls.map((x, xi) => (xi === i ? { ...x, reason: e.target.value } : x)))} placeholder="e.g. damaged / not delivered" className={cellInput + " w-full !py-1 text-xs disabled:bg-slate-50 disabled:text-slate-400"} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-200 bg-slate-50">
+                      <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Total credit{Number(data.tax_rate) > 0 ? ` (+ GST ${Number(data.tax_rate)}%: ${cmTax.toFixed(2)})` : ""} ({cur})
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-base font-bold text-red-600">{cmSubtotal > 0 ? `− ${(cmSubtotal + cmTax).toFixed(2)}` : "—"}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            {!cmIssued && (
+              <div className="mt-3">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Overall reason (prints on the credit memo)</label>
+                <input value={cmReason} onChange={(e) => setCmReason(e.target.value)} placeholder="e.g. Line 2 damaged in transit — credited per agreement" className={cellInput + " mt-1.5 w-full"} />
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </motion.div>
   );
 }

@@ -3,8 +3,12 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px; }
+        @page { margin: 28px 34px 104px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
+        /* Fixed page footer — repeats at the bottom of every page. DomPDF measures
+           a fixed element's `bottom` from the content box, so the negative offset
+           pulls it down into the page margin, flush to the bottom edge. */
+        .page-footer { position: fixed; bottom: -86px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #555; line-height: 1.5; }
         .navy { color: #28364b; }
         .doc-title { font-size: 27px; font-weight: bold; letter-spacing: 1px; color: #28364b; }
         .bar { background: #28364b; color: #fff; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
@@ -68,7 +72,7 @@
                     </tr>
                     <tr>
                         <td class="val">{{ $invoice->customer_reference ?: '—' }}</td>
-                        <td class="val">{{ optional($invoice->due_date)->format('j/n/Y') ?: '—' }}</td>
+                        <td class="val">{{ optional($due ?? $invoice->due_date)->format('j/n/Y') ?: '—' }}</td>
                     </tr>
                 </table>
                 @if(optional($invoice->rfq)->reference)
@@ -173,10 +177,14 @@
         <p style="margin-top:12px; font-size:10px; color:#444; line-height:1.5;"><strong>Notes:</strong> {{ $invoice->notes }}</p>
     @endif
 
-    {{-- Footer --}}
-    <div style="margin-top:24px; text-align:center;">
-        @if($logo)<img src="{{ $logo }}" style="height:30px;"><br>@endif
-        <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
+    {{-- Footer: company + bank details — fixed to the bottom of every page --}}
+    <div class="page-footer">
+        <div style="border-top:1px solid #ddd; padding-top:6px;">
+            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
+            UEN No. {{ $company['uen'] }}<br>
+            EMAIL: {{ $company['email'] ?? '' }} &nbsp;·&nbsp; {{ $company['website'] ?? '' }}<br>
+            Bank: {{ $company['bank_name'] ?? '' }} | Account number: {{ $company['bank_account'] ?? '' }} | Swift: {{ $company['bank_swift'] ?? '' }}
+        </div>
     </div>
 
 </body>

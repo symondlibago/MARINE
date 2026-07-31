@@ -97,7 +97,7 @@ class ReportsController extends Controller
         $base = $this->baseCurrency();
 
         // Revenue side: customer invoices whose issue date falls in the range.
-        $invoices = CustomerInvoice::with('rfq:id,reference,ship_name')
+        $invoices = CustomerInvoice::with(['rfq:id,reference,ship_name', 'creditMemos:id,customer_invoice_id,cm_number,status,subtotal'])
             ->when($from, fn ($q) => $q->where('issue_date', '>=', $from))
             ->when($to, fn ($q) => $q->where('issue_date', '<=', $to))
             ->orderByDesc('issue_date')
@@ -118,6 +118,9 @@ class ReportsController extends Controller
 
         $rows = $invoices->map(function (CustomerInvoice $inv) use ($posByRfq, &$costedRfq) {
             $gross = (float) $inv->grand_total - (float) $inv->tax_amount; // ex-GST: tax isn't income
+            // Issued credit memos reduce the sale (their subtotal is ex-GST too).
+            $credits = (float) $inv->creditMemos->where('status', 'issued')->sum('subtotal');
+            $gross = round($gross - $credits, 2);
             $invoicePaid = $inv->status === 'paid' || $inv->paid_at !== null;
 
             $pos = ($inv->rfq_id && ! isset($costedRfq[$inv->rfq_id]))
@@ -176,6 +179,8 @@ class ReportsController extends Controller
                 'date' => optional($inv->issue_date)->toDateString(),
                 'currency' => $inv->currency,
                 'gross' => round($gross, 2),
+                'credits' => round($credits, 2),
+                'credit_memo' => $inv->creditMemos->where('status', 'issued')->pluck('cm_number')->implode(', ') ?: null,
                 'vendor_cost' => round($vendorCost, 2),
                 'expenses' => round($expenses, 2),
                 'markup' => round($gross - $vendorCost, 2),

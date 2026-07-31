@@ -56,11 +56,11 @@
             <td style="width:48%; vertical-align:top;">
                 <table style="width:100%;">
                     <tr>
-                        <td class="bar" style="width:62%;">Invoice No.</td>
+                        <td class="bar" style="width:62%;">Reference</td>
                         <td class="bar">Date</td>
                     </tr>
                     <tr>
-                        <td class="val"><strong>{{ $po->invoice_number ?: '—' }}</strong></td>
+                        <td class="val"><strong>{{ $po->invoice_number ?: $po->po_number }}</strong></td>
                         <td class="val">{{ now()->format('j/n/Y') }}</td>
                     </tr>
                 </table>

@@ -41,10 +41,15 @@ class CustomerInvoiceMail extends Mailable
 
         $this->invoice->loadMissing(['items', 'rfq:id,reference', 'creator:id,name,phone']);
 
+        // Due date: what staff set, else derived from the payment terms + issue date.
+        $due = $this->invoice->due_date
+            ?? \App\Http\Controllers\CustomerInvoiceController::dueFromTerms($this->invoice->payment_terms, $this->invoice->issue_date ?? $this->invoice->created_at);
+
         $pdf = Pdf::loadView('pdf.customer-invoice', [
             'invoice' => $this->invoice,
             'company' => config('procurement.company'),
             'logo' => $logo,
+            'due' => $due ? \Illuminate\Support\Carbon::parse($due) : null,
         ]);
 
         return [

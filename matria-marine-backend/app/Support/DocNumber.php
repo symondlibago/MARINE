@@ -27,6 +27,7 @@ class DocNumber
         'DO' => ['MMS-DO', 6],
         'ProINV' => ['MMS-ProINV', 6],
         'INV' => ['MMS-INV', 6],
+        'CM' => ['MMS-CM', 6],
     ];
 
     /** Atomically take the next number for a document type. */

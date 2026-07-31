@@ -108,6 +108,7 @@ class CustomerInvoiceController extends Controller
                 'payment_terms' => $offer->payment_terms,
                 'delivery_terms' => $offer->delivery_terms,
                 'origin_type' => $offer->origin_type,
+                'due_date' => self::dueFromTerms($offer->payment_terms, now()),
                 'created_by' => $request->user()?->id,
             ]);
 
@@ -147,6 +148,7 @@ class CustomerInvoiceController extends Controller
             'deliveryOrder:id,do_number,proforma_number',
             'customer:id,name,address,email',
             'creator:id,name,phone',
+            'creditMemos.items',
         ]);
 
         $payload = $invoice->toArray();
@@ -274,10 +276,15 @@ class CustomerInvoiceController extends Controller
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
+        // Due date: what staff set, else derived from the payment terms + issue date.
+        $due = $invoice->due_date
+            ?? self::dueFromTerms($invoice->payment_terms, $invoice->issue_date ?? $invoice->created_at);
+
         $pdf = Pdf::loadView('pdf.customer-invoice', [
             'invoice' => $invoice,
             'company' => config('procurement.company'),
             'logo' => $logo,
+            'due' => $due ? \Illuminate\Support\Carbon::parse($due) : null,
         ]);
 
         return $pdf->download(($invoice->invoice_number ?: 'invoice').'.pdf');
@@ -320,6 +327,23 @@ class CustomerInvoiceController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Invoice emailed to '.$email.'.']);
+    }
+
+    /**
+     * Due date from the payment terms: "Net 30 days" → issue + 30; prepayment /
+     * payable on receipt / unspecified → due on the issue date itself.
+     */
+    public static function dueFromTerms(?string $terms, $issueDate): ?string
+    {
+        if (! $issueDate) {
+            return null;
+        }
+        $date = \Illuminate\Support\Carbon::parse($issueDate);
+        if ($terms && preg_match('/net\s*(\d+)/i', $terms, $m)) {
+            return $date->addDays((int) $m[1])->toDateString();
+        }
+
+        return $date->toDateString();
     }
 
     /** The full document trail for the job behind an invoice (QTN → DO → ProINV → PO → INV). */

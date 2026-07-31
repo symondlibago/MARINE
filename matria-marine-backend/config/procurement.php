@@ -17,7 +17,12 @@ return [
         'address' => env('COMPANY_ADDRESS', "192 Pandan Loop, #06-29 Unit B,\nPantech Business Hub\nSingapore 128381"),
         'phone' => env('COMPANY_PHONE', '(65) 82277151'),
         'email' => env('COMPANY_EMAIL', 'sales@matriamarine.com'),
+        'website' => env('COMPANY_WEBSITE', 'www.matriamarine.com'),
         'uen' => env('COMPANY_UEN', '53500706W'),
+        // Bank details printed on invoices (how the customer pays us).
+        'bank_name' => env('COMPANY_BANK_NAME', 'DBS Bank Singapore'),
+        'bank_account' => env('COMPANY_BANK_ACCOUNT', '0721307723'),
+        'bank_swift' => env('COMPANY_BANK_SWIFT', 'DBSSSGSG'),
     ],
 
     /*

@@ -178,6 +178,15 @@ export const purchaseOrdersAPI = {
   attachmentUrl: (id, attachmentId) => api.get(apiUrl(`/portal/purchase-orders/${id}/attachments/${attachmentId}`)),
 };
 
+// --- Credit memos: credit part of an issued invoice back to the customer ---
+export const creditMemosAPI = {
+  saveForInvoice: (invoiceId, payload) => api.post(apiUrl(`/portal/invoices/${invoiceId}/credit-memo`), payload),
+  get: (id) => api.get(apiUrl(`/portal/credit-memos/${id}`)),
+  update: (id, payload) => api.patch(apiUrl(`/portal/credit-memos/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/credit-memos/${id}`)),
+  pdf: (id) => api.get(apiUrl(`/portal/credit-memos/${id}/pdf`), { responseType: 'blob' }),
+};
+
 // --- Return notes: goods returned to a vendor (credits the PO payable) ---
 export const returnNotesAPI = {
   list: (params = {}) => api.get(apiUrl('/portal/return-notes'), { params }),

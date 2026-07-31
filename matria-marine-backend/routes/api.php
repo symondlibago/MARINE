@@ -16,6 +16,7 @@ use App\Http\Controllers\ReturnNoteController;
 use App\Http\Controllers\SentLogController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\OfferController;
+use App\Http\Controllers\CreditMemoController;
 use App\Http\Controllers\CustomerInvoiceController;
 use App\Http\Controllers\DeliveryOrderController;
 use App\Http\Controllers\ReportsController;
@@ -163,6 +164,13 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('invoices/{invoice}', [CustomerInvoiceController::class, 'show']);
         Route::match(['put', 'patch'], 'invoices/{invoice}', [CustomerInvoiceController::class, 'update']);
         Route::delete('invoices/{invoice}', [CustomerInvoiceController::class, 'destroy']);
+
+        // Credit memos — credit part of an issued invoice back (PDF only, no email)
+        Route::post('invoices/{invoice}/credit-memo', [CreditMemoController::class, 'storeForInvoice']);
+        Route::get('credit-memos/{creditMemo}/pdf', [CreditMemoController::class, 'pdf']);
+        Route::get('credit-memos/{creditMemo}', [CreditMemoController::class, 'show']);
+        Route::patch('credit-memos/{creditMemo}', [CreditMemoController::class, 'update']);
+        Route::delete('credit-memos/{creditMemo}', [CreditMemoController::class, 'destroy']);
 
         // Delivery Orders — customer order + delivery address (from an accepted offer)
         Route::post('offers/{offer}/delivery-order', [DeliveryOrderController::class, 'generate']);

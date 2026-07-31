@@ -63,6 +63,12 @@ class CustomerInvoice extends Model
         return $this->hasMany(CustomerInvoiceItem::class)->orderBy('sort')->orderBy('id');
     }
 
+    /** Credit memos issued against this invoice (net sales = invoice − credits). */
+    public function creditMemos()
+    {
+        return $this->hasMany(CreditMemo::class);
+    }
+
     public function rfq()
     {
         return $this->belongsTo(Rfq::class);

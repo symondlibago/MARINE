@@ -292,10 +292,9 @@ class PurchaseOrderController extends Controller
     {
         $purchaseOrder->load(['items', 'vendor', 'returnNote.items']);
 
-        // Assign the MMS-INV number the first time the invoice is generated.
-        if (! $purchaseOrder->invoice_number) {
-            $purchaseOrder->update(['invoice_number' => DocNumber::next('INV')]);
-        }
+        // NOTE: this is the VENDOR settlement document (order less returns), not a
+        // customer invoice — it must NOT consume MMS-INV numbers. It is referenced
+        // by its PO number instead (legacy rows that already got one keep it).
 
         $returnsTotal = (float) ($purchaseOrder->returnNote?->subtotal ?? 0);
         $netPayable = round((float) $purchaseOrder->subtotal - $returnsTotal, 4);
