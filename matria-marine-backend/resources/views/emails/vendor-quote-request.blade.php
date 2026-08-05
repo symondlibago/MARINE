@@ -22,5 +22,7 @@ Submit Your Quotation
 If the button or link does not open, a **PDF copy of this request is attached** to this email for your reference.
 
 Thank you,<br>
-{{ config('app.name') }}
+{{-- The company name comes from the procurement config, never from APP_NAME:
+     a wrong env var must not be able to misspell us to a customer. --}}
+{{ config('procurement.company.name') }}
 @endcomponent

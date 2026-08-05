@@ -234,7 +234,7 @@ class DocumentController extends Controller
             'notes' => ['nullable', 'string', 'max:5000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.is_heading' => ['nullable', 'boolean'],
-            'items.*.description' => ['required', 'string', 'max:2000'],
+            'items.*.description' => ['required', 'string', 'max:8000'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.qty' => ['nullable', 'numeric'],
             'items.*.unit_price' => ['nullable', 'numeric'],

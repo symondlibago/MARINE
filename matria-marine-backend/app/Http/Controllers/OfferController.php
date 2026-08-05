@@ -108,7 +108,7 @@ class OfferController extends Controller
             'status' => ['sometimes', 'string', 'in:draft,sent,accepted,declined'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
-            'items.*.description' => ['nullable', 'string', 'max:2000'],
+            'items.*.description' => ['nullable', 'string', 'max:8000'],
             'items.*.code' => ['nullable', 'string', 'max:100'],
             'items.*.customs_code' => ['nullable', 'string', 'max:100'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],

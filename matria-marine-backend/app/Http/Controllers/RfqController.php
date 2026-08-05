@@ -651,7 +651,8 @@ class RfqController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
-            'items.*.description' => ['required', 'string', 'max:1000'],
+            // Long spec text is normal on marine line items; the column is TEXT.
+            'items.*.description' => ['required', 'string', 'max:8000'],
             'items.*.qty' => ['required', 'numeric', 'min:0'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
         ]);

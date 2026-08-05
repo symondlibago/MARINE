@@ -178,7 +178,7 @@ class CustomerInvoiceController extends Controller
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
             'items.*.is_heading' => ['nullable', 'boolean'],
-            'items.*.description' => ['nullable', 'string', 'max:2000'],
+            'items.*.description' => ['nullable', 'string', 'max:8000'],
             'items.*.code' => ['nullable', 'string', 'max:100'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.qty' => ['nullable', 'numeric', 'min:0'],

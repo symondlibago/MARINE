@@ -14,5 +14,5 @@ This OTP will expire in 10 minutes.
 If you did not request a PIN reset, no further action is required.
 
 Thanks,<br>
-{{ config('app.name') }}
+{{ config('procurement.company.name') }}
 </x-mail::message>

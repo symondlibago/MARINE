@@ -186,7 +186,7 @@ class PurchaseOrderController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
-            'items.*.description' => ['required_with:items', 'string', 'max:1000'],
+            'items.*.description' => ['required_with:items', 'string', 'max:8000'],
             'items.*.qty' => ['required_with:items', 'numeric', 'min:0'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.unit_cost' => ['required_with:items', 'numeric', 'min:0'],

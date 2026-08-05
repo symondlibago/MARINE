@@ -12,5 +12,5 @@ Use the OTP below to verify this change. This code is valid for 10 minutes.
 If you did not request this change, please ignore this email. Your email address will remain unchanged.
 
 Thanks,<br>
-{{ config('app.name') }}
+{{ config('procurement.company.name') }}
 </x-mail::message>
