@@ -16,8 +16,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Note: descriptions longer than 255 characters would be truncated on
-        // the way back down.
         foreach (self::TABLES as $table) {
             DB::statement("ALTER TABLE `{$table}` MODIFY `description` VARCHAR(255) NOT NULL");
         }
