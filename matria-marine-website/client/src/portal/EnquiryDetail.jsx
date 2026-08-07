@@ -115,6 +115,26 @@ export default function EnquiryDetail({ params }) {
     }
   };
 
+  // Download the quotation this vendor submitted (prices as they sent them),
+  // so staff can file or forward a vendor's offer without re-typing it.
+  const [quotePdfBusy, setQuotePdfBusy] = useState(false);
+  const downloadQuotePdf = async (vendorId, vendorName) => {
+    setQuotePdfBusy(true);
+    try {
+      const res = await rfqsAPI.vendorQuotePdf(id, vendorId);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Quotation-${rfq.reference}-${vendorName}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Could not download this vendor's quotation.");
+    } finally {
+      setQuotePdfBusy(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (await confirm({ title: `Delete ${rfq.reference}?`, message: "This enquiry and its quotes will be removed.", confirmText: "Delete", tone: "danger" })) {
       del.mutate();
@@ -534,11 +554,20 @@ export default function EnquiryDetail({ params }) {
                 </div>
               )}
 
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
                 <p className="text-xs text-slate-400">Prices as submitted by the vendor.</p>
-                <Link href={`/enquiries/${id}/compare`} className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline">
-                  <BarChart3 className="h-4 w-4" /> Open Compare &amp; Award
-                </Link>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => downloadQuotePdf(quoteVendorId, quoteRv?.vendor?.name || qv?.vendor_name || "vendor")}
+                    disabled={quotePdfBusy}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline disabled:opacity-50"
+                  >
+                    {quotePdfBusy ? <Spinner className="h-4 w-4" /> : <FileDown className="h-4 w-4" />} Download PDF
+                  </button>
+                  <Link href={`/enquiries/${id}/compare`} className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline">
+                    <BarChart3 className="h-4 w-4" /> Open Compare &amp; Award
+                  </Link>
+                </div>
               </div>
             </div>
           )}

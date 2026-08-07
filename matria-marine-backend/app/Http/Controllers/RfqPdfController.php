@@ -23,6 +23,67 @@ class RfqPdfController extends Controller
         ]);
     }
 
+    /**
+     * Per-vendor PDF of the quotation this vendor submitted — the same figures
+     * shown in the vendor quotation modal, so staff can file or forward a
+     * vendor's offer without re-typing it.
+     */
+    public function vendorQuote(Rfq $rfq, Vendor $vendor)
+    {
+        $quote = Quote::with('items')
+            ->where('rfq_id', $rfq->id)
+            ->where('vendor_id', $vendor->id)
+            ->first();
+
+        abort_if(! $quote, 404, 'This vendor has no quotation on this enquiry.');
+
+        $rfq->load('items');
+
+        // Only the lines this vendor was actually asked for. No rows in the
+        // pivot means the whole enquiry was sent to them.
+        $askedIds = $rfq->rfqVendors()
+            ->with('items:id')
+            ->where('vendor_id', $vendor->id)
+            ->first()?->items->pluck('id')->all() ?? [];
+
+        $lines = $rfq->items
+            ->filter(fn ($i) => empty($askedIds) || in_array($i->id, $askedIds, true))
+            ->map(function ($i) use ($quote) {
+                $qi = $quote->items->firstWhere('rfq_item_id', $i->id);
+                $quoted = $qi && $qi->unit_cost !== null;
+
+                return [
+                    'description' => $i->description,
+                    'unit' => $i->unit,
+                    'qty' => (float) $i->qty,
+                    'quoted' => $quoted,
+                    'unit_cost' => $quoted ? (float) $qi->unit_cost : null,
+                    'line_total' => $quoted ? (float) $qi->unit_cost * (float) $i->qty : null,
+                    'remarks' => $qi?->remarks,
+                ];
+            })
+            ->values();
+
+        $total = $lines->sum('line_total');
+        $rate = (float) $quote->exchange_rate;
+
+        $pdf = Pdf::loadView('pdf.vendor-quote', [
+            'rfq' => $rfq,
+            'vendor' => $vendor,
+            'quote' => $quote,
+            'lines' => $lines,
+            'currency' => $quote->currency ?: $rfq->base_currency,
+            'baseCurrency' => $rfq->base_currency,
+            'grandTotal' => $total,
+            // Only meaningful when the vendor quoted in a different currency.
+            'grandTotalBase' => round($total * ($rate ?: 1), 2),
+            'quotedCount' => $lines->where('quoted', true)->count(),
+            'logo' => $this->logo(),
+        ]);
+
+        return $pdf->download('Quotation-'.$rfq->reference.'-'.Str::slug($vendor->name).'.pdf');
+    }
+
     /** Per-vendor PDF: the line items awarded to this vendor on this enquiry. */
     public function vendorAward(Rfq $rfq, Vendor $vendor)
     {

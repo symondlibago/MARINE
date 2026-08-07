@@ -118,6 +118,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::patch('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'toggleAttachmentShare']);
         Route::delete('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'deleteAttachment']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/enquiry-pdf', [RfqPdfController::class, 'enquiryVendor']);
+        Route::get('rfqs/{rfq}/vendors/{vendor}/quote-pdf', [RfqPdfController::class, 'vendorQuote']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
         Route::get('rfqs/{rfq}/quotation-pdf', [RfqPdfController::class, 'summary']);
 

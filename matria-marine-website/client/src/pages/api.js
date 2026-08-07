@@ -158,6 +158,9 @@ export const rfqsAPI = {
     api.patch(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`), { share_with_vendors: share }),
   enquiryVendorPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/enquiry-pdf`), { responseType: 'blob' }),
+  // The quotation a vendor submitted, as a PDF (prices as they sent them).
+  vendorQuotePdf: (id, vendorId) =>
+    api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/quote-pdf`), { responseType: 'blob' }),
   summaryPdf: (id) => api.get(apiUrl(`/portal/rfqs/${id}/quotation-pdf`), { responseType: 'blob' }),
 };
 
