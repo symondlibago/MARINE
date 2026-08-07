@@ -6,6 +6,7 @@ use App\Mail\OfferMail;
 use App\Models\Customer;
 use App\Models\Offer;
 use App\Models\Rfq;
+use App\Models\RfqItem;
 use App\Models\SentLog;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -47,7 +48,7 @@ class OfferController extends Controller
             ]);
         }
 
-        $rfq->load(['items.award.quoteItem.quote', 'items.quoteItems.quote', 'customer']);
+        $rfq->load(['items.awards.quoteItem.quote', 'items.quoteItems.quote', 'customer']);
 
         $offer = DB::transaction(function () use ($rfq, $request) {
             $offer = Offer::create([
@@ -67,7 +68,9 @@ class OfferController extends Controller
                 $qty = (float) $item->qty;
                 $offer->items()->create([
                     'rfq_item_id' => $item->id,
-                    'award_id' => $item->award?->id,
+                    // One offer line per enquiry line even when it was split, so
+                    // the customer never sees which vendors we bought from.
+                    'award_id' => $item->awards->first()?->id,
                     'description' => $item->description,
                     'unit' => $item->unit,
                     'qty' => $qty,
@@ -75,7 +78,13 @@ class OfferController extends Controller
                     'markup_pct' => 0,
                     'unit_price' => round($base, 2),
                     'line_total' => round($base * $qty, 2),
-                    'remarks' => $item->award?->quoteItem?->remarks, // carry the vendor's remark through
+                    // Carry the vendor remark through; a split line keeps each
+                    // vendor's remark, one per line.
+                    'remarks' => $item->awards
+                        ->map(fn ($a) => $a->quoteItem?->remarks)
+                        ->filter(fn ($r) => $r !== null && $r !== '')
+                        ->unique()
+                        ->implode("\n") ?: null,
                     'sort' => $sort++,
                 ]);
             }
@@ -192,6 +201,54 @@ class OfferController extends Controller
         ]);
     }
 
+    /**
+     * Re-pull the line descriptions from the enquiry.
+     *
+     * An offer keeps its own copy of each description, taken when it was
+     * generated — that is what the customer quotation prints. Editing the
+     * enquiry afterwards therefore does not reach it. This pulls the current
+     * wording across on request, so it can never silently overwrite a
+     * description someone deliberately rewrote for the customer.
+     */
+    public function syncFromEnquiry(Offer $offer)
+    {
+        if ($offer->status !== 'draft') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This quotation has already been sent — reopen it as a draft first.',
+            ], 422);
+        }
+
+        $offer->load('items');
+
+        $source = RfqItem::whereIn('id', $offer->items->pluck('rfq_item_id')->filter())
+            ->get()
+            ->keyBy('id');
+
+        $changed = 0;
+
+        DB::transaction(function () use ($offer, $source, &$changed) {
+            foreach ($offer->items as $line) {
+                $item = $source->get($line->rfq_item_id);
+
+                if (! $item || $line->description === $item->description) {
+                    continue;
+                }
+
+                $line->update(['description' => $item->description, 'unit' => $item->unit ?: $line->unit]);
+                $changed++;
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => $changed
+                ? "{$changed} description(s) updated from the enquiry."
+                : 'Already up to date with the enquiry.',
+            'data' => $offer->fresh('items'),
+        ]);
+    }
+
     public function destroy(Offer $offer)
     {
         $offer->delete();
@@ -262,10 +319,29 @@ class OfferController extends Controller
     /** Base unit cost in the enquiry's base currency: the awarded price, else the lowest quote. */
     private function basePriceFor($item): float
     {
-        if ($item->award) {
-            $rate = (float) ($item->award->quoteItem?->quote?->exchange_rate ?? 1);
+        if ($item->awards->isNotEmpty()) {
+            // A line split across vendors is quoted to the customer as ONE line,
+            // so its cost is the quantity-weighted average of what we actually
+            // pay each vendor. With a single vendor this is just that vendor's
+            // converted price, exactly as before.
+            $qty = 0.0;
+            $spend = 0.0;
 
-            return round((float) $item->award->unit_cost * $rate, 4);
+            foreach ($item->awards as $award) {
+                $rate = (float) ($award->quoteItem?->quote?->exchange_rate ?? 1);
+                $q = (float) $award->qty_to_buy;
+                $qty += $q;
+                $spend += $q * (float) $award->unit_cost * $rate;
+            }
+
+            if ($qty > 0) {
+                return round($spend / $qty, 4);
+            }
+
+            // Awarded but with zero quantity — fall back to the first price.
+            $first = $item->awards->first();
+
+            return round((float) $first->unit_cost * (float) ($first->quoteItem?->quote?->exchange_rate ?? 1), 4);
         }
 
         $costs = $item->quoteItems

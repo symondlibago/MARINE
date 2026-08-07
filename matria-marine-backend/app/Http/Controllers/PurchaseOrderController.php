@@ -83,9 +83,14 @@ class PurchaseOrderController extends Controller
      */
     public function generate(Request $request, Rfq $rfq)
     {
-        $rfq->load(['items.award.quoteItem.quote', 'items.award.vendor']);
+        $rfq->load(['items.awards.quoteItem.quote', 'items.awards.vendor']);
 
-        $awardedItems = $rfq->items->filter(fn ($i) => $i->award);
+        // Flatten to one entry per (line, vendor). A line split between two
+        // vendors therefore appears on both vendors' purchase orders, each with
+        // only the quantity that vendor is supplying.
+        $awardedItems = $rfq->items->flatMap(
+            fn ($item) => $item->awards->map(fn ($award) => ['item' => $item, 'award' => $award])
+        )->values();
 
         if ($awardedItems->isEmpty()) {
             return response()->json(['success' => false, 'message' => 'No awarded items to turn into purchase orders.'], 422);
@@ -97,17 +102,17 @@ class PurchaseOrderController extends Controller
         $skipped = 0;
 
         DB::transaction(function () use ($request, $rfq, $awardedItems, $existingVendorIds, $created, &$skipped) {
-            foreach ($awardedItems->groupBy(fn ($i) => $i->award->vendor_id) as $vendorId => $items) {
+            foreach ($awardedItems->groupBy(fn ($row) => $row['award']->vendor_id) as $vendorId => $rows) {
                 if (in_array($vendorId, $existingVendorIds)) {
                     $skipped++;
 
                     continue;
                 }
 
-                $first = $items->first();
-                $quote = $first->award->quoteItem?->quote
+                $first = $rows->first();
+                $quote = $first['award']->quoteItem?->quote
                     ?? Quote::where('rfq_id', $rfq->id)->where('vendor_id', $vendorId)->first();
-                $vendor = $first->award->vendor;
+                $vendor = $first['award']->vendor;
 
                 $po = PurchaseOrder::create([
                     'rfq_id' => $rfq->id,
@@ -124,21 +129,23 @@ class PurchaseOrderController extends Controller
                 $po->save();
 
                 $subtotal = 0;
-                foreach ($items->values() as $sort => $item) {
-                    $qty = (float) $item->award->qty_to_buy;
-                    $cost = (float) $item->award->unit_cost;
+                foreach ($rows->values() as $sort => $row) {
+                    $item = $row['item'];
+                    $award = $row['award'];
+                    $qty = (float) $award->qty_to_buy;
+                    $cost = (float) $award->unit_cost;
                     $lineTotal = round($qty * $cost, 4);
                     $subtotal += $lineTotal;
 
                     $po->items()->create([
                         'rfq_item_id' => $item->id,
-                        'award_id' => $item->award->id,
+                        'award_id' => $award->id,
                         'description' => $item->description,
                         'unit' => $item->unit,
                         'qty' => $qty,
                         'unit_cost' => $cost,
                         'line_total' => $lineTotal,
-                        'remarks' => $item->award->quoteItem?->remarks, // carry the awarded vendor's remark
+                        'remarks' => $award->quoteItem?->remarks, // carry the awarded vendor's remark
                         'sort' => $sort,
                     ]);
                 }

@@ -290,12 +290,23 @@ export default function InvoicePage({ params }) {
             {lines.map((l, i) => (
               <div key={l.id ?? `new-${i}`}>
                 <div className="flex gap-2">
-                  <input
-                    className={cellInput + " flex-1 " + (l.is_heading ? "font-semibold text-[#28364b]" : "")}
-                    value={l.description}
-                    onChange={(e) => setLine(i, "description", e.target.value)}
-                    placeholder={l.is_heading ? "Section heading" : "Description (type anything)"}
-                  />
+                  {l.is_heading ? (
+                    <input
+                      className={cellInput + " flex-1 font-semibold text-[#28364b]"}
+                      value={l.description}
+                      onChange={(e) => setLine(i, "description", e.target.value)}
+                      placeholder="Section heading"
+                    />
+                  ) : (
+                    // textarea keeps multi-line specs intact on save
+                    <textarea
+                      rows={2}
+                      className={cellInput + " flex-1 resize-y leading-snug"}
+                      value={l.description}
+                      onChange={(e) => setLine(i, "description", e.target.value)}
+                      placeholder="Description (type anything)"
+                    />
+                  )}
                   {!l.is_heading && (
                     <>
                       <input type="number" step="0.001" placeholder="Qty" className={cellInput + " w-24 shrink-0 text-right"} value={l.qty} onChange={(e) => setLine(i, "qty", e.target.value)} />
@@ -432,7 +443,7 @@ export default function InvoicePage({ params }) {
                   <tbody>
                     {cmLines.map((l, i) => (
                       <tr key={l.customer_invoice_item_id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2 text-slate-700">{l.description}</td>
+                        <td className="px-3 py-2 text-slate-700 whitespace-pre-line">{l.description}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right text-slate-500">{l.invoiced_qty}{l.unit ? ` ${l.unit}` : ""} × {l.invoiced_price.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">
                           <input type="number" step="0.001" min="0" max={l.invoiced_qty} disabled={cmIssued} value={l.qty} onChange={(e) => setCmLines((ls) => ls.map((x, xi) => (xi === i ? { ...x, qty: e.target.value } : x)))} className={cellInput + " w-24 text-right disabled:bg-slate-50 disabled:text-slate-400"} />

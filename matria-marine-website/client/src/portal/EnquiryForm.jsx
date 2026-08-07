@@ -120,6 +120,17 @@ export default function EnquiryForm({ params }) {
       toast.error("Could not remove file.");
     }
   };
+  /** Mark a file to ride along with the enquiry email to vendors (or not). */
+  const toggleShare = async (attachmentId, share) => {
+    try {
+      const res = await rfqsAPI.shareFile(editId, attachmentId, share);
+      setExistingFiles(res.data.data || []);
+      toast.success(res.data.message);
+    } catch {
+      toast.error("Could not change the sharing for that file.");
+    }
+  };
+
   const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
   const save = useMutation({
@@ -236,7 +247,11 @@ export default function EnquiryForm({ params }) {
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items</h2>
-            <p className="text-xs text-slate-400">Type any description — suggestions are just shortcuts from past enquiries.</p>
+            <p className="text-xs text-slate-400">
+              Press <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">Enter</kbd> inside a
+              description for a second line — put the item name on line 1 and the full spec below it. Both lines print on the
+              enquiry, quotation, PO and invoice.
+            </p>
           </div>
           <button type="button" onClick={addItem} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50">
             <Plus className="h-4 w-4" /> Add line
@@ -245,13 +260,14 @@ export default function EnquiryForm({ params }) {
 
         <div className="space-y-2">
           {items.map((it, i) => (
-            <div key={it.id ?? `new-${i}`} className="flex gap-2">
+            <div key={it.id ?? `new-${i}`} className="flex items-start gap-2">
               <Combobox
                 className="flex-1"
+                multiline
                 value={it.description}
                 onChange={(v) => setItem(i, "description", v)}
                 suggestions={suggestions || []}
-                placeholder="Description (type anything)"
+                placeholder="Description — paste the full spec, extra lines are kept"
               />
               <input type="number" step="0.001" placeholder="Qty" className={cellInput + " w-24 shrink-0"} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} />
               <input placeholder="Unit" className={cellInput + " w-24 shrink-0"} value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} />
@@ -267,31 +283,49 @@ export default function EnquiryForm({ params }) {
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Customer files</h2>
-            <p className="text-xs text-slate-400">Attach the customer's original enquiry (PDF, Word or Excel, max 10 MB each).</p>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Enquiry files</h2>
+            <p className="text-xs text-slate-400">
+              Customer paperwork, drawings, spec sheets or photos (PDF, Word, Excel or image, max 10 MB each).
+            </p>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-            <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Internal — never shown to vendors or customers
+            <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Internal unless you tick “Send to vendors”
           </span>
         </div>
 
         <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 transition-colors hover:border-[#28364b] hover:text-[#28364b]">
           <Paperclip className="h-4 w-4" />
           Click to choose files…
-          <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={pickFiles} className="hidden" />
+          <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" onChange={pickFiles} className="hidden" />
         </label>
 
         {(existingFiles.length > 0 || pendingFiles.length > 0) && (
           <div className="mt-3 space-y-1.5">
             {existingFiles.map((f) => (
-              <div key={f.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
+              <div key={f.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 text-sm">
                 <span className="flex items-center gap-2 text-slate-700">
                   <Paperclip className="h-3.5 w-3.5 text-slate-400" /> {f.original_name}
                   <span className="text-xs text-slate-400">{fmtSize(f.size)}</span>
+                  {f.share_with_vendors && (
+                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">sent to vendors</span>
+                  )}
                 </span>
-                <button type="button" onClick={() => removeExisting(f.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove this file">
-                  <X className="h-4 w-4" />
-                </button>
+                <span className="flex items-center gap-2">
+                  {/* Opt-in per file: customer paperwork stays internal, only
+                      drawings and specs ride along with the enquiry email. */}
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-500" title="Attach this file to the enquiry email sent to vendors">
+                    <input
+                      type="checkbox"
+                      checked={!!f.share_with_vendors}
+                      onChange={(e) => toggleShare(f.id, e.target.checked)}
+                      className="accent-[#28364b]"
+                    />
+                    Send to vendors
+                  </label>
+                  <button type="button" onClick={() => removeExisting(f.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove this file">
+                    <X className="h-4 w-4" />
+                  </button>
+                </span>
               </div>
             ))}
             {pendingFiles.map((f, i) => (

@@ -193,7 +193,7 @@ export default function QuotePage({ token }) {
             <tbody>
               {data.items.map((it) => (
                 <tr key={it.rfq_item_id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-3 py-2 text-slate-700">{it.description}</td>
+                  <td className="px-3 py-2 text-slate-700 whitespace-pre-line">{it.description}</td>
                   <td className="px-3 py-2 text-right text-slate-500">{it.qty} {it.unit}</td>
                   <td className="px-3 py-2">
                     <input

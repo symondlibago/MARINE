@@ -72,7 +72,7 @@
             @forelse($rn->items as $idx => $line)
                 <tr>
                     <td>{{ $idx + 1 }}</td>
-                    <td>{{ $line->description }}</td>
+                    <td>{!! nl2br(e($line->description)) !!}</td>
                     <td>{{ $line->reason ?: '—' }}</td>
                     <td>{{ $line->unit ?: '—' }}</td>
                     <td class="num">{{ number_format($line->qty, 2) }}</td>

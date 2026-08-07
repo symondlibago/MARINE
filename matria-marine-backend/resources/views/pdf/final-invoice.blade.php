@@ -98,7 +98,7 @@
                 <tr>
                     <td>{{ $idx + 1 }}</td>
                     <td>
-                        {{ $line->description }}
+                        {!! nl2br(e($line->description)) !!}
                         @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
                     </td>
                     <td>{{ $line->unit ?: '—' }}</td>
@@ -128,7 +128,7 @@
             <tbody>
                 @foreach($po->returnNote->items as $r)
                     <tr>
-                        <td>{{ $r->description }}</td>
+                        <td>{!! nl2br(e($r->description)) !!}</td>
                         <td>{{ $r->reason ?: '—' }}</td>
                         <td class="num">{{ rtrim(rtrim(number_format((float) $r->qty, 3), '0'), '.') }}</td>
                         <td class="num">{{ number_format((float) $r->unit_cost, 2) }}</td>

@@ -163,6 +163,17 @@ export default function EnquiryDetail({ params }) {
     }
   };
 
+  /** Include/exclude one file from the enquiry email sent to vendors. */
+  const shareCustomerFile = async (attachmentId, share) => {
+    try {
+      const res = await rfqsAPI.shareFile(id, attachmentId, share);
+      toast.success(res.data.message);
+      qc.invalidateQueries({ queryKey: ["rfq", id] });
+    } catch {
+      toast.error("Could not change the sharing for that file.");
+    }
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
       <div className="flex items-start justify-between">
@@ -212,18 +223,41 @@ export default function EnquiryDetail({ params }) {
         {rfq.attachments?.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-              Customer files
+              Enquiry files
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 font-medium normal-case tracking-normal text-slate-400">
-                <ShieldCheck className="h-3 w-3 text-green-600" /> internal only
+                <ShieldCheck className="h-3 w-3 text-green-600" /> internal unless marked
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {rfq.attachments.map((f) => (
-                <button key={f.id} onClick={() => openCustomerFile(f.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50">
-                  <Paperclip className="h-3.5 w-3.5" /> {f.original_name}
-                </button>
+                <span
+                  key={f.id}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
+                    f.share_with_vendors ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"
+                  }`}
+                >
+                  <button onClick={() => openCustomerFile(f.id)} className="inline-flex items-center gap-1.5 hover:underline">
+                    <Paperclip className="h-3.5 w-3.5" /> {f.original_name}
+                  </button>
+                  {/* Which files go out with the enquiry email, changeable right
+                      here since this is the screen you send from. */}
+                  <label className="ml-1 flex cursor-pointer items-center gap-1 border-l border-current/20 pl-2 text-[10px] font-semibold uppercase tracking-wide">
+                    <input
+                      type="checkbox"
+                      checked={!!f.share_with_vendors}
+                      onChange={(e) => shareCustomerFile(f.id, e.target.checked)}
+                      className="accent-[#28364b]"
+                    />
+                    send
+                  </label>
+                </span>
               ))}
             </div>
+            {rfq.attachments.some((f) => f.share_with_vendors) && (
+              <p className="mt-1.5 text-[11px] text-blue-700">
+                {rfq.attachments.filter((f) => f.share_with_vendors).length} file(s) will be attached to the enquiry email sent to vendors.
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -242,7 +276,7 @@ export default function EnquiryDetail({ params }) {
             {(rfq.items || []).map((it, idx) => (
               <tr key={it.id} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-2.5 text-slate-400">{idx + 1}</td>
-                <td className="px-4 py-2.5 text-slate-700">{it.description}</td>
+                <td className="px-4 py-2.5 text-slate-700 whitespace-pre-line">{it.description}</td>
                 <td className="px-4 py-2.5 text-right text-slate-600">{Number(it.qty)}</td>
                 <td className="px-4 py-2.5 text-slate-600">{it.unit || "—"}</td>
               </tr>
@@ -356,7 +390,7 @@ export default function EnquiryDetail({ params }) {
                 {items.map((it) => (
                   <label key={it.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-slate-50">
                     <input type="checkbox" checked={selectedItems.includes(it.id)} onChange={() => toggleItem(it.id)} className="accent-[#28364b]" />
-                    <span className="flex-1 text-slate-700">{it.description}</span>
+                    <span className="flex-1 text-slate-700 whitespace-pre-line">{it.description}</span>
                     <span className="text-xs text-slate-400">{Number(it.qty)}{it.unit ? ` ${it.unit}` : ""}</span>
                   </label>
                 ))}
@@ -436,12 +470,24 @@ export default function EnquiryDetail({ params }) {
                       <tr key={row.rfq_item_id} className="border-b border-slate-100 align-top last:border-0">
                         <td className="px-4 py-2.5">
                           <div className="flex items-start gap-1.5">
-                            <span className="text-slate-700">{row.description}</span>
-                            {row.award?.vendor_id === quoteVendorId && (
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700" title="This line is awarded to this vendor">
-                                <CheckCircle2 className="h-3 w-3" /> awarded
-                              </span>
-                            )}
+                            <span className="text-slate-700 whitespace-pre-line">{row.description}</span>
+                            {/* A line can be split, so check every award on it
+                                and show the share this vendor won. */}
+                            {(() => {
+                              const mine = (row.awards ?? (row.award ? [row.award] : [])).find(
+                                (a) => a.vendor_id === quoteVendorId
+                              );
+                              if (!mine) return null;
+                              const split = (row.awards?.length ?? 0) > 1;
+                              return (
+                                <span
+                                  className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-green-50 px-1.5 py-0.5 text-[10px] font-semibold text-green-700"
+                                  title={split ? "Part of this line is awarded to this vendor" : "This line is awarded to this vendor"}
+                                >
+                                  <CheckCircle2 className="h-3 w-3" /> awarded{split ? ` ${Number(mine.qty_to_buy)}` : ""}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right text-slate-600">{Number(row.qty)}{row.unit ? ` ${row.unit}` : ""}</td>

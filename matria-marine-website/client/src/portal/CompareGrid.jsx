@@ -15,7 +15,9 @@ export default function CompareGrid({ params }) {
   const id = params.id;
   const confirm = useConfirm();
   const [, setLocation] = useLocation();
-  const [awards, setAwards] = useState({}); // rfq_item_id -> { vendor_id, quote_item_id, unit_cost, qty_to_buy }
+  // rfq_item_id -> { vendor_id -> { quote_item_id, unit_cost, qty_to_buy } }
+  // A line can be split across vendors, so each line holds one entry per vendor.
+  const [awards, setAwards] = useState({});
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["compare", id],
@@ -26,28 +28,36 @@ export default function CompareGrid({ params }) {
     if (!data) return;
     const init = {};
     data.rows.forEach((row) => {
-      if (row.award) {
-        const cell = row.cells.find((c) => c.vendor_id === row.award.vendor_id && c.quoted);
+      // `awards` is the split-aware list; fall back to the single `award` for
+      // an older payload.
+      const saved = row.awards?.length ? row.awards : row.award ? [row.award] : [];
+      saved.forEach((aw) => {
+        const cell = row.cells.find((c) => c.vendor_id === aw.vendor_id && c.quoted);
         init[row.rfq_item_id] = {
-          vendor_id: row.award.vendor_id,
-          quote_item_id: cell?.quote_item_id ?? null,
-          unit_cost: row.award.unit_cost,
-          qty_to_buy: row.award.qty_to_buy,
+          ...(init[row.rfq_item_id] || {}),
+          [aw.vendor_id]: {
+            quote_item_id: cell?.quote_item_id ?? null,
+            unit_cost: aw.unit_cost,
+            qty_to_buy: aw.qty_to_buy,
+          },
         };
-      }
+      });
     });
     setAwards(init);
   }, [data]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const arr = Object.entries(awards).map(([rfqItemId, v]) => ({
-        rfq_item_id: Number(rfqItemId),
-        vendor_id: v.vendor_id,
-        quote_item_id: v.quote_item_id,
-        qty_to_buy: Number(v.qty_to_buy) || 0,
-        unit_cost: v.unit_cost,
-      }));
+      // Flatten line -> vendor -> award into the flat list the API expects.
+      const arr = Object.entries(awards).flatMap(([rfqItemId, byVendor]) =>
+        Object.entries(byVendor).map(([vendorId, v]) => ({
+          rfq_item_id: Number(rfqItemId),
+          vendor_id: Number(vendorId),
+          quote_item_id: v.quote_item_id,
+          qty_to_buy: Number(v.qty_to_buy) || 0,
+          unit_cost: v.unit_cost,
+        }))
+      );
       return rfqsAPI.saveAwards(id, arr);
     },
     onSuccess: () => { toast.success("Awards saved."); refetch(); },
@@ -195,23 +205,46 @@ export default function CompareGrid({ params }) {
   const pickAward = (row, cell) => {
     if (locked || !cell?.quoted) return;
     setAwards((a) => {
-      // Clicking the cell that's already awarded un-awards the line (undo).
-      if (a[row.rfq_item_id]?.vendor_id === cell.vendor_id) {
-        const { [row.rfq_item_id]: _removed, ...rest } = a;
-        return rest;
+      const line = a[row.rfq_item_id] || {};
+
+      // Clicking an awarded cell again removes just that vendor's share.
+      if (line[cell.vendor_id]) {
+        const { [cell.vendor_id]: _removed, ...restVendors } = line;
+        if (Object.keys(restVendors).length === 0) {
+          const { [row.rfq_item_id]: _dropped, ...restLines } = a;
+          return restLines;
+        }
+        return { ...a, [row.rfq_item_id]: restVendors };
       }
+
+      // First vendor on the line takes the full quantity; any additional vendor
+      // starts at whatever is still unassigned, so a split adds up on its own.
+      const assigned = Object.values(line).reduce((n, v) => n + (Number(v.qty_to_buy) || 0), 0);
+      const remaining = Math.max(0, Number(row.qty) - assigned);
+
       return {
         ...a,
         [row.rfq_item_id]: {
-          vendor_id: cell.vendor_id,
-          quote_item_id: cell.quote_item_id,
-          unit_cost: cell.unit_cost,
-          qty_to_buy: a[row.rfq_item_id]?.qty_to_buy ?? row.qty,
+          ...line,
+          [cell.vendor_id]: {
+            quote_item_id: cell.quote_item_id,
+            unit_cost: cell.unit_cost,
+            qty_to_buy: Object.keys(line).length === 0 ? row.qty : remaining,
+          },
         },
       };
     });
   };
-  const setQty = (rfqItemId, qty) => setAwards((a) => ({ ...a, [rfqItemId]: { ...a[rfqItemId], qty_to_buy: qty } }));
+
+  const setQty = (rfqItemId, vendorId, qty) =>
+    setAwards((a) => ({
+      ...a,
+      [rfqItemId]: { ...a[rfqItemId], [vendorId]: { ...a[rfqItemId]?.[vendorId], qty_to_buy: qty } },
+    }));
+
+  /** Total quantity assigned across every vendor on a line. */
+  const assignedQty = (rfqItemId) =>
+    Object.values(awards[rfqItemId] || {}).reduce((n, v) => n + (Number(v.qty_to_buy) || 0), 0);
 
   // Staff key in / change a vendor's unit price for one line (esp. file-only vendors).
   // Staff key in a vendor's unit price + per-product remark together (esp. for
@@ -302,15 +335,17 @@ export default function CompareGrid({ params }) {
         <ArrowLeft className="h-4 w-4" /> Back to enquiry
       </Link>
 
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
-          <p className="text-sm text-slate-500">
-            Base {data.rfq.base_currency}. Type a vendor's unit price in its cell (e.g. for a vendor who only uploaded a file 📎); prices convert at today's live FX rate (edit or click ↻ to override). Add a remark under any priced cell — it prints below the item on the quotation, PO and invoices. Click a vendor's cell to award that line; click it again to un-award.
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500">
+            Base {data.rfq.base_currency} — type a price in any vendor's cell and it converts at today's FX rate.
+            Click a cell to award the line, click again to un-award. Award two vendors on the same line to split it,
+            then set each Qty. Remarks print under the item on the quotation, PO and invoices.
             {locked && " (Locked)"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           {!locked ? (
             <>
               <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-4 py-2 text-sm font-semibold text-[#28364b] hover:bg-slate-50">
@@ -412,7 +447,7 @@ export default function CompareGrid({ params }) {
                     )}
                   </th>
                 ))}
-                <th className="px-3 py-3 text-right font-semibold">Buy qty</th>
+                <th className="px-3 py-3 text-right font-semibold">Total buy</th>
               </tr>
             </thead>
             <tbody>
@@ -420,7 +455,7 @@ export default function CompareGrid({ params }) {
                 const sel = awards[row.rfq_item_id];
                 return (
                   <tr key={row.rfq_item_id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-3 py-3 text-slate-700">
+                    <td className="px-3 py-3 text-slate-700 whitespace-pre-line">
                       {row.description}
                       {row.unit && <span className="text-slate-400"> ({row.unit})</span>}
                     </td>
@@ -429,7 +464,8 @@ export default function CompareGrid({ params }) {
                       const cell = row.cells.find((c) => c.vendor_id === v.vendor_id);
                       const notAsked = cell && cell.asked === false;
                       const isLowest = cell?.quoted && cell.base_cost === row.lowest_base_cost;
-                      const isAwarded = sel?.vendor_id === v.vendor_id;
+                      const mine = sel?.[v.vendor_id];
+                      const isAwarded = !!mine;
                       if (notAsked) {
                         // This line wasn't sent to this vendor — nothing to price/award.
                         return (
@@ -442,7 +478,7 @@ export default function CompareGrid({ params }) {
                         <td
                           key={v.vendor_id}
                           onClick={() => pickAward(row, cell)}
-                          title={cell?.quoted && !locked ? (isAwarded ? "Awarded — click again to un-award" : "Click to award this line") : undefined}
+                          title={cell?.quoted && !locked ? (isAwarded ? "Awarded — click again to un-award" : "Click to award this line (award another vendor too to split it)") : undefined}
                           className={`px-3 py-3 align-top transition-colors ${cell?.quoted && !locked ? "cursor-pointer" : ""} ${
                             isAwarded ? "bg-[#28364b]" : isLowest ? "bg-green-50/60 hover:bg-green-100/70" : "hover:bg-slate-50"
                           }`}
@@ -457,19 +493,52 @@ export default function CompareGrid({ params }) {
                             locked={locked}
                             onSave={(payload) => saveCell(v, row.rfq_item_id, payload)}
                           />
+
+                          {/* Quantity taken from THIS vendor. Only shown once the
+                              cell is awarded, so a vendor who can supply just a
+                              part of the line can be given exactly that much. */}
+                          {isAwarded && (
+                            <div
+                              className="mt-2 flex items-center justify-between gap-2 border-t border-white/15 pt-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-white/60">
+                                Buy qty
+                              </span>
+                              <input
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={mine.qty_to_buy ?? ""}
+                                disabled={locked}
+                                onChange={(e) => setQty(row.rfq_item_id, v.vendor_id, e.target.value)}
+                                className="w-16 rounded border border-white/30 bg-white px-2 py-1 text-right text-sm font-semibold text-[#28364b] disabled:bg-slate-100"
+                              />
+                            </div>
+                          )}
                         </td>
                       );
                     })}
-                    <td className="px-3 py-3 text-right">
-                      <input
-                        type="number"
-                        step="0.001"
-                        value={sel?.qty_to_buy ?? row.qty}
-                        disabled={locked || !sel}
-                        onChange={(e) => setQty(row.rfq_item_id, e.target.value)}
-                        className="w-20 rounded border border-slate-200 px-2 py-1 text-right text-sm disabled:bg-slate-50"
-                      />
-                    </td>
+                    {(() => {
+                      const total = assignedQty(row.rfq_item_id);
+                      const vendorCount = Object.keys(sel || {}).length;
+                      const mismatch = vendorCount > 0 && Math.abs(total - Number(row.qty)) > 0.0001;
+                      return (
+                        <td className="px-3 py-3 text-right align-top">
+                          <div className={`text-sm font-semibold ${mismatch ? "text-amber-600" : "text-[#28364b]"}`}>
+                            {vendorCount ? Number(total.toFixed(3)) : "—"}
+                          </div>
+                          {vendorCount > 1 && (
+                            <div className="text-[10px] text-slate-400">{vendorCount} vendors</div>
+                          )}
+                          {mismatch && (
+                            <div className="text-[10px] text-amber-600" title={`Enquiry asks for ${row.qty}`}>
+                              asked {row.qty}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })()}
                   </tr>
                 );
               })}

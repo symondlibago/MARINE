@@ -63,7 +63,7 @@ function OfferCard({ data }) {
                 </tr>
               ) : (
                 <tr key={idx} className="border-b border-slate-100 last:border-0">
-                  <td className="px-3 py-2 text-slate-700">{it.description}{it.unit ? <span className="text-slate-400"> ({it.unit})</span> : null}</td>
+                  <td className="px-3 py-2 text-slate-700 whitespace-pre-line">{it.description}{it.unit ? <span className="text-slate-400"> ({it.unit})</span> : null}</td>
                   <td className="px-3 py-2 text-right text-slate-600">{Number(it.qty)}</td>
                   <td className="px-3 py-2 text-right text-slate-600">{money(it.unit_price)}</td>
                   <td className="px-3 py-2 text-right font-medium text-[#28364b]">{money(it.line_total)}</td>

@@ -307,7 +307,7 @@ class ReportsController extends Controller
         [$from, $to] = $this->range($request);
 
         $rfqs = Rfq::withCount(['rfqVendors', 'quotes'])
-            ->with(['items.award', 'purchaseOrders'])
+            ->with(['items.awards', 'purchaseOrders'])
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
             ->get();
@@ -316,7 +316,7 @@ class ReportsController extends Controller
             ['stage' => 'Enquiries', 'count' => $rfqs->count()],
             ['stage' => 'Sent to vendors', 'count' => $rfqs->filter(fn ($r) => $r->rfq_vendors_count > 0)->count()],
             ['stage' => 'Quoted', 'count' => $rfqs->filter(fn ($r) => $r->quotes_count > 0)->count()],
-            ['stage' => 'Awarded', 'count' => $rfqs->filter(fn ($r) => $r->items->contains(fn ($i) => $i->award))->count()],
+            ['stage' => 'Awarded', 'count' => $rfqs->filter(fn ($r) => $r->items->contains(fn ($i) => $i->awards->isNotEmpty()))->count()],
             ['stage' => 'Ordered', 'count' => $rfqs->filter(fn ($r) => $r->purchaseOrders->isNotEmpty())->count()],
         ];
 

@@ -87,10 +87,10 @@
         <tbody>
             @forelse($doc->items as $line)
                 @if($line->is_heading)
-                    <tr><td colspan="5" style="font-weight:bold; padding-top:7px;">{{ $line->description }}</td></tr>
+                    <tr><td colspan="5" style="font-weight:bold; padding-top:7px;">{!! nl2br(e($line->description)) !!}</td></tr>
                 @else
                     <tr>
-                        <td>{{ $line->description }}</td>
+                        <td>{!! nl2br(e($line->description)) !!}</td>
                         <td>{{ $line->unit }}</td>
                         <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
                         <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>

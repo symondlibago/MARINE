@@ -415,10 +415,11 @@ export default function PurchaseOrderDetail({ params }) {
             {items.map((it, idx) => (
               <tr key={it.id ?? `new-${idx}`} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-2">
+                  {/* textarea, not input: keeps multi-line specs intact on save */}
                   {isDraft ? (
-                    <input className={cellInput} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })} placeholder="Item description" />
+                    <textarea rows={2} className={cellInput + " resize-y leading-snug"} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })} placeholder="Item description" />
                   ) : (
-                    <span className="text-slate-700">{it.description}</span>
+                    <span className="text-slate-700 whitespace-pre-line">{it.description}</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -513,7 +514,7 @@ export default function PurchaseOrderDetail({ params }) {
                   const over = (Number(r.qty) || 0) > r.ordered;
                   return (
                     <tr key={r.po_item_id} className="border-b border-slate-100 last:border-0">
-                      <td className="px-4 py-2 text-slate-700">{r.description}{r.unit ? <span className="text-slate-400"> ({r.unit})</span> : null}</td>
+                      <td className="px-4 py-2 text-slate-700 whitespace-pre-line">{r.description}{r.unit ? <span className="text-slate-400"> ({r.unit})</span> : null}</td>
                       <td className="px-3 py-2 text-right text-slate-500">{r.ordered}</td>
                       <td className="px-3 py-2 text-right">
                         <input

@@ -181,7 +181,7 @@ export default function DeliveryOrderPage({ params }) {
           <tbody>
             {rows.map((r, idx) => (
               <tr key={r.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-2 text-slate-700">{r.description}</td>
+                <td className="px-4 py-2 text-slate-700 whitespace-pre-line">{r.description}</td>
                 <td className="px-2 py-2 text-slate-500">{r.code || "—"}</td>
                 <td className="px-2 py-2 text-slate-500">{r.unit || "—"}</td>
                 <td className="px-2 py-2"><input type="number" step="0.001" className={`${ci} text-right`} value={r.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} /></td>

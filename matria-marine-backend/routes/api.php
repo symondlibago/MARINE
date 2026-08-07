@@ -115,6 +115,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         // Customer files on an enquiry — staff-only (internal, never shown to vendors)
         Route::post('rfqs/{rfq}/attachments', [RfqController::class, 'uploadAttachments']);
         Route::get('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'rfqAttachmentUrl']);
+        Route::patch('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'toggleAttachmentShare']);
         Route::delete('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'deleteAttachment']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/enquiry-pdf', [RfqPdfController::class, 'enquiryVendor']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
@@ -152,6 +153,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('offers/{offer}/pdf', [OfferController::class, 'pdf']);
         Route::post('offers/{offer}/email', [OfferController::class, 'email']);
         Route::get('offers/{offer}', [OfferController::class, 'show']);
+        Route::post('offers/{offer}/sync-enquiry', [OfferController::class, 'syncFromEnquiry']);
         Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
         Route::delete('offers/{offer}', [OfferController::class, 'destroy']);
 
@@ -214,3 +216,11 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::match(['put', 'patch'], 'documents/{document}', [DocumentController::class, 'update']);
         Route::delete('documents/{document}', [DocumentController::class, 'destroy']);
     });
+
+// Vessel Provision Inventory — a separate operation with its own controllers,
+// models and screens. Kept in its own route file so the two never tangle.
+// Loaded only if present, so the procurement API still boots on an environment
+// where the inventory module has not been deployed yet.
+if (file_exists(__DIR__.'/inventory.php')) {
+    require __DIR__.'/inventory.php';
+}

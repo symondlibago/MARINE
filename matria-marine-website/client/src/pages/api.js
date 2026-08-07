@@ -153,6 +153,9 @@ export const rfqsAPI = {
     }),
   deleteFile: (id, attachmentId) => api.delete(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`)),
   fileUrl: (id, attachmentId) => api.get(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`)),
+  // Opt a single enquiry file in/out of the email sent to vendors.
+  shareFile: (id, attachmentId, share) =>
+    api.patch(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`), { share_with_vendors: share }),
   enquiryVendorPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/enquiry-pdf`), { responseType: 'blob' }),
   summaryPdf: (id) => api.get(apiUrl(`/portal/rfqs/${id}/quotation-pdf`), { responseType: 'blob' }),
@@ -207,6 +210,8 @@ export const offersAPI = {
   remove: (id) => api.delete(apiUrl(`/portal/offers/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/offers/${id}/pdf`), { responseType: 'blob' }),
   email: (id) => api.post(apiUrl(`/portal/offers/${id}/email`)),
+  // Re-pull line descriptions from the enquiry (the offer holds its own copy).
+  syncEnquiry: (id) => api.post(apiUrl(`/portal/offers/${id}/sync-enquiry`)),
 };
 
 // --- Delivery Orders: customer order + delivery address (from an accepted offer) ---

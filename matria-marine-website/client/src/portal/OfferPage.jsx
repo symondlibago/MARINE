@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt } from "lucide-react";
+import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { offersAPI, customersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -114,6 +114,17 @@ export default function OfferPage({ params }) {
   const grandTotal = custTotal + deliveryTotal + taxAmount;
 
   const custName = header.customer_id ? pickedCustomerName ?? offer?.customer_name ?? null : null;
+
+  // The offer stores its own copy of each description; this pulls across any
+  // edits made to the enquiry after the offer was generated.
+  const syncEnquiry = useMutation({
+    mutationFn: () => offersAPI.syncEnquiry(id),
+    onSuccess: (res) => {
+      toast.success(res.data.message);
+      refetch();
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not refresh from the enquiry."),
+  });
 
   const save = useMutation({
     mutationFn: () =>
@@ -304,7 +315,19 @@ export default function OfferPage({ params }) {
       <div className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items &amp; markup</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items &amp; markup</h2>
+              {/* The quotation prints these descriptions, not the enquiry's, so
+                  offer a way to pull across edits made after it was generated. */}
+              <button
+                onClick={() => syncEnquiry.mutate()}
+                disabled={syncEnquiry.isLoading}
+                title="Pull the latest line descriptions from the enquiry"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-[#28364b] disabled:opacity-50"
+              >
+                {syncEnquiry.isLoading ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />} Refresh from enquiry
+              </button>
+            </div>
             <p className="text-xs text-slate-400">Amber columns are internal — the customer only sees description, unit, qty, unit price, discount &amp; amount.</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
@@ -345,7 +368,9 @@ export default function OfferPage({ params }) {
             <tbody>
               {rows.map((r, idx) => (
                 <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">
-                  <td className="px-1.5 py-2 sticky left-0 z-10 bg-white"><input className={ci} value={r.description} onChange={(e) => setItem(idx, { description: e.target.value })} /></td>
+                  {/* textarea, not input: a single-line input silently strips the item's
+    second description line when the offer is saved. */}
+                  <td className="px-1.5 py-2 sticky left-0 z-10 bg-white"><textarea rows={2} className={ci + " resize-y leading-snug"} value={r.description} onChange={(e) => setItem(idx, { description: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.code} onChange={(e) => setItem(idx, { code: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-14`} value={r.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} /></td>

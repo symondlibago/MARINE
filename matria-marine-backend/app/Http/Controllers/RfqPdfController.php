@@ -26,18 +26,22 @@ class RfqPdfController extends Controller
     /** Per-vendor PDF: the line items awarded to this vendor on this enquiry. */
     public function vendorAward(Rfq $rfq, Vendor $vendor)
     {
-        $rfq->load(['items.award.quoteItem']);
+        $rfq->load(['items.awards.quoteItem']);
 
+        // Only this vendor's share of each line — on a split line that is the
+        // portion awarded to them, not the whole quantity.
         $lines = $rfq->items
-            ->filter(fn ($i) => $i->award && (int) $i->award->vendor_id === (int) $vendor->id)
-            ->map(fn ($i) => [
-                'description' => $i->description,
-                'unit' => $i->unit,
-                'qty' => (float) $i->award->qty_to_buy,
-                'unit_cost' => (float) $i->award->unit_cost,
-                'line_total' => (float) $i->award->qty_to_buy * (float) $i->award->unit_cost,
-                'remarks' => $i->award->quoteItem?->remarks,
-            ])->values();
+            ->flatMap(fn ($i) => $i->awards
+                ->filter(fn ($a) => (int) $a->vendor_id === (int) $vendor->id)
+                ->map(fn ($a) => [
+                    'description' => $i->description,
+                    'unit' => $i->unit,
+                    'qty' => (float) $a->qty_to_buy,
+                    'unit_cost' => (float) $a->unit_cost,
+                    'line_total' => (float) $a->qty_to_buy * (float) $a->unit_cost,
+                    'remarks' => $a->quoteItem?->remarks,
+                ]))
+            ->values();
 
         $quote = Quote::where('rfq_id', $rfq->id)->where('vendor_id', $vendor->id)->first();
         $currency = $quote?->currency ?? $rfq->base_currency;
@@ -57,26 +61,28 @@ class RfqPdfController extends Controller
     /** Overall quotation: every awarded line across all vendors, converted to the base currency. */
     public function summary(Rfq $rfq)
     {
-        $rfq->load(['items.award.vendor', 'items.award.quoteItem.quote']);
+        $rfq->load(['items.awards.vendor', 'items.awards.quoteItem.quote']);
 
+        // Internal summary — a split line is listed once per vendor so it is
+        // clear who supplies which portion.
         $lines = $rfq->items
-            ->filter(fn ($i) => $i->award)
-            ->map(function ($i) use ($rfq) {
-                $quote = $i->award->quoteItem?->quote;
+            ->flatMap(fn ($i) => $i->awards->map(function ($a) use ($i, $rfq) {
+                $quote = $a->quoteItem?->quote;
                 $rate = (float) ($quote?->exchange_rate ?? 1);
-                $unitBase = (float) $i->award->unit_cost * $rate;
+                $unitBase = (float) $a->unit_cost * $rate;
 
                 return [
                     'description' => $i->description,
                     'unit' => $i->unit,
-                    'vendor' => $i->award->vendor?->name ?? '—',
-                    'qty' => (float) $i->award->qty_to_buy,
-                    'unit_cost' => (float) $i->award->unit_cost,
+                    'vendor' => $a->vendor?->name ?? '—',
+                    'qty' => (float) $a->qty_to_buy,
+                    'unit_cost' => (float) $a->unit_cost,
                     'currency' => $quote?->currency ?? $rfq->base_currency,
-                    'line_total_base' => (float) $i->award->qty_to_buy * $unitBase,
-                    'remarks' => $i->award->quoteItem?->remarks,
+                    'line_total_base' => (float) $a->qty_to_buy * $unitBase,
+                    'remarks' => $a->quoteItem?->remarks,
                 ];
-            })->values();
+            }))
+            ->values();
 
         $pdf = Pdf::loadView('pdf.award-summary', [
             'rfq' => $rfq,

@@ -83,7 +83,7 @@
             @forelse($items as $idx => $item)
                 <tr>
                     <td>{{ $idx + 1 }}</td>
-                    <td>{{ $item->description }}</td>
+                    <td>{!! nl2br(e($item->description)) !!}</td>
                     <td class="num">{{ rtrim(rtrim(number_format((float) $item->qty, 2), '0'), '.') }}</td>
                     <td>{{ $item->unit ?: '—' }}</td>
                 </tr>

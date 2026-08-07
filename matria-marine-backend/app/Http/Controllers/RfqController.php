@@ -70,7 +70,7 @@ class RfqController extends Controller
 
     public function show(Rfq $rfq)
     {
-        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'rfqVendors.items:id', 'quotes.vendor', 'attachments:id,rfq_id,original_name,size,created_at']);
+        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'rfqVendors.items:id', 'quotes.vendor', 'attachments:id,rfq_id,original_name,size,share_with_vendors,created_at']);
 
         return response()->json(['success' => true, 'data' => $rfq]);
     }
@@ -298,7 +298,7 @@ class RfqController extends Controller
             }
         }
 
-        $rfq->load(['items.award', 'quotes.vendor', 'quotes.items', 'quotes.attachments', 'rfqVendors.items:id']);
+        $rfq->load(['items.awards', 'quotes.vendor', 'quotes.items', 'quotes.attachments', 'rfqVendors.items:id']);
 
         $quotes = $rfq->quotes;
         $itemCount = $rfq->items->count();
@@ -383,10 +383,17 @@ class RfqController extends Controller
                 'qty' => (float) $item->qty,
                 'unit' => $item->unit,
                 'lowest_base_cost' => $lowest,
-                'award' => $item->award ? [
-                    'vendor_id' => $item->award->vendor_id,
-                    'qty_to_buy' => (float) $item->award->qty_to_buy,
-                    'unit_cost' => (float) $item->award->unit_cost,
+                // A line can be split across vendors, so awards is a list.
+                // 'award' stays for the single-vendor case older clients read.
+                'awards' => $item->awards->map(fn ($a) => [
+                    'vendor_id' => (int) $a->vendor_id,
+                    'qty_to_buy' => (float) $a->qty_to_buy,
+                    'unit_cost' => (float) $a->unit_cost,
+                ])->values(),
+                'award' => $item->awards->first() ? [
+                    'vendor_id' => $item->awards->first()->vendor_id,
+                    'qty_to_buy' => (float) $item->awards->first()->qty_to_buy,
+                    'unit_cost' => (float) $item->awards->first()->unit_cost,
                 ] : null,
                 'cells' => $cells,
             ];
@@ -479,8 +486,14 @@ class RfqController extends Controller
     {
         $request->validate([
             'files' => ['required', 'array', 'max:10'],
-            'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx'],
+            // Images included: vendors often need a photo of the part.
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp'],
+            'share_with_vendors' => ['nullable', 'boolean'],
         ]);
+
+        // Off unless explicitly asked for — a file never goes to a vendor by
+        // accident just because it was attached to the enquiry.
+        $share = $request->boolean('share_with_vendors');
 
         foreach ($request->file('files') as $file) {
             $path = $file->store('rfqs/'.$rfq->id, 'r2');
@@ -490,6 +503,7 @@ class RfqController extends Controller
                 'original_name' => $file->getClientOriginalName(),
                 'mime_type' => $file->getClientMimeType(),
                 'size' => $file->getSize(),
+                'share_with_vendors' => $share,
                 'uploaded_by' => $request->user()?->id,
             ]);
         }
@@ -497,8 +511,31 @@ class RfqController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'File(s) uploaded.',
-            'data' => $rfq->attachments()->get(['id', 'rfq_id', 'original_name', 'size', 'created_at']),
+            'data' => $this->attachmentList($rfq),
         ]);
+    }
+
+    /** Turn sharing on/off for one enquiry file. */
+    public function toggleAttachmentShare(Request $request, Rfq $rfq, RfqAttachment $attachment)
+    {
+        abort_unless($attachment->rfq_id === $rfq->id, 404);
+
+        $data = $request->validate(['share_with_vendors' => ['required', 'boolean']]);
+
+        $attachment->update(['share_with_vendors' => $data['share_with_vendors']]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $data['share_with_vendors']
+                ? 'File will be sent to vendors with the enquiry.'
+                : 'File is internal again — vendors will not receive it.',
+            'data' => $this->attachmentList($rfq),
+        ]);
+    }
+
+    private function attachmentList(Rfq $rfq)
+    {
+        return $rfq->attachments()->get(['id', 'rfq_id', 'original_name', 'size', 'share_with_vendors', 'created_at']);
     }
 
     /** Short-lived signed URL so staff can open a customer file (R2 is private). */
@@ -553,26 +590,29 @@ class RfqController extends Controller
 
         DB::transaction(function () use ($data, $rfq, $itemIds) {
             $keptItemIds = [];
+            $keptAwardIds = [];
             foreach ($data['awards'] as $a) {
                 if (! $itemIds->contains($a['rfq_item_id'])) {
                     continue;
                 }
-                Award::updateOrCreate(
-                    ['rfq_item_id' => $a['rfq_item_id']],
+                // Keyed on line AND vendor: one line can now be split across
+                // several vendors, each with its own quantity.
+                $award = Award::updateOrCreate(
+                    ['rfq_item_id' => $a['rfq_item_id'], 'vendor_id' => $a['vendor_id']],
                     [
-                        'vendor_id' => $a['vendor_id'],
                         'quote_item_id' => $a['quote_item_id'] ?? null,
                         'qty_to_buy' => $a['qty_to_buy'],
                         'unit_cost' => $a['unit_cost'],
                     ]
                 );
                 $keptItemIds[] = (int) $a['rfq_item_id'];
+                $keptAwardIds[] = $award->id;
             }
 
-            // The grid posts the FULL award state, so any line missing from the
-            // payload was un-awarded on screen — remove its saved award too.
+            // The grid posts the FULL award state, so any line/vendor pairing
+            // missing from the payload was un-awarded on screen — drop it.
             Award::whereIn('rfq_item_id', $itemIds)
-                ->whereNotIn('rfq_item_id', $keptItemIds)
+                ->whereNotIn('id', $keptAwardIds)
                 ->delete();
 
             $offer = Offer::where('rfq_id', $rfq->id)->first();
@@ -601,11 +641,12 @@ class RfqController extends Controller
     /** Lock the enquiry: mark winning vendors selected, status -> closed. */
     public function finish(Rfq $rfq)
     {
-        $rfq->load('items.award');
+        $rfq->load('items.awards');
 
         DB::transaction(function () use ($rfq) {
+            // A split line has a winning vendor per portion — collect them all.
             $awardedVendorIds = $rfq->items
-                ->map(fn ($i) => $i->award?->vendor_id)
+                ->flatMap(fn ($i) => $i->awards->pluck('vendor_id'))
                 ->filter()
                 ->unique()
                 ->values();
