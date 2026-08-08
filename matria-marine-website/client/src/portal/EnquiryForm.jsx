@@ -40,8 +40,8 @@ const cellInput =
 
 // Line-item column widths. Staff drag the dividers to suit their screen and the
 // choice sticks, so a long-spec enquiry doesn't need re-adjusting every visit.
-const COL_DEFAULTS = { desc: 420, impa: 120, acct: 140, qty: 88, unit: 88, files: 168 };
-const COL_MIN = { desc: 180, impa: 80, acct: 90, qty: 64, unit: 64, files: 120 };
+const COL_DEFAULTS = { desc: 400, impa: 170, acct: 140, qty: 88, unit: 88, files: 168 };
+const COL_MIN = { desc: 180, impa: 110, acct: 90, qty: 64, unit: 64, files: 120 };
 const COL_STORE = "mm.enquiry.colw";
 
 function loadColumnWidths() {
@@ -400,7 +400,7 @@ export default function EnquiryForm({ params }) {
               <div className="w-8 shrink-0 text-center">#</div>
               {[
                 ["desc", "Description"],
-                ["impa", "Description 2 (IMPA no.)"],
+                ["impa", "IMPA/ISSA/Part No."],
                 ["acct", "Accounting code"],
                 ["qty", "Qty"],
                 ["unit", "Unit"],
@@ -429,7 +429,7 @@ export default function EnquiryForm({ params }) {
                       suggestions={suggestions || []}
                       placeholder="Description — paste the full spec, extra lines are kept"
                     />
-                    <input placeholder="IMPA / part no." className={cellInput + " shrink-0"} style={{ width: colW.impa }} value={it.impa_no} onChange={(e) => setItem(i, "impa_no", e.target.value)} />
+                    <input placeholder="e.g. 591234" className={cellInput + " shrink-0"} style={{ width: colW.impa }} value={it.impa_no} onChange={(e) => setItem(i, "impa_no", e.target.value)} />
                     <input placeholder="Acct code" className={cellInput + " shrink-0"} style={{ width: colW.acct }} value={it.accounting_code} onChange={(e) => setItem(i, "accounting_code", e.target.value)} title="Internal — never printed on vendor or customer documents" />
                     <input type="number" step="0.001" placeholder="Qty" className={cellInput + " shrink-0"} style={{ width: colW.qty }} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} />
                     <input placeholder="Unit" className={cellInput + " shrink-0"} style={{ width: colW.unit }} value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} />

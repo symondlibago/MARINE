@@ -70,7 +70,7 @@
         </div>
     @endif
 
-    {{-- Only show the IMPA column when this enquiry actually uses one, so
+    {{-- Only show the reference column when this enquiry actually uses one, so
          enquiries that don't stay as clean as they were before. --}}
     @php($showImpa = $items->contains(fn ($i) => filled($i->impa_no)))
 
@@ -79,7 +79,7 @@
             <tr>
                 <th style="width:32px;">#</th>
                 <th>Description</th>
-                @if($showImpa)<th style="width:90px;">IMPA no.</th>@endif
+                @if($showImpa)<th style="width:140px; white-space:nowrap;">IMPA/ISSA/Part No.</th>@endif
                 <th class="num" style="width:70px;">Qty</th>
                 <th style="width:90px;">Unit</th>
             </tr>

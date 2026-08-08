@@ -359,7 +359,7 @@ export default function EnquiryDetail({ params }) {
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-semibold">#</th>
               <th className="px-4 py-3 font-semibold">Description</th>
-              {anyImpa && <th className="px-4 py-3 font-semibold">IMPA no.</th>}
+              {anyImpa && <th className="whitespace-nowrap px-4 py-3 font-semibold">IMPA/ISSA/Part No.</th>}
               {anyCode && <th className="px-4 py-3 font-semibold">Accounting code</th>}
               <th className="px-4 py-3 text-right font-semibold">Qty</th>
               <th className="px-4 py-3 font-semibold">Unit</th>
@@ -514,7 +514,7 @@ export default function EnquiryDetail({ params }) {
                     <span className="flex-1">
                       <span className="block text-slate-700 whitespace-pre-line">{it.description}</span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                        {it.impa_no && <span className="text-[11px] text-slate-400">IMPA {it.impa_no}</span>}
+                        {it.impa_no && <span className="text-[11px] text-slate-400">IMPA/ISSA/Part No. {it.impa_no}</span>}
                         {it.attachments?.length > 0 && (
                           <span
                             className="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700"
