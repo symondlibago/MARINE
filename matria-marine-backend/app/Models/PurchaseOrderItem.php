@@ -11,6 +11,8 @@ class PurchaseOrderItem extends Model
         'rfq_item_id',
         'award_id',
         'description',
+        // Snapshot of the enquiry line's IMPA code — vendor-facing.
+        'impa_no',
         'unit',
         'qty',
         'unit_cost',

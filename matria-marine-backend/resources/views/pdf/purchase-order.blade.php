@@ -116,6 +116,7 @@
                     <td>{{ $idx + 1 }}</td>
                     <td>
                         {!! nl2br(e($line->description)) !!}
+                        @if($line->impa_no)<br><span class="sub">IMPA {{ $line->impa_no }}</span>@endif
                         @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
                     </td>
                     <td>{{ $line->unit ?: '—' }}</td>

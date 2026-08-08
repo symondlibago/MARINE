@@ -141,6 +141,7 @@ class PurchaseOrderController extends Controller
                         'rfq_item_id' => $item->id,
                         'award_id' => $award->id,
                         'description' => $item->description,
+                        'impa_no' => $item->impa_no,
                         'unit' => $item->unit,
                         'qty' => $qty,
                         'unit_cost' => $cost,

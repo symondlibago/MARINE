@@ -22,6 +22,7 @@ import ReturnNoteDetail from "./ReturnNoteDetail";
 import ManageStaff from "./ManageStaff";
 import SentLog from "./SentLog";
 import Reports from "./Reports";
+import Statements from "./Statements";
 import OperatingExpenses from "./OperatingExpenses";
 import Customers from "./Customers";
 import { ConfirmProvider } from "./ui/confirm";
@@ -95,6 +96,7 @@ export default function PortalApp() {
               <Route path="/return-notes" component={ReturnNotes} />
               <Route path="/return-notes/:id" component={ReturnNoteDetail} />
               <Route path="/reports" component={Reports} />
+              <Route path="/statements" component={Statements} />
               <Route path="/operating-expenses" component={OperatingExpenses} />
               <Route path="/customers" component={Customers} />
               <Route path="/staff" component={ManageStaff} />

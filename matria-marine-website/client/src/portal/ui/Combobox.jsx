@@ -11,6 +11,7 @@ export default function Combobox({
   suggestions = [],
   placeholder = "",
   className = "",
+  style,
   label = "Previously used",
   multiline = false,
 }) {
@@ -54,7 +55,7 @@ export default function Combobox({
   };
 
   return (
-    <div ref={ref} className={`relative ${className}`}>
+    <div ref={ref} style={style} className={`relative ${className}`}>
       {multiline ? (
         // Keeps every pasted line — an item's second description line used to be
         // silently dropped by the single-line input.

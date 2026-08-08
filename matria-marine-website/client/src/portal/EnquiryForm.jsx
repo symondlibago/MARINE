@@ -38,6 +38,68 @@ const input =
 const cellInput =
   "rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
 
+// Line-item column widths. Staff drag the dividers to suit their screen and the
+// choice sticks, so a long-spec enquiry doesn't need re-adjusting every visit.
+const COL_DEFAULTS = { desc: 420, impa: 120, acct: 140, qty: 88, unit: 88, files: 168 };
+const COL_MIN = { desc: 180, impa: 80, acct: 90, qty: 64, unit: 64, files: 120 };
+const COL_STORE = "mm.enquiry.colw";
+
+function loadColumnWidths() {
+  try {
+    return { ...COL_DEFAULTS, ...JSON.parse(localStorage.getItem(COL_STORE) || "{}") };
+  } catch {
+    return { ...COL_DEFAULTS };
+  }
+}
+
+/**
+ * Draggable divider on a column's right edge.
+ *
+ * The line is always visible — an invisible handle is impossible to discover —
+ * with a wide invisible hit zone around it so it is easy to grab.
+ */
+function ColResizer({ width, min, onResize }) {
+  const [dragging, setDragging] = useState(false);
+
+  const start = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    setDragging(true);
+    const move = (ev) => onResize(Math.max(min, width + ev.clientX - startX));
+    const up = () => {
+      setDragging(false);
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+
+  return (
+    <span
+      onMouseDown={start}
+      onDoubleClick={(e) => { e.stopPropagation(); onResize(null); }}
+      title="Drag to resize this column · double-click to reset"
+      className="group/grip absolute -right-1 top-0 z-10 flex h-full w-2.5 cursor-col-resize items-center justify-center"
+    >
+      <span
+        className={`h-3.5 w-0.5 rounded-full transition-all ${
+          dragging ? "h-5 bg-[#28364b]" : "bg-slate-300 group-hover/grip:h-5 group-hover/grip:bg-[#28364b]"
+        }`}
+      />
+    </span>
+  );
+}
+
+/** A fresh line. `files` are already saved on the server; `pending` are staged
+ *  in the browser and uploaded once the enquiry (and so the line) has an id. */
+const blankItem = () => ({ description: "", impa_no: "", accounting_code: "", qty: "", unit: "", files: [], pending: [] });
+
 export default function EnquiryForm({ params }) {
   const editId = params?.id;
   const [, setLocation] = useLocation();
@@ -53,7 +115,15 @@ export default function EnquiryForm({ params }) {
     base_currency: "USD",
     notes: "",
   });
-  const [items, setItems] = useState([{ description: "", qty: "", unit: "" }]);
+  const [items, setItems] = useState([blankItem()]);
+  const [colW, setColWState] = useState(loadColumnWidths);
+  const persistColumns = (next) => {
+    try { localStorage.setItem(COL_STORE, JSON.stringify(next)); } catch { /* private mode — widths just won't persist */ }
+    return next;
+  };
+  const setColumn = (key, px) => setColWState((c) => persistColumns({ ...c, [key]: px ?? COL_DEFAULTS[key] }));
+  const resetColumns = () => setColWState(persistColumns({ ...COL_DEFAULTS }));
+  const widthsChanged = Object.keys(COL_DEFAULTS).some((k) => colW[k] !== COL_DEFAULTS[k]);
   // Customer files (internal only): existing = already on the enquiry (edit mode),
   // pending = picked in this session, uploaded right after the enquiry is saved.
   const [existingFiles, setExistingFiles] = useState([]);
@@ -79,8 +149,17 @@ export default function EnquiryForm({ params }) {
       base_currency: existing.base_currency || "USD",
       notes: existing.notes || "",
     });
-    const loaded = (existing.items || []).map((it) => ({ id: it.id, description: it.description, qty: Number(it.qty), unit: it.unit || "" }));
-    setItems(loaded.length ? loaded : [{ description: "", qty: "", unit: "" }]);
+    const loaded = (existing.items || []).map((it) => ({
+      id: it.id,
+      description: it.description,
+      impa_no: it.impa_no || "",
+      accounting_code: it.accounting_code || "",
+      qty: Number(it.qty),
+      unit: it.unit || "",
+      files: it.attachments || [],
+      pending: [],
+    }));
+    setItems(loaded.length ? loaded : [blankItem()]);
     setExistingFiles(existing.attachments || []);
   }, [existing]);
 
@@ -96,14 +175,41 @@ export default function EnquiryForm({ params }) {
       requirements: h.requirements.includes(req) ? h.requirements.filter((r) => r !== req) : [...h.requirements, req],
     }));
   const setItem = (i, k, v) => setItems((its) => its.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
-  const addItem = () => setItems((its) => [...its, { description: "", qty: "", unit: "" }]);
+  const addItem = () => setItems((its) => [...its, blankItem()]);
   const removeItem = (i) => setItems((its) => its.filter((_, idx) => idx !== i));
+
+  // --- Files on a single line (the photo/drawing/spec for that part) ---------
+  // These are the ones vendors receive: they travel with their line, so only a
+  // vendor asked to quote that line ever gets them.
+  const pickLineFiles = (i, e) => {
+    const ok = [];
+    for (const f of Array.from(e.target.files || [])) {
+      if (!/\.(pdf|docx?|xlsx?|jpe?g|png|webp)$/i.test(f.name)) { toast.error(`${f.name}: only PDF, Word, Excel or image files.`); continue; }
+      if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name}: file is over 10 MB.`); continue; }
+      ok.push(f);
+    }
+    if (ok.length) setItems((its) => its.map((it, idx) => (idx === i ? { ...it, pending: [...it.pending, ...ok] } : it)));
+    e.target.value = "";
+  };
+  const removeLinePending = (i, k) =>
+    setItems((its) => its.map((it, idx) => (idx === i ? { ...it, pending: it.pending.filter((_, n) => n !== k) } : it)));
+  const removeLineFile = async (i, itemId, attachmentId) => {
+    try {
+      const res = await rfqsAPI.deleteItemFile(editId, itemId, attachmentId);
+      setItems((its) => its.map((it, idx) => (idx === i ? { ...it, files: res.data.data || [] } : it)));
+      toast.success("File removed from the line.");
+    } catch {
+      toast.error("Could not remove that file.");
+    }
+  };
 
   // Customer file picking — only PDF / Word / Excel, max 10 MB each (mirrors the backend rule).
   const pickFiles = (e) => {
     const ok = [];
     for (const f of Array.from(e.target.files || [])) {
-      if (!/\.(pdf|docx?|xlsx?)$/i.test(f.name)) { toast.error(`${f.name}: only PDF, Word or Excel files.`); continue; }
+      // Matches the backend rule — images were being rejected here despite the
+      // label and the server both allowing them.
+      if (!/\.(pdf|docx?|xlsx?|jpe?g|png|webp)$/i.test(f.name)) { toast.error(`${f.name}: only PDF, Word, Excel or image files.`); continue; }
       if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name}: file is over 10 MB.`); continue; }
       ok.push(f);
     }
@@ -120,18 +226,10 @@ export default function EnquiryForm({ params }) {
       toast.error("Could not remove file.");
     }
   };
-  /** Mark a file to ride along with the enquiry email to vendors (or not). */
-  const toggleShare = async (attachmentId, share) => {
-    try {
-      const res = await rfqsAPI.shareFile(editId, attachmentId, share);
-      setExistingFiles(res.data.data || []);
-      toast.success(res.data.message);
-    } catch {
-      toast.error("Could not change the sharing for that file.");
-    }
-  };
-
   const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+  // The lines actually sent, in the order the server will store them (sort = index).
+  const sentItems = () => items.filter((it) => it.description.trim());
 
   const save = useMutation({
     mutationFn: () => {
@@ -139,14 +237,20 @@ export default function EnquiryForm({ params }) {
         ...header,
         customer_id: header.customer_id ? Number(header.customer_id) : null,
         received_date: header.received_date || null,
-        items: items
-          .filter((it) => it.description.trim())
-          .map((it) => ({ id: it.id, description: it.description, qty: Number(it.qty) || 0, unit: it.unit })),
+        items: sentItems().map((it) => ({
+          id: it.id,
+          description: it.description,
+          impa_no: it.impa_no || null,
+          accounting_code: it.accounting_code || null,
+          qty: Number(it.qty) || 0,
+          unit: it.unit,
+        })),
       };
       return editId ? rfqsAPI.update(editId, payload) : rfqsAPI.create(payload);
     },
     onSuccess: async (res) => {
       const rid = editId || res.data.data.id;
+
       // Upload any customer files picked in this session, then navigate.
       if (pendingFiles.length) {
         const fd = new FormData();
@@ -157,6 +261,30 @@ export default function EnquiryForm({ params }) {
           toast.error("Enquiry saved, but the file upload failed — you can re-attach from Edit.");
         }
       }
+
+      // Line files can only be uploaded once each line has an id, so they wait
+      // until now. The server stores lines with sort = position, so line N of
+      // what we sent is the row with sort N in the response.
+      const sent = sentItems();
+      const saved = [...(res.data.data.items || [])].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
+      const withFiles = sent.map((it, i) => ({ it, id: it.id ?? saved[i]?.id })).filter((r) => r.it.pending.length && r.id);
+
+      if (withFiles.length) {
+        const failed = [];
+        for (const { it, id } of withFiles) {
+          const fd = new FormData();
+          it.pending.forEach((f) => fd.append("files[]", f));
+          try {
+            await rfqsAPI.uploadItemFiles(rid, id, fd);
+          } catch {
+            failed.push(it.description.split("\n")[0].slice(0, 30));
+          }
+        }
+        if (failed.length) {
+          toast.error(`Enquiry saved, but files failed to attach on: ${failed.join(", ")}. Re-attach from Edit.`);
+        }
+      }
+
       toast.success(editId ? "Enquiry updated." : "Enquiry created.");
       setLocation(`/enquiries/${rid}`);
     },
@@ -249,33 +377,103 @@ export default function EnquiryForm({ params }) {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items</h2>
             <p className="text-xs text-slate-400">
               Press <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">Enter</kbd> inside a
-              description for a second line — put the item name on line 1 and the full spec below it. Both lines print on the
-              enquiry, quotation, PO and invoice.
+              description for a second line. Drag the <span className="inline-block h-2.5 w-0.5 translate-y-0.5 rounded-full bg-slate-400" /> divider
+              in the header to widen any column. Files attached to a line go to the vendors asked to quote that line.
             </p>
           </div>
-          <button type="button" onClick={addItem} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50">
-            <Plus className="h-4 w-4" /> Add line
-          </button>
+          <div className="flex items-center gap-2">
+            {widthsChanged && (
+              <button type="button" onClick={resetColumns} className="text-xs font-medium text-slate-400 hover:text-[#28364b] hover:underline">
+                Reset widths
+              </button>
+            )}
+            <button type="button" onClick={addItem} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50">
+              <Plus className="h-4 w-4" /> Add line
+            </button>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          {items.map((it, i) => (
-            <div key={it.id ?? `new-${i}`} className="flex items-start gap-2">
-              <Combobox
-                className="flex-1"
-                multiline
-                value={it.description}
-                onChange={(v) => setItem(i, "description", v)}
-                suggestions={suggestions || []}
-                placeholder="Description — paste the full spec, extra lines are kept"
-              />
-              <input type="number" step="0.001" placeholder="Qty" className={cellInput + " w-24 shrink-0"} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} />
-              <input placeholder="Unit" className={cellInput + " w-24 shrink-0"} value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} />
-              <button type="button" onClick={() => removeItem(i)} disabled={items.length === 1} className="rounded-lg px-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30">
-                <Trash2 className="h-4 w-4" />
-              </button>
+        <div className="overflow-x-auto pb-1">
+          <div className="min-w-max">
+            {/* Header row doubles as the resize bar — each divider drags its column. */}
+            <div className="mb-1.5 flex items-stretch gap-2 rounded-lg bg-slate-50 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <div className="w-8 shrink-0 text-center">#</div>
+              {[
+                ["desc", "Description"],
+                ["impa", "Description 2 (IMPA no.)"],
+                ["acct", "Accounting code"],
+                ["qty", "Qty"],
+                ["unit", "Unit"],
+                ["files", "Files"],
+              ].map(([key, label]) => (
+                <div key={key} className="relative shrink-0 truncate pr-2" style={{ width: colW[key] }} title={label}>
+                  {label}
+                  <ColResizer width={colW[key]} min={COL_MIN[key]} onResize={(px) => setColumn(key, px)} />
+                </div>
+              ))}
+              <div className="w-8 shrink-0" />
             </div>
-          ))}
+
+            <div className="space-y-2">
+              {items.map((it, i) => (
+                <div key={it.id ?? `new-${i}`} className="rounded-lg px-1 py-1 hover:bg-slate-50/60">
+                  <div className="flex items-start gap-2">
+                    {/* Line number — positional only, nothing is stored for it. */}
+                    <div className="w-8 shrink-0 pt-2.5 text-center text-xs font-semibold text-slate-400">{i + 1}</div>
+                    <Combobox
+                      className="shrink-0"
+                      style={{ width: colW.desc }}
+                      multiline
+                      value={it.description}
+                      onChange={(v) => setItem(i, "description", v)}
+                      suggestions={suggestions || []}
+                      placeholder="Description — paste the full spec, extra lines are kept"
+                    />
+                    <input placeholder="IMPA / part no." className={cellInput + " shrink-0"} style={{ width: colW.impa }} value={it.impa_no} onChange={(e) => setItem(i, "impa_no", e.target.value)} />
+                    <input placeholder="Acct code" className={cellInput + " shrink-0"} style={{ width: colW.acct }} value={it.accounting_code} onChange={(e) => setItem(i, "accounting_code", e.target.value)} title="Internal — never printed on vendor or customer documents" />
+                    <input type="number" step="0.001" placeholder="Qty" className={cellInput + " shrink-0"} style={{ width: colW.qty }} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} />
+                    <input placeholder="Unit" className={cellInput + " shrink-0"} style={{ width: colW.unit }} value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} />
+                    <div className="shrink-0" style={{ width: colW.files }}>
+                      <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-2 py-2 text-xs text-slate-500 transition-colors hover:border-[#28364b] hover:text-[#28364b]">
+                        <Paperclip className="h-3.5 w-3.5" />
+                        {it.files.length + it.pending.length > 0 ? `${it.files.length + it.pending.length} file(s)` : "Attach"}
+                        <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => pickLineFiles(i, e)} />
+                      </label>
+                    </div>
+                    <button type="button" onClick={() => removeItem(i)} disabled={items.length === 1} className="w-8 shrink-0 rounded-lg py-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30" title="Remove line">
+                      <Trash2 className="mx-auto h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Attached files get their own full-width strip so long names stay readable. */}
+                  {(it.files.length > 0 || it.pending.length > 0) && (
+                    <div className="ml-10 mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {it.files.map((f) => (
+                        <span key={`s-${f.id}`} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">
+                          <Paperclip className="h-3 w-3 text-slate-400" /> {f.original_name}
+                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-400">{fmtSize(f.size)}</span>
+                          <button type="button" onClick={() => removeLineFile(i, it.id, f.id)} className="ml-0.5 text-slate-300 hover:text-red-600" title="Remove">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {it.pending.map((f, k) => (
+                        <span key={`p-${k}`} className="inline-flex items-center gap-1 rounded-md border border-dashed border-[#28364b]/30 bg-[#28364b]/5 px-2 py-1 text-[11px] text-[#28364b]">
+                          <Paperclip className="h-3 w-3" /> {f.name}
+                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-400">uploads on save</span>
+                          <button type="button" onClick={() => removeLinePending(i, k)} className="ml-0.5 text-slate-400 hover:text-red-600" title="Remove">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -285,11 +483,12 @@ export default function EnquiryForm({ params }) {
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Enquiry files</h2>
             <p className="text-xs text-slate-400">
-              Customer paperwork, drawings, spec sheets or photos (PDF, Word, Excel or image, max 10 MB each).
+              The customer's own paperwork for the whole enquiry (PDF, Word, Excel or image, max 10 MB each).
+              To send a drawing or photo to vendors, attach it to its line item instead.
             </p>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-            <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Internal unless you tick “Send to vendors”
+            <ShieldCheck className="h-3.5 w-3.5 text-green-600" /> Internal — never sent to vendors
           </span>
         </div>
 
@@ -306,26 +505,10 @@ export default function EnquiryForm({ params }) {
                 <span className="flex items-center gap-2 text-slate-700">
                   <Paperclip className="h-3.5 w-3.5 text-slate-400" /> {f.original_name}
                   <span className="text-xs text-slate-400">{fmtSize(f.size)}</span>
-                  {f.share_with_vendors && (
-                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">sent to vendors</span>
-                  )}
                 </span>
-                <span className="flex items-center gap-2">
-                  {/* Opt-in per file: customer paperwork stays internal, only
-                      drawings and specs ride along with the enquiry email. */}
-                  <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-500" title="Attach this file to the enquiry email sent to vendors">
-                    <input
-                      type="checkbox"
-                      checked={!!f.share_with_vendors}
-                      onChange={(e) => toggleShare(f.id, e.target.checked)}
-                      className="accent-[#28364b]"
-                    />
-                    Send to vendors
-                  </label>
-                  <button type="button" onClick={() => removeExisting(f.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove this file">
-                    <X className="h-4 w-4" />
-                  </button>
-                </span>
+                <button type="button" onClick={() => removeExisting(f.id)} className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Remove this file">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             ))}
             {pendingFiles.map((f, i) => (

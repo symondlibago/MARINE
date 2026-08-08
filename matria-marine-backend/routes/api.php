@@ -115,10 +115,17 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         // Customer files on an enquiry — staff-only (internal, never shown to vendors)
         Route::post('rfqs/{rfq}/attachments', [RfqController::class, 'uploadAttachments']);
         Route::get('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'rfqAttachmentUrl']);
-        Route::patch('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'toggleAttachmentShare']);
         Route::delete('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'deleteAttachment']);
+        // Files on a single line item — these DO reach vendors, travelling with
+        // whichever vendors are asked to quote that line.
+        Route::post('rfqs/{rfq}/items/{item}/attachments', [RfqController::class, 'uploadItemAttachments']);
+        Route::get('rfqs/{rfq}/items/{item}/attachments/{attachment}', [RfqController::class, 'itemAttachmentUrl']);
+        Route::delete('rfqs/{rfq}/items/{item}/attachments/{attachment}', [RfqController::class, 'deleteItemAttachment']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/enquiry-pdf', [RfqPdfController::class, 'enquiryVendor']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/quote-pdf', [RfqPdfController::class, 'vendorQuote']);
+        // Correct a vendor's submitted quotation (price, remark, currency, and
+        // the enquiry line itself) in one atomic edit.
+        Route::patch('rfqs/{rfq}/vendors/{vendor}/quote', [RfqController::class, 'updateVendorQuote']);
         Route::get('rfqs/{rfq}/vendors/{vendor}/award-pdf', [RfqPdfController::class, 'vendorAward']);
         Route::get('rfqs/{rfq}/quotation-pdf', [RfqPdfController::class, 'summary']);
 
@@ -200,6 +207,10 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('reports/vendors', [ReportsController::class, 'vendors']);
         Route::get('reports/pipeline', [ReportsController::class, 'pipeline']);
         Route::get('reports/accounting', [ReportsController::class, 'accounting']);
+        // Statement of account: search a customer or vendor, then open their ledger.
+        Route::get('reports/statements', [ReportsController::class, 'statementParties']);
+        Route::get('reports/statements/{type}/{id}', [ReportsController::class, 'statement'])
+            ->whereIn('type', ['customer', 'vendor'])->whereNumber('id');
 
         // Operating expenses (business overhead — feeds the accounting net profit)
         Route::get('operating-expenses', [OperatingExpenseController::class, 'index']);

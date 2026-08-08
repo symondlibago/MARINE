@@ -13,6 +13,10 @@ class RfqItem extends Model
         'rfq_id',
         'catalogue_item_id',
         'description',
+        // Vendor-facing catalogue reference (IMPA / ISSA / maker part no.).
+        'impa_no',
+        // Internal cost coding — never printed on a vendor or customer document.
+        'accounting_code',
         'qty',
         'unit',
         'sort',
@@ -30,6 +34,15 @@ class RfqItem extends Model
     public function quoteItems()
     {
         return $this->hasMany(QuoteItem::class);
+    }
+
+    /**
+     * Files for this specific line (photo, drawing, spec sheet). These travel
+     * with the line: any vendor asked to quote it receives them.
+     */
+    public function attachments()
+    {
+        return $this->hasMany(RfqItemAttachment::class);
     }
 
     /**

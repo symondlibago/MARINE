@@ -54,6 +54,7 @@ class RfqPdfController extends Controller
 
                 return [
                     'description' => $i->description,
+                    'impa_no' => $i->impa_no,
                     'unit' => $i->unit,
                     'qty' => (float) $i->qty,
                     'quoted' => $quoted,

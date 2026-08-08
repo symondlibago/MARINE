@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\VendorQuoteRequest;
 use App\Models\Award;
 use App\Models\Offer;
+use App\Models\PurchaseOrderItem;
 use App\Models\SentLog;
 use App\Support\DocNumber;
 use App\Models\Quote;
@@ -13,6 +14,7 @@ use App\Models\QuoteItem;
 use App\Models\Rfq;
 use App\Models\RfqAttachment;
 use App\Models\RfqItem;
+use App\Models\RfqItemAttachment;
 use App\Models\RfqVendor;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
@@ -70,7 +72,17 @@ class RfqController extends Controller
 
     public function show(Rfq $rfq)
     {
-        $rfq->load(['customer:id,name,address,email', 'items', 'creator:id,name', 'rfqVendors.vendor', 'rfqVendors.items:id', 'quotes.vendor', 'attachments:id,rfq_id,original_name,size,share_with_vendors,created_at']);
+        $rfq->load([
+            'customer:id,name,address,email',
+            'items',
+            'items.attachments:id,rfq_item_id,original_name,mime_type,size,created_at',
+            'creator:id,name',
+            'rfqVendors.vendor',
+            'rfqVendors.items:id',
+            'quotes.vendor',
+            // Enquiry-wide files are internal only — no share flag to report.
+            'attachments:id,rfq_id,original_name,size,created_at',
+        ]);
 
         return response()->json(['success' => true, 'data' => $rfq]);
     }
@@ -99,28 +111,24 @@ class RfqController extends Controller
                 $keepIds = [];
                 foreach (array_values($data['items']) as $i => $item) {
                     if (! empty($item['id']) && ($existing = $rfq->items()->whereKey($item['id'])->first())) {
-                        $existing->update([
-                            'description' => $item['description'],
-                            'qty' => $item['qty'],
-                            'unit' => $item['unit'] ?? null,
-                            'sort' => $i,
-                        ]);
+                        $existing->update($this->itemAttributes($item, $i));
                         $keepIds[] = $existing->id;
                     } else {
-                        $new = $rfq->items()->create([
-                            'description' => $item['description'],
-                            'qty' => $item['qty'],
-                            'unit' => $item['unit'] ?? null,
-                            'sort' => $i,
-                        ]);
+                        $new = $rfq->items()->create($this->itemAttributes($item, $i));
                         $keepIds[] = $new->id;
                     }
                 }
 
-                $rfq->items()->whereNotIn('id', $keepIds)->get()->each(function ($item) {
-                    if ($item->quoteItems()->count() === 0) {
-                        $item->delete();
+                $rfq->items()->whereNotIn('id', $keepIds)->with('attachments')->get()->each(function ($item) {
+                    if ($item->quoteItems()->count() > 0) {
+                        return;
                     }
+                    // The rows cascade, but the stored objects would not — clear
+                    // the bucket first so a removed line leaves nothing behind.
+                    foreach ($item->attachments as $file) {
+                        Storage::disk($file->disk)->delete($file->path);
+                    }
+                    $item->delete();
                 });
             }
         });
@@ -380,6 +388,8 @@ class RfqController extends Controller
             return [
                 'rfq_item_id' => $item->id,
                 'description' => $item->description,
+                'impa_no' => $item->impa_no,
+                'accounting_code' => $item->accounting_code,
                 'qty' => (float) $item->qty,
                 'unit' => $item->unit,
                 'lowest_base_cost' => $lowest,
@@ -478,6 +488,241 @@ class RfqController extends Controller
     }
 
     /**
+     * Correct a vendor's submitted quotation in one atomic edit.
+     *
+     * Vendors routinely phone in to say they mis-keyed something. Two different
+     * kinds of field live side by side on that screen, and the distinction
+     * matters:
+     *
+     *   - unit cost, remarks, currency, rate, quotation no. belong to THIS
+     *     vendor's quote and touch nobody else;
+     *   - description and qty belong to the enquiry line, so editing them
+     *     rewrites what every other vendor was asked for.
+     *
+     * Both are allowed (a vendor spotting a typo in our own enquiry is the
+     * usual reason for the call) but the enquiry-wide ones are reported back so
+     * the UI can say plainly what just happened.
+     *
+     * Everything runs in one transaction: a correction never half-applies.
+     */
+    public function updateVendorQuote(Request $request, Rfq $rfq, Vendor $vendor)
+    {
+        // A closed enquiry is a finished record — same rule as Compare & Award.
+        if ($rfq->status === 'closed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This enquiry is locked. Reopen it before editing a vendor quotation.',
+            ], 422);
+        }
+
+        $quote = Quote::where('rfq_id', $rfq->id)->where('vendor_id', $vendor->id)->first();
+
+        if (! $quote) {
+            return response()->json(['success' => false, 'message' => 'This vendor has no quotation on this enquiry.'], 404);
+        }
+
+        $data = $request->validate([
+            'currency' => ['sometimes', 'string', 'size:3'],
+            'exchange_rate' => ['sometimes', 'numeric', 'gt:0'],
+            'quotation_number' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'items' => ['sometimes', 'array'],
+            'items.*.rfq_item_id' => ['required', 'integer'],
+            'items.*.description' => ['sometimes', 'required', 'string', 'max:8000'],
+            'items.*.impa_no' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'items.*.accounting_code' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'items.*.qty' => ['sometimes', 'required', 'numeric', 'gt:0'],
+            'items.*.unit' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'items.*.unit_cost' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'items.*.remarks' => ['sometimes', 'nullable', 'string', 'max:1000'],
+        ]);
+
+        // Only lines that belong to this enquiry, keyed for O(1) lookup.
+        $lines = $rfq->items()->with('awards')->get()->keyBy('id');
+
+        // Reject the whole edit up-front if any line would end up with less
+        // quantity than is already awarded on it. Better to refuse than to
+        // leave awards pointing at a quantity that no longer exists.
+        foreach ($data['items'] ?? [] as $row) {
+            $line = $lines->get($row['rfq_item_id']);
+            if (! $line || ! array_key_exists('qty', $row)) {
+                continue;
+            }
+
+            $awarded = $line->awardedQty();
+            $newQty = (float) $row['qty'];
+
+            // One vendor taking the entire line is unambiguous — that award
+            // simply follows the new quantity. Anything else (a split, or a
+            // part-awarded line) needs a human to re-decide the shares.
+            $wholeLineToOneVendor = $line->awards->count() === 1
+                && abs($awarded - (float) $line->qty) < 0.0001;
+
+            if ($newQty < $awarded && ! $wholeLineToOneVendor) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Line "'.Str::limit($line->description, 40).'" already has '
+                        .rtrim(rtrim(number_format($awarded, 3, '.', ''), '0'), '.')
+                        .' awarded across vendors, so the quantity cannot drop to '
+                        .rtrim(rtrim(number_format($newQty, 3, '.', ''), '0'), '.')
+                        .'. Un-award it on Compare & Award first.',
+                ], 422);
+            }
+        }
+
+        $enquiryWide = [];      // changes other vendors will also see
+        $notes = [];            // things staff should know but that don't block
+        $pricesChanged = false; // drives the "an offer already exists" warning
+
+        DB::transaction(function () use ($data, $rfq, $quote, $vendor, $lines, &$enquiryWide, &$notes, &$pricesChanged) {
+            // --- Quote header (this vendor only) ---
+            $header = [];
+            if (array_key_exists('currency', $data)) {
+                $header['currency'] = strtoupper($data['currency']);
+            }
+            if (array_key_exists('exchange_rate', $data)) {
+                $header['exchange_rate'] = $data['exchange_rate'];
+            }
+            if (array_key_exists('quotation_number', $data)) {
+                $header['quotation_number'] = $data['quotation_number'] ?: null;
+            }
+            // Quoting in the enquiry's own currency can only ever be 1:1.
+            if (($header['currency'] ?? $quote->currency) === $rfq->base_currency) {
+                $header['exchange_rate'] = 1;
+            }
+            if ($header) {
+                $quote->update($header);
+            }
+
+            foreach ($data['items'] ?? [] as $row) {
+                $line = $lines->get($row['rfq_item_id']);
+                if (! $line) {
+                    continue; // not part of this enquiry — ignore rather than trust
+                }
+
+                // --- Enquiry line (every vendor sees this) ---
+                $lineChanges = [];
+                if (array_key_exists('description', $row) && $row['description'] !== $line->description) {
+                    $lineChanges['description'] = $row['description'];
+                }
+                if (array_key_exists('unit', $row) && ($row['unit'] ?: null) !== $line->unit) {
+                    $lineChanges['unit'] = $row['unit'] ?: null;
+                }
+                foreach (['impa_no', 'accounting_code'] as $ref) {
+                    if (array_key_exists($ref, $row) && ($row[$ref] ?: null) !== $line->$ref) {
+                        $lineChanges[$ref] = $row[$ref] ?: null;
+                    }
+                }
+                if (array_key_exists('qty', $row) && abs((float) $row['qty'] - (float) $line->qty) > 0.0001) {
+                    $lineChanges['qty'] = $row['qty'];
+                }
+
+                if ($lineChanges) {
+                    $oldQty = (float) $line->qty;
+                    $line->update($lineChanges);
+                    $enquiryWide[] = Str::limit($line->description, 40);
+
+                    // Sole vendor holding the whole line: keep their award in
+                    // step with the new quantity (guarded above).
+                    if (array_key_exists('qty', $lineChanges) && $line->awards->count() === 1) {
+                        $award = $line->awards->first();
+                        if (abs((float) $award->qty_to_buy - $oldQty) < 0.0001) {
+                            $award->update(['qty_to_buy' => $lineChanges['qty']]);
+                        }
+                    }
+                }
+
+                // --- This vendor's price and remark ---
+                if (! array_key_exists('unit_cost', $row) && ! array_key_exists('remarks', $row)) {
+                    continue;
+                }
+
+                $existing = QuoteItem::where('quote_id', $quote->id)
+                    ->where('rfq_item_id', $line->id)
+                    ->first();
+
+                $cost = $row['unit_cost'] ?? null;
+
+                // Clearing the price means "this vendor did not quote this line".
+                if (array_key_exists('unit_cost', $row) && ($cost === null || $cost === '')) {
+                    if ($existing) {
+                        $blocker = Award::where('rfq_item_id', $line->id)->where('vendor_id', $vendor->id)->exists();
+                        if ($blocker) {
+                            $notes[] = 'Kept the price on "'.Str::limit($line->description, 30)
+                                .'" — it is awarded to this vendor. Un-award it first to clear the price.';
+
+                            continue;
+                        }
+                        $existing->delete();
+                    }
+
+                    continue;
+                }
+
+                $attrs = [];
+                if (array_key_exists('unit_cost', $row)) {
+                    $attrs['unit_cost'] = $cost;
+                }
+                if (array_key_exists('remarks', $row)) {
+                    $attrs['remarks'] = $row['remarks'] ?: null;
+                }
+
+                $before = $existing ? (float) $existing->unit_cost : null;
+
+                $quoteItem = QuoteItem::updateOrCreate(
+                    ['quote_id' => $quote->id, 'rfq_item_id' => $line->id],
+                    $attrs
+                );
+
+                if (array_key_exists('unit_cost', $attrs) && ($before === null || abs($before - (float) $cost) > 0.00001)) {
+                    $pricesChanged = true;
+                }
+
+                // An award snapshots the price it was won at, and the customer
+                // offer prices off that snapshot — so a corrected price has to
+                // reach the award too, or the customer is quoted the old figure.
+                if (! array_key_exists('unit_cost', $attrs)) {
+                    continue;
+                }
+
+                $award = Award::where('rfq_item_id', $line->id)->where('vendor_id', $vendor->id)->first();
+                if (! $award || abs((float) $award->unit_cost - (float) $cost) < 0.00001) {
+                    continue;
+                }
+
+                // A purchase order is an issued document — never rewrite one
+                // from here; flag it so staff can amend the PO deliberately.
+                if (PurchaseOrderItem::where('award_id', $award->id)->exists()) {
+                    $notes[] = 'A purchase order already covers "'.Str::limit($line->description, 30)
+                        .'" at '.number_format((float) $award->unit_cost, 2).' — update that PO separately.';
+
+                    continue;
+                }
+
+                $award->update(['unit_cost' => $cost, 'quote_item_id' => $quoteItem->id]);
+                $notes[] = 'Award on "'.Str::limit($line->description, 30).'" repriced to '.number_format((float) $cost, 2).'.';
+            }
+        });
+
+        // A customer offer stores the price it was built with, so correcting a
+        // cost afterwards leaves the customer looking at the old figure.
+        if ($pricesChanged && Offer::where('rfq_id', $rfq->id)->exists()) {
+            $notes[] = 'A customer offer already exists for this enquiry and was priced before this change — re-check its markup.';
+        }
+
+        $message = 'Quotation updated.';
+        if ($enquiryWide) {
+            $message .= ' '.count($enquiryWide).' enquiry line(s) changed for every vendor: '
+                .implode('; ', array_unique($enquiryWide)).'.';
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'data' => ['notes' => $notes],
+        ]);
+    }
+
+    /**
      * Staff upload the customer's original enquiry files (PDF / Word / Excel).
      * Internal only — these are never exposed on the public vendor or customer
      * endpoints, so only logged-in staff can ever see them.
@@ -486,14 +731,8 @@ class RfqController extends Controller
     {
         $request->validate([
             'files' => ['required', 'array', 'max:10'],
-            // Images included: vendors often need a photo of the part.
             'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp'],
-            'share_with_vendors' => ['nullable', 'boolean'],
         ]);
-
-        // Off unless explicitly asked for — a file never goes to a vendor by
-        // accident just because it was attached to the enquiry.
-        $share = $request->boolean('share_with_vendors');
 
         foreach ($request->file('files') as $file) {
             $path = $file->store('rfqs/'.$rfq->id, 'r2');
@@ -503,7 +742,6 @@ class RfqController extends Controller
                 'original_name' => $file->getClientOriginalName(),
                 'mime_type' => $file->getClientMimeType(),
                 'size' => $file->getSize(),
-                'share_with_vendors' => $share,
                 'uploaded_by' => $request->user()?->id,
             ]);
         }
@@ -515,27 +753,70 @@ class RfqController extends Controller
         ]);
     }
 
-    /** Turn sharing on/off for one enquiry file. */
-    public function toggleAttachmentShare(Request $request, Rfq $rfq, RfqAttachment $attachment)
+    /**
+     * Attach files to ONE enquiry line — the photo, drawing or spec sheet for
+     * that part. These are vendor-facing: a vendor asked to quote the line
+     * receives them with the enquiry email, with no separate flag to set.
+     */
+    public function uploadItemAttachments(Request $request, Rfq $rfq, RfqItem $item)
     {
-        abort_unless($attachment->rfq_id === $rfq->id, 404);
+        abort_unless($item->rfq_id === $rfq->id, 404);
 
-        $data = $request->validate(['share_with_vendors' => ['required', 'boolean']]);
+        $request->validate([
+            'files' => ['required', 'array', 'max:10'],
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp'],
+        ]);
 
-        $attachment->update(['share_with_vendors' => $data['share_with_vendors']]);
+        foreach ($request->file('files') as $file) {
+            $path = $file->store('rfqs/'.$rfq->id.'/items/'.$item->id, 'r2');
+            $item->attachments()->create([
+                'disk' => 'r2',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'uploaded_by' => $request->user()?->id,
+            ]);
+        }
 
         return response()->json([
             'success' => true,
-            'message' => $data['share_with_vendors']
-                ? 'File will be sent to vendors with the enquiry.'
-                : 'File is internal again — vendors will not receive it.',
-            'data' => $this->attachmentList($rfq),
+            'message' => 'File(s) attached to the line.',
+            'data' => $this->itemAttachmentList($item),
         ]);
+    }
+
+    public function deleteItemAttachment(Rfq $rfq, RfqItem $item, RfqItemAttachment $attachment)
+    {
+        abort_unless($item->rfq_id === $rfq->id && $attachment->rfq_item_id === $item->id, 404);
+
+        Storage::disk($attachment->disk)->delete($attachment->path);
+        $attachment->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File removed from the line.',
+            'data' => $this->itemAttachmentList($item),
+        ]);
+    }
+
+    public function itemAttachmentUrl(Rfq $rfq, RfqItem $item, RfqItemAttachment $attachment)
+    {
+        abort_unless($item->rfq_id === $rfq->id && $attachment->rfq_item_id === $item->id, 404);
+
+        $url = Storage::disk($attachment->disk)->temporaryUrl($attachment->path, now()->addMinutes(10));
+
+        return response()->json(['success' => true, 'data' => ['url' => $url, 'name' => $attachment->original_name]]);
+    }
+
+    private function itemAttachmentList(RfqItem $item)
+    {
+        return $item->attachments()->get(['id', 'rfq_item_id', 'original_name', 'mime_type', 'size', 'created_at']);
     }
 
     private function attachmentList(Rfq $rfq)
     {
-        return $rfq->attachments()->get(['id', 'rfq_id', 'original_name', 'size', 'share_with_vendors', 'created_at']);
+        return $rfq->attachments()->get(['id', 'rfq_id', 'original_name', 'size', 'created_at']);
     }
 
     /** Short-lived signed URL so staff can open a customer file (R2 is private). */
@@ -694,9 +975,26 @@ class RfqController extends Controller
             'items.*.id' => ['nullable', 'integer'],
             // Long spec text is normal on marine line items; the column is TEXT.
             'items.*.description' => ['required', 'string', 'max:8000'],
+            // IMPA / ISSA / maker part no. — free text, shown to vendors.
+            'items.*.impa_no' => ['nullable', 'string', 'max:60'],
+            // Internal cost coding, mixed letters and digits. Never sent out.
+            'items.*.accounting_code' => ['nullable', 'string', 'max:100'],
             'items.*.qty' => ['required', 'numeric', 'min:0'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
         ]);
+    }
+
+    /** The line fields that come straight off the form, in one place. */
+    private function itemAttributes(array $item, int $sort): array
+    {
+        return [
+            'description' => $item['description'],
+            'impa_no' => $item['impa_no'] ?? null,
+            'accounting_code' => $item['accounting_code'] ?? null,
+            'qty' => $item['qty'],
+            'unit' => $item['unit'] ?? null,
+            'sort' => $sort,
+        ];
     }
 
     /**
@@ -725,12 +1023,7 @@ class RfqController extends Controller
     private function syncItems(Rfq $rfq, array $items): void
     {
         foreach (array_values($items) as $i => $item) {
-            $rfq->items()->create([
-                'description' => $item['description'],
-                'qty' => $item['qty'],
-                'unit' => $item['unit'] ?? null,
-                'sort' => $i,
-            ]);
+            $rfq->items()->create($this->itemAttributes($item, $i));
         }
     }
 }

@@ -5,11 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A file staff attached to an enquiry.
+ * A file staff attached to an enquiry as a whole — the customer's paperwork.
  *
- * Internal by default — the customer's own paperwork must never reach a
- * supplier. Ticking share_with_vendors marks a file (a drawing or spec sheet)
- * to ride along with the enquiry email to vendors.
+ * Strictly internal: nothing here is ever emailed to a supplier. Files meant
+ * for vendors belong on the line they describe, as RfqItemAttachment, and go
+ * out with whichever vendors are asked to quote that line.
+ *
+ * (The share_with_vendors column is left in place from the earlier design so
+ * no data is destroyed, but nothing reads it any more.)
  */
 class RfqAttachment extends Model
 {
@@ -20,20 +23,12 @@ class RfqAttachment extends Model
         'original_name',
         'mime_type',
         'size',
-        'share_with_vendors',
         'uploaded_by',
     ];
 
     protected $casts = [
         'size' => 'integer',
-        'share_with_vendors' => 'boolean',
     ];
-
-    /** Files that go out with the enquiry email. */
-    public function scopeSharedWithVendors($query)
-    {
-        return $query->where('share_with_vendors', true);
-    }
 
     public function rfq()
     {

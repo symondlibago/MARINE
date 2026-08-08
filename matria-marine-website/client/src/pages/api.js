@@ -153,14 +153,24 @@ export const rfqsAPI = {
     }),
   deleteFile: (id, attachmentId) => api.delete(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`)),
   fileUrl: (id, attachmentId) => api.get(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`)),
-  // Opt a single enquiry file in/out of the email sent to vendors.
-  shareFile: (id, attachmentId, share) =>
-    api.patch(apiUrl(`/portal/rfqs/${id}/attachments/${attachmentId}`), { share_with_vendors: share }),
+  // Files on ONE line item. These are the vendor-facing ones: they travel with
+  // their line, reaching only the vendors asked to quote it.
+  uploadItemFiles: (id, itemId, formData) =>
+    api.post(apiUrl(`/portal/rfqs/${id}/items/${itemId}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  itemFileUrl: (id, itemId, attachmentId) =>
+    api.get(apiUrl(`/portal/rfqs/${id}/items/${itemId}/attachments/${attachmentId}`)),
+  deleteItemFile: (id, itemId, attachmentId) =>
+    api.delete(apiUrl(`/portal/rfqs/${id}/items/${itemId}/attachments/${attachmentId}`)),
   enquiryVendorPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/enquiry-pdf`), { responseType: 'blob' }),
   // The quotation a vendor submitted, as a PDF (prices as they sent them).
   vendorQuotePdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/quote-pdf`), { responseType: 'blob' }),
+  // Correct a vendor's submitted quotation in one atomic save.
+  updateVendorQuote: (id, vendorId, payload) =>
+    api.patch(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/quote`), payload),
   summaryPdf: (id) => api.get(apiUrl(`/portal/rfqs/${id}/quotation-pdf`), { responseType: 'blob' }),
 };
 
@@ -259,6 +269,9 @@ export const reportsAPI = {
   vendors: (params = {}) => api.get(apiUrl('/portal/reports/vendors'), { params }),
   pipeline: (params = {}) => api.get(apiUrl('/portal/reports/pipeline'), { params }),
   accounting: (params = {}) => api.get(apiUrl('/portal/reports/accounting'), { params }),
+  // Statement of account: search parties, then pull one party's ledger.
+  statementParties: (params = {}) => api.get(apiUrl('/portal/reports/statements'), { params }),
+  statement: (type, id, params = {}) => api.get(apiUrl(`/portal/reports/statements/${type}/${id}`), { params }),
 };
 
 // --- Operating expenses (business overhead: rent, salaries, software…) ---

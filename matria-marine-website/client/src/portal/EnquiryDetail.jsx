@@ -2,12 +2,17 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Send, BarChart3, Trash2, Search, Pencil, UserPlus, ListChecks, FileDown, ChevronRight, Paperclip, CheckCircle2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Send, BarChart3, Trash2, Search, Pencil, UserPlus, ListChecks, FileDown, ChevronRight, Paperclip, CheckCircle2, ShieldCheck, Save } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, vendorsAPI } from "@/pages/api";
 import Modal from "./ui/Modal";
+import Select from "./ui/Select";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
+
+// Offered in the quotation editor; the enquiry's own currency and whatever the
+// vendor already quoted in are merged in, so nothing existing is ever lost.
+const QUOTE_CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
@@ -135,6 +140,25 @@ export default function EnquiryDetail({ params }) {
     }
   };
 
+  // Vendors phone in corrections after submitting ("wrong price, wrong qty,
+  // wrong remark"), so the quotation modal doubles as an edit form. One atomic
+  // save — the server refuses the whole edit rather than half-applying it.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const saveQuote = useMutation({
+    mutationFn: ({ vendorId, payload }) => rfqsAPI.updateVendorQuote(id, vendorId, payload),
+    onSuccess: (res) => {
+      toast.success(res.data.message || "Quotation updated.");
+      // Awards repriced, POs left alone, etc. — worth reading, so give them time.
+      (res.data.data?.notes || []).forEach((n) => toast(n, { duration: 8000 }));
+      setEditing(false);
+      setDraft(null);
+      qc.invalidateQueries({ queryKey: ["rfq-compare", id] });
+      qc.invalidateQueries({ queryKey: ["rfq", id] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not save the quotation."),
+  });
+
   const handleDelete = async () => {
     if (await confirm({ title: `Delete ${rfq.reference}?`, message: "This enquiry and its quotes will be removed.", confirmText: "Delete", tone: "danger" })) {
       del.mutate();
@@ -147,6 +171,9 @@ export default function EnquiryDetail({ params }) {
   const toggle = (vid) => setSelected((s) => (s.includes(vid) ? s.filter((x) => x !== vid) : [...s, vid]));
   const toggleItem = (iid) => setSelectedItems((s) => (s.includes(iid) ? s.filter((x) => x !== iid) : [...s, iid]));
   const items = rfq.items || [];
+  // Only surface the new reference columns on enquiries that actually use them.
+  const anyImpa = items.some((it) => it.impa_no);
+  const anyCode = items.some((it) => it.accounting_code);
   // Guard shared by both send buttons: need vendors AND at least one item ticked.
   const guardSend = () => {
     if (selected.length === 0) { toast.error("Select at least one vendor."); return false; }
@@ -163,8 +190,72 @@ export default function EnquiryDetail({ params }) {
   const qLines = (cmp?.rows || [])
     .map((row) => ({ row, cell: row.cells.find((c) => c.vendor_id === quoteVendorId) }))
     .filter(({ cell }) => cell && cell.asked !== false); // hide lines this vendor was never sent
-  const qTotal = qLines.reduce((s, { row, cell }) => s + (cell.quoted ? cell.unit_cost * row.qty : 0), 0);
   const fmt = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // While editing, every figure on screen comes from the draft so the running
+  // total reacts as staff type; otherwise it comes straight from the server.
+  // Both flags always move together — pair them so a half-set state can't render.
+  const isEditing = editing && !!draft;
+  const dItem = (rfqItemId) => draft?.items?.[rfqItemId];
+  const lineQty = ({ row }) => (isEditing ? Number(dItem(row.rfq_item_id)?.qty) || 0 : Number(row.qty));
+  const lineCost = ({ row, cell }) => {
+    if (!isEditing) return cell.quoted ? Number(cell.unit_cost) : null;
+    const raw = dItem(row.rfq_item_id)?.unit_cost;
+    return raw === "" || raw == null ? null : Number(raw);
+  };
+  const qTotal = qLines.reduce((s, l) => s + (lineCost(l) ?? 0) * lineQty(l), 0);
+
+  const quoteLocked = rfq.status === "closed";
+  const editCurrency = isEditing ? draft.currency : qv?.currency;
+
+  const startEdit = () => {
+    setDraft({
+      quotation_number: qv.quotation_number || "",
+      currency: qv.currency || rfq.base_currency,
+      exchange_rate: String(qv.exchange_rate ?? 1),
+      items: Object.fromEntries(
+        qLines.map(({ row, cell }) => [
+          row.rfq_item_id,
+          {
+            description: row.description || "",
+            qty: String(row.qty ?? ""),
+            // Blank means "this vendor did not quote this line".
+            unit_cost: cell.quoted ? String(cell.unit_cost) : "",
+            remarks: cell.remarks || "",
+          },
+        ])
+      ),
+    });
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft(null);
+  };
+
+  const setField = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
+  const setLine = (rfqItemId, key, value) =>
+    setDraft((d) => ({ ...d, items: { ...d.items, [rfqItemId]: { ...d.items[rfqItemId], [key]: value } } }));
+
+  const submitEdit = () => {
+    const num = (v) => (v === "" || v == null ? null : Number(v));
+    saveQuote.mutate({
+      vendorId: quoteVendorId,
+      payload: {
+        quotation_number: draft.quotation_number || null,
+        currency: draft.currency,
+        exchange_rate: Number(draft.exchange_rate) || 1,
+        items: Object.entries(draft.items).map(([rfqItemId, v]) => ({
+          rfq_item_id: Number(rfqItemId),
+          description: v.description,
+          qty: num(v.qty),
+          unit_cost: num(v.unit_cost),
+          remarks: v.remarks || null,
+        })),
+      },
+    });
+  };
   const openAttachment = async (attachmentId) => {
     try {
       const res = await rfqsAPI.attachmentUrl(qv.quote_id, attachmentId);
@@ -183,14 +274,13 @@ export default function EnquiryDetail({ params }) {
     }
   };
 
-  /** Include/exclude one file from the enquiry email sent to vendors. */
-  const shareCustomerFile = async (attachmentId, share) => {
+  /** A file attached to one line — these are the ones vendors receive. */
+  const openLineFile = async (itemId, attachmentId) => {
     try {
-      const res = await rfqsAPI.shareFile(id, attachmentId, share);
-      toast.success(res.data.message);
-      qc.invalidateQueries({ queryKey: ["rfq", id] });
+      const res = await rfqsAPI.itemFileUrl(id, itemId, attachmentId);
+      window.open(res.data.data.url, "_blank", "noopener");
     } catch {
-      toast.error("Could not change the sharing for that file.");
+      toast.error("Could not open file.");
     }
   };
 
@@ -245,39 +335,20 @@ export default function EnquiryDetail({ params }) {
             <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
               Enquiry files
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 font-medium normal-case tracking-normal text-slate-400">
-                <ShieldCheck className="h-3 w-3 text-green-600" /> internal unless marked
+                <ShieldCheck className="h-3 w-3 text-green-600" /> internal — never sent to vendors
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {rfq.attachments.map((f) => (
-                <span
+                <button
                   key={f.id}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
-                    f.share_with_vendors ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"
-                  }`}
+                  onClick={() => openCustomerFile(f.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
                 >
-                  <button onClick={() => openCustomerFile(f.id)} className="inline-flex items-center gap-1.5 hover:underline">
-                    <Paperclip className="h-3.5 w-3.5" /> {f.original_name}
-                  </button>
-                  {/* Which files go out with the enquiry email, changeable right
-                      here since this is the screen you send from. */}
-                  <label className="ml-1 flex cursor-pointer items-center gap-1 border-l border-current/20 pl-2 text-[10px] font-semibold uppercase tracking-wide">
-                    <input
-                      type="checkbox"
-                      checked={!!f.share_with_vendors}
-                      onChange={(e) => shareCustomerFile(f.id, e.target.checked)}
-                      className="accent-[#28364b]"
-                    />
-                    send
-                  </label>
-                </span>
+                  <Paperclip className="h-3.5 w-3.5" /> {f.original_name}
+                </button>
               ))}
             </div>
-            {rfq.attachments.some((f) => f.share_with_vendors) && (
-              <p className="mt-1.5 text-[11px] text-blue-700">
-                {rfq.attachments.filter((f) => f.share_with_vendors).length} file(s) will be attached to the enquiry email sent to vendors.
-              </p>
-            )}
           </div>
         )}
       </div>
@@ -288,15 +359,40 @@ export default function EnquiryDetail({ params }) {
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-semibold">#</th>
               <th className="px-4 py-3 font-semibold">Description</th>
+              {anyImpa && <th className="px-4 py-3 font-semibold">IMPA no.</th>}
+              {anyCode && <th className="px-4 py-3 font-semibold">Accounting code</th>}
               <th className="px-4 py-3 text-right font-semibold">Qty</th>
               <th className="px-4 py-3 font-semibold">Unit</th>
             </tr>
           </thead>
           <tbody>
             {(rfq.items || []).map((it, idx) => (
-              <tr key={it.id} className="border-b border-slate-100 last:border-0">
+              <tr key={it.id} className="border-b border-slate-100 align-top last:border-0">
                 <td className="px-4 py-2.5 text-slate-400">{idx + 1}</td>
-                <td className="px-4 py-2.5 text-slate-700 whitespace-pre-line">{it.description}</td>
+                <td className="px-4 py-2.5 text-slate-700">
+                  <div className="whitespace-pre-line">{it.description}</div>
+                  {/* Line files ride along to whichever vendors get this line. */}
+                  {it.attachments?.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {it.attachments.map((f) => (
+                        <button
+                          key={f.id}
+                          onClick={() => openLineFile(it.id, f.id)}
+                          title="Sent to the vendors asked to quote this line"
+                          className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100"
+                        >
+                          <Paperclip className="h-3 w-3" /> {f.original_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                {anyImpa && <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{it.impa_no || "—"}</td>}
+                {anyCode && (
+                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-500" title="Internal — not printed on vendor or customer documents">
+                    {it.accounting_code || "—"}
+                  </td>
+                )}
                 <td className="px-4 py-2.5 text-right text-slate-600">{Number(it.qty)}</td>
                 <td className="px-4 py-2.5 text-slate-600">{it.unit || "—"}</td>
               </tr>
@@ -352,7 +448,9 @@ export default function EnquiryDetail({ params }) {
         )}
       </div>
 
-      <Modal open={sendOpen} onClose={() => setSendOpen(false)} title="Send to vendors">
+      {/* Wide: long vendor names and multi-line item descriptions were wrapping
+          badly in the default modal width. max-w-5xl is double max-w-lg. */}
+      <Modal open={sendOpen} onClose={() => setSendOpen(false)} title="Send to vendors" maxWidth="max-w-5xl">
         <div className="space-y-4 p-6">
           <p className="text-xs text-slate-500">Pick vendors, then <b>Send to vendors</b> to email them a quote link — or <b>Send externally</b> to add them without emailing (for vendors you contacted elsewhere; you'll key their prices in Compare &amp; Award).</p>
           <div>
@@ -405,13 +503,29 @@ export default function EnquiryDetail({ params }) {
                   <button type="button" onClick={() => setSelectedItems([])} className="text-slate-500 hover:underline">None</button>
                 </div>
               </div>
-              <p className="mb-2 text-[11px] text-slate-400">Untick anything these vendors don't supply — they'll only be asked to quote the ticked items. For vendors that carry different items (e.g. food vs. materials), send them in a separate batch.</p>
-              <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+              <p className="mb-2 text-[11px] text-slate-400">
+                Untick anything these vendors don't supply — they'll only be asked to quote the ticked items. For vendors that carry
+                different items (e.g. food vs. materials), send them in a separate batch. A ticked line's files are attached to the email.
+              </p>
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
                 {items.map((it) => (
-                  <label key={it.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-slate-50">
-                    <input type="checkbox" checked={selectedItems.includes(it.id)} onChange={() => toggleItem(it.id)} className="accent-[#28364b]" />
-                    <span className="flex-1 text-slate-700 whitespace-pre-line">{it.description}</span>
-                    <span className="text-xs text-slate-400">{Number(it.qty)}{it.unit ? ` ${it.unit}` : ""}</span>
+                  <label key={it.id} className="flex cursor-pointer items-start gap-2 rounded px-2 py-1 text-sm transition-colors hover:bg-slate-50">
+                    <input type="checkbox" checked={selectedItems.includes(it.id)} onChange={() => toggleItem(it.id)} className="mt-1 accent-[#28364b]" />
+                    <span className="flex-1">
+                      <span className="block text-slate-700 whitespace-pre-line">{it.description}</span>
+                      <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        {it.impa_no && <span className="text-[11px] text-slate-400">IMPA {it.impa_no}</span>}
+                        {it.attachments?.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700"
+                            title={it.attachments.map((f) => f.original_name).join(", ")}
+                          >
+                            <Paperclip className="h-2.5 w-2.5" /> {it.attachments.length} file{it.attachments.length === 1 ? "" : "s"} attached
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                    <span className="whitespace-nowrap pt-0.5 text-xs text-slate-400">{Number(it.qty)}{it.unit ? ` ${it.unit}` : ""}</span>
                   </label>
                 ))}
               </div>
@@ -446,8 +560,13 @@ export default function EnquiryDetail({ params }) {
         </div>
       </Modal>
 
-      {/* Vendor quotation viewer — read-only view of what this vendor quoted */}
-      <Modal open={quoteVendorId != null} onClose={() => setQuoteVendorId(null)} title={quoteRv?.vendor?.name || qv?.vendor_name || "Vendor quotation"} maxWidth="max-w-3xl">
+      {/* Vendor quotation — view, and correct in place when a vendor calls in a fix */}
+      <Modal
+        open={quoteVendorId != null}
+        onClose={() => { cancelEdit(); setQuoteVendorId(null); }}
+        title={quoteRv?.vendor?.name || qv?.vendor_name || "Vendor quotation"}
+        maxWidth={isEditing ? "max-w-5xl" : "max-w-3xl"}
+      >
         <div className="p-6">
           {cmpLoading || !cmp ? (
             <div className="flex justify-center py-14"><Spinner className="h-6 w-6" /></div>
@@ -455,23 +574,69 @@ export default function EnquiryDetail({ params }) {
             <p className="py-10 text-center text-sm text-slate-400">This vendor has no quotation yet.</p>
           ) : (
             <div className="space-y-5">
-              {/* Meta strip */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                  Quotation no. <span className="font-semibold text-[#28364b]">{qv.quotation_number || "—"}</span>
-                </span>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                  Currency <span className="font-semibold text-[#28364b]">{qv.currency}</span>
-                </span>
-                {Number(qv.exchange_rate) !== 1 && (
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600" title={`Converted to ${rfq.base_currency} at this rate`}>
-                    Rate <span className="font-semibold text-[#28364b]">× {qv.exchange_rate}</span>
+              {/* Meta strip — becomes editable alongside the lines */}
+              {isEditing ? (
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="text-xs font-semibold text-slate-500">
+                    Quotation no.
+                    <input
+                      value={draft.quotation_number}
+                      onChange={(e) => setField("quotation_number", e.target.value)}
+                      placeholder="—"
+                      className="mt-1 block w-40 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-normal text-[#28364b] focus:border-[#28364b] focus:outline-none"
+                    />
+                  </label>
+                  <div className="text-xs font-semibold text-slate-500">
+                    Currency
+                    <Select
+                      value={draft.currency}
+                      onChange={(v) => setField("currency", v)}
+                      options={[...new Set([rfq.base_currency, qv.currency, ...QUOTE_CURRENCIES])].filter(Boolean)}
+                      className="mt-1 w-28 font-normal"
+                    />
+                  </div>
+                  {/* Only a foreign-currency quote needs a rate; same currency is always 1:1. */}
+                  {draft.currency !== rfq.base_currency && (
+                    <label className="text-xs font-semibold text-slate-500">
+                      Rate to {rfq.base_currency}
+                      <input
+                        type="number"
+                        step="0.000001"
+                        min="0"
+                        value={draft.exchange_rate}
+                        onChange={(e) => setField("exchange_rate", e.target.value)}
+                        className="mt-1 block w-32 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-normal text-[#28364b] focus:border-[#28364b] focus:outline-none"
+                      />
+                    </label>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                    Quotation no. <span className="font-semibold text-[#28364b]">{qv.quotation_number || "—"}</span>
                   </span>
-                )}
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${qv.complete ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                  {qv.complete ? "Complete" : `Incomplete ${qv.quoted_count}/${qv.item_count}`}
-                </span>
-              </div>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                    Currency <span className="font-semibold text-[#28364b]">{qv.currency}</span>
+                  </span>
+                  {Number(qv.exchange_rate) !== 1 && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600" title={`Converted to ${rfq.base_currency} at this rate`}>
+                      Rate <span className="font-semibold text-[#28364b]">× {qv.exchange_rate}</span>
+                    </span>
+                  )}
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${qv.complete ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                    {qv.complete ? "Complete" : `Incomplete ${qv.quoted_count}/${qv.item_count}`}
+                  </span>
+                </div>
+              )}
+
+              {/* The two kinds of field on this form behave very differently —
+                  say so before staff change the wrong one. */}
+              {isEditing && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <strong>Price, remarks and currency</strong> change this vendor only.
+                  <strong> Item and qty</strong> belong to the enquiry itself, so editing them changes what every vendor was asked for.
+                </p>
+              )}
 
               {/* Quoted lines */}
               <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -481,16 +646,29 @@ export default function EnquiryDetail({ params }) {
                       <th className="px-4 py-2.5 font-semibold">Item</th>
                       <th className="px-3 py-2.5 text-right font-semibold">Qty</th>
                       <th className="px-3 py-2.5 text-right font-semibold">Unit price</th>
-                      <th className="px-4 py-2.5 text-right font-semibold">Amount ({qv.currency})</th>
+                      <th className="px-4 py-2.5 text-right font-semibold">Amount ({editCurrency})</th>
                       <th className="px-4 py-2.5 font-semibold">Remarks</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {qLines.map(({ row, cell }) => (
+                    {qLines.map((line) => {
+                      const { row, cell } = line;
+                      const d = dItem(row.rfq_item_id);
+                      const cost = lineCost(line);
+                      return (
                       <tr key={row.rfq_item_id} className="border-b border-slate-100 align-top last:border-0">
                         <td className="px-4 py-2.5">
                           <div className="flex items-start gap-1.5">
-                            <span className="text-slate-700 whitespace-pre-line">{row.description}</span>
+                            {isEditing ? (
+                              <textarea
+                                rows={2}
+                                value={d?.description ?? ""}
+                                onChange={(e) => setLine(row.rfq_item_id, "description", e.target.value)}
+                                className="w-full resize-y rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-700 focus:border-[#28364b] focus:outline-none"
+                              />
+                            ) : (
+                              <span className="text-slate-700 whitespace-pre-line">{row.description}</span>
+                            )}
                             {/* A line can be split, so check every award on it
                                 and show the share this vendor won. */}
                             {(() => {
@@ -510,29 +688,72 @@ export default function EnquiryDetail({ params }) {
                             })()}
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right text-slate-600">{Number(row.qty)}{row.unit ? ` ${row.unit}` : ""}</td>
-                        {cell.quoted ? (
+                        {isEditing ? (
                           <>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-medium text-[#28364b]">{fmt(cell.unit_cost)}</td>
-                            <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-[#28364b]">{fmt(cell.unit_cost * row.qty)}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                              <input
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={d?.qty ?? ""}
+                                onChange={(e) => setLine(row.rfq_item_id, "qty", e.target.value)}
+                                className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-sm text-slate-700 focus:border-[#28364b] focus:outline-none"
+                              />
+                              {row.unit ? <span className="ml-1 text-xs text-slate-400">{row.unit}</span> : null}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                              <input
+                                type="number"
+                                step="0.0001"
+                                min="0"
+                                value={d?.unit_cost ?? ""}
+                                onChange={(e) => setLine(row.rfq_item_id, "unit_cost", e.target.value)}
+                                placeholder="not quoted"
+                                className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-sm text-[#28364b] focus:border-[#28364b] focus:outline-none"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-[#28364b]">
+                              {cost == null ? <span className="text-xs italic text-slate-400">—</span> : fmt(cost * lineQty(line))}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <textarea
+                                rows={2}
+                                value={d?.remarks ?? ""}
+                                onChange={(e) => setLine(row.rfq_item_id, "remarks", e.target.value)}
+                                className="w-full min-w-[9rem] resize-y rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-600 focus:border-[#28364b] focus:outline-none"
+                              />
+                            </td>
                           </>
                         ) : (
-                          <td colSpan={2} className="px-4 py-2.5 text-right text-xs italic text-slate-400">not quoted</td>
+                          <>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right text-slate-600">{Number(row.qty)}{row.unit ? ` ${row.unit}` : ""}</td>
+                            {cell.quoted ? (
+                              <>
+                                <td className="whitespace-nowrap px-3 py-2.5 text-right font-medium text-[#28364b]">{fmt(cell.unit_cost)}</td>
+                                <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-[#28364b]">{fmt(cell.unit_cost * row.qty)}</td>
+                              </>
+                            ) : (
+                              <td colSpan={2} className="px-4 py-2.5 text-right text-xs italic text-slate-400">not quoted</td>
+                            )}
+                            <td className="max-w-[200px] px-4 py-2.5 text-xs text-slate-500 whitespace-pre-line">{cell.remarks || <span className="text-slate-300">—</span>}</td>
+                          </>
                         )}
-                        <td className="max-w-[200px] px-4 py-2.5 text-xs text-slate-500">{cell.remarks || <span className="text-slate-300">—</span>}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-slate-200 bg-slate-50">
-                      <td colSpan={3} className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Total ({qv.currency})</td>
+                      <td colSpan={3} className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Total ({editCurrency})</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right text-base font-bold text-[#28364b]">{fmt(qTotal)}</td>
                       <td></td>
                     </tr>
-                    {qv.currency !== rfq.base_currency && (
+                    {editCurrency !== rfq.base_currency && (
                       <tr className="bg-slate-50">
                         <td colSpan={3} className="px-4 pb-2.5 text-right text-xs text-slate-500">≈ in {rfq.base_currency}</td>
-                        <td className="whitespace-nowrap px-4 pb-2.5 text-right text-sm font-semibold text-slate-600">{fmt(qv.total_base)}</td>
+                        <td className="whitespace-nowrap px-4 pb-2.5 text-right text-sm font-semibold text-slate-600">
+                          {fmt(isEditing ? qTotal * (Number(draft.exchange_rate) || 0) : qv.total_base)}
+                        </td>
                         <td></td>
                       </tr>
                     )}
@@ -555,19 +776,49 @@ export default function EnquiryDetail({ params }) {
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                <p className="text-xs text-slate-400">Prices as submitted by the vendor.</p>
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => downloadQuotePdf(quoteVendorId, quoteRv?.vendor?.name || qv?.vendor_name || "vendor")}
-                    disabled={quotePdfBusy}
-                    className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline disabled:opacity-50"
-                  >
-                    {quotePdfBusy ? <Spinner className="h-4 w-4" /> : <FileDown className="h-4 w-4" />} Download PDF
-                  </button>
-                  <Link href={`/enquiries/${id}/compare`} className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline">
-                    <BarChart3 className="h-4 w-4" /> Open Compare &amp; Award
-                  </Link>
-                </div>
+                <p className="text-xs text-slate-400">
+                  {isEditing
+                    ? "Corrections apply the moment you save."
+                    : quoteLocked
+                      ? "Prices as submitted by the vendor. This enquiry is locked — reopen it to edit."
+                      : "Prices as submitted by the vendor."}
+                </p>
+                {isEditing ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={cancelEdit}
+                      disabled={saveQuote.isLoading}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={submitEdit}
+                      disabled={saveQuote.isLoading}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#28364b] px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-50"
+                    >
+                      {saveQuote.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save changes
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    {!quoteLocked && (
+                      <button onClick={startEdit} className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline">
+                        <Pencil className="h-4 w-4" /> Edit quotation
+                      </button>
+                    )}
+                    <button
+                      onClick={() => downloadQuotePdf(quoteVendorId, quoteRv?.vendor?.name || qv?.vendor_name || "vendor")}
+                      disabled={quotePdfBusy}
+                      className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline disabled:opacity-50"
+                    >
+                      {quotePdfBusy ? <Spinner className="h-4 w-4" /> : <FileDown className="h-4 w-4" />} Download PDF
+                    </button>
+                    <Link href={`/enquiries/${id}/compare`} className="inline-flex items-center gap-1 text-sm font-semibold text-[#28364b] hover:underline">
+                      <BarChart3 className="h-4 w-4" /> Open Compare &amp; Award
+                    </Link>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -3,6 +3,8 @@
 namespace App\Mail;
 
 use App\Models\Rfq;
+use App\Models\RfqItem;
+use App\Models\RfqItemAttachment;
 use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Bus\Queueable;
@@ -47,8 +49,12 @@ class VendorQuoteRequest extends Mailable
     /**
      * Attach this vendor's Request for Quotation as a PDF so vendors whose mail
      * clients strip or block the quote link still get the full item list, plus
-     * any enquiry files explicitly marked "send to vendors" (drawings, spec
-     * sheets, photos of the part).
+     * the files belonging to the lines this vendor was actually asked to quote
+     * (photo of the part, drawing, spec sheet).
+     *
+     * Files travel with their line, so a vendor sent only lines 1 and 4 never
+     * receives the drawing for line 7. Enquiry-wide files are the customer's
+     * own paperwork and are never attached.
      */
     public function attachments(): array
     {
@@ -57,19 +63,28 @@ class VendorQuoteRequest extends Mailable
                 ->withMime('application/pdf'),
         ];
 
-        // Internal files are never included — only those deliberately shared.
-        $shared = $this->rfq->attachments()
-            ->where('share_with_vendors', true)
+        // Which lines this vendor was sent. No pivot rows means the whole enquiry.
+        $askedIds = $this->rfq->rfqVendors()
+            ->with('items:id')
+            ->where('vendor_id', $this->vendor->id)
+            ->first()?->items->pluck('id')->all() ?? [];
+
+        $files = RfqItemAttachment::query()
+            ->whereIn('rfq_item_id', RfqItem::where('rfq_id', $this->rfq->id)
+                ->when($askedIds, fn ($q) => $q->whereIn('id', $askedIds))
+                ->select('id'))
+            ->orderBy('rfq_item_id')
             ->orderBy('id')
             ->get();
 
         $budget = self::MAX_SHARED_BYTES;
 
-        foreach ($shared as $file) {
-            // Stop rather than build an email the vendor's server will bounce.
+        foreach ($files as $file) {
+            // Skip rather than build an email the vendor's server will bounce.
             if ($file->size > $budget) {
-                Log::warning('Enquiry attachment skipped — would exceed the email size limit.', [
+                Log::warning('Line-item attachment skipped — would exceed the email size limit.', [
                     'rfq' => $this->rfq->reference,
+                    'vendor' => $this->vendor->name,
                     'file' => $file->original_name,
                     'size' => $file->size,
                 ]);

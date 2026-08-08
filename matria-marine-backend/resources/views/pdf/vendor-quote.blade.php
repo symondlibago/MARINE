@@ -65,7 +65,10 @@
             @forelse($lines as $idx => $line)
                 <tr>
                     <td>{{ $idx + 1 }}</td>
-                    <td>{!! nl2br(e($line['description'])) !!}</td>
+                    <td>
+                        {!! nl2br(e($line['description'])) !!}
+                        @if(!empty($line['impa_no']))<br><span class="small" style="color:#777;">IMPA {{ $line['impa_no'] }}</span>@endif
+                    </td>
                     <td>{{ $line['unit'] ?: '—' }}</td>
                     <td class="num">{{ number_format($line['qty'], 2) }}</td>
                     @if($line['quoted'])

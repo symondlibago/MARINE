@@ -70,11 +70,16 @@
         </div>
     @endif
 
+    {{-- Only show the IMPA column when this enquiry actually uses one, so
+         enquiries that don't stay as clean as they were before. --}}
+    @php($showImpa = $items->contains(fn ($i) => filled($i->impa_no)))
+
     <table class="items">
         <thead>
             <tr>
                 <th style="width:32px;">#</th>
                 <th>Description</th>
+                @if($showImpa)<th style="width:90px;">IMPA no.</th>@endif
                 <th class="num" style="width:70px;">Qty</th>
                 <th style="width:90px;">Unit</th>
             </tr>
@@ -83,12 +88,21 @@
             @forelse($items as $idx => $item)
                 <tr>
                     <td>{{ $idx + 1 }}</td>
-                    <td>{!! nl2br(e($item->description)) !!}</td>
+                    <td>
+                        {!! nl2br(e($item->description)) !!}
+                        @if($item->relationLoaded('attachments') && $item->attachments->isNotEmpty())
+                            <br><span style="font-size:10px; color:#777;">
+                                Attached to this email:
+                                {{ $item->attachments->pluck('original_name')->implode(', ') }}
+                            </span>
+                        @endif
+                    </td>
+                    @if($showImpa)<td>{{ $item->impa_no ?: '—' }}</td>@endif
                     <td class="num">{{ rtrim(rtrim(number_format((float) $item->qty, 2), '0'), '.') }}</td>
                     <td>{{ $item->unit ?: '—' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="4">No line items on this enquiry.</td></tr>
+                <tr><td colspan="{{ $showImpa ? 5 : 4 }}">No line items on this enquiry.</td></tr>
             @endforelse
         </tbody>
     </table>

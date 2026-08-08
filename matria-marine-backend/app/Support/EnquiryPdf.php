@@ -17,7 +17,9 @@ class EnquiryPdf
     /** Raw PDF bytes for this vendor's copy of the enquiry. */
     public static function render(Rfq $rfq, Vendor $vendor): string
     {
-        $rfq->loadMissing(['customer:id,name,address', 'items', 'creator:id,name,email,phone']);
+        // Attachments come along so the PDF can tell the vendor which lines
+        // have a drawing or photo waiting in the same email.
+        $rfq->loadMissing(['customer:id,name,address', 'items', 'items.attachments', 'creator:id,name,email,phone']);
 
         // The vendor's scoped items. An empty pivot means "all items were sent".
         $rv = $rfq->rfqVendors()->where('vendor_id', $vendor->id)->with('items')->first();
