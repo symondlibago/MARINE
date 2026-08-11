@@ -60,8 +60,8 @@ export default function CompareGrid({ params }) {
       );
       return rfqsAPI.saveAwards(id, arr);
     },
-    onSuccess: () => { toast.success("Awards saved."); refetch(); },
-    onError: () => toast.error("Could not save awards."),
+    onSuccess: () => { toast.success("Selection saved."); refetch(); },
+    onError: () => toast.error("Could not save the selection."),
   });
 
   const finishMutation = useMutation({
@@ -148,14 +148,56 @@ export default function CompareGrid({ params }) {
 
   const makeOffer = useMutation({
     mutationFn: () => offersAPI.generate(id),
-    onSuccess: (res) => { toast.success(res.data.message || "Offer ready."); setLocation(`/offers/${res.data.data.id}`); },
+    onSuccess: (res) => {
+      // An offer is only priced once, so coming back after changing the vendor
+      // selection returns the old figures. Say so, rather than let it look like
+      // the new selection was applied.
+      const reused = /already exists/i.test(res.data.message || "");
+      if (reused) {
+        toast("This offer was priced earlier and keeps those prices. Use “Refresh from enquiry” on the offer to re-read them from your current selection.", { duration: 9000 });
+      } else {
+        toast.success(res.data.message || "Offer ready.");
+      }
+      setLocation(`/offers/${res.data.data.id}`);
+    },
     onError: (e) => toast.error(e?.response?.data?.message || "Could not create offer."),
   });
+
+  /**
+   * Both the offer and the purchase orders are built from what the SERVER
+   * holds, not from the ticks on screen. Selections sit in local state until
+   * "Save selection", so acting on them while unsaved would quietly use the
+   * previous choice — which is how an offer ends up priced from a vendor
+   * nobody picked. Everything below saves first when needed.
+   */
+  const pickSignature = (byLine) =>
+    JSON.stringify(
+      Object.keys(byLine).sort().map((line) => [
+        line,
+        Object.keys(byLine[line]).sort().map((v) => [v, Number(byLine[line][v].qty_to_buy) || 0]),
+      ])
+    );
+
+  const savePicksIfNeeded = async (serverPicks) => {
+    if (pickSignature(awards) === pickSignature(serverPicks)) return true;
+    const ok = await confirm({
+      title: "Save your selection first?",
+      message: "You've changed which vendors are selected but haven't saved yet. Unsaved changes are ignored, so this needs saving before we continue.",
+      confirmText: "Save & continue",
+    });
+    if (!ok) return false;
+    try {
+      await saveMutation.mutateAsync();
+      return true;
+    } catch {
+      return false; // the mutation already reported why
+    }
+  };
 
   const handleFinish = async () => {
     const ok = await confirm({
       title: "Lock this enquiry?",
-      message: "Awards can't be changed after finishing.",
+      message: "The vendor selection and quantities can't be changed after finishing.",
       confirmText: "Finish & lock",
     });
     if (ok) finishMutation.mutate();
@@ -164,7 +206,7 @@ export default function CompareGrid({ params }) {
   const handleReopen = async () => {
     const ok = await confirm({
       title: "Reopen this enquiry?",
-      message: "You'll be able to change awards and quantities again.",
+      message: "You'll be able to change the vendor selection and quantities again.",
       confirmText: "Reopen",
     });
     if (ok) reopenMutation.mutate();
@@ -202,6 +244,81 @@ export default function CompareGrid({ params }) {
   if (!data) return null;
 
   const locked = data.rfq.status === "closed";
+
+  // The saved selection, shaped like the local one so the two can be compared.
+  const serverPicks = {};
+  (data.rows || []).forEach((row) => {
+    (row.awards || []).forEach((aw) => {
+      serverPicks[row.rfq_item_id] = {
+        ...(serverPicks[row.rfq_item_id] || {}),
+        [aw.vendor_id]: { qty_to_buy: aw.qty_to_buy },
+      };
+    });
+  });
+
+  const vendorName = (vid) => data.vendors.find((v) => v.vendor_id === vid)?.vendor_name || "—";
+  const lineLabel = (row) => String(row.description || "").split("\n")[0].slice(0, 36);
+
+  /** Cheapest quoted vendor on a line — what an unselected line falls back to. */
+  const cheapestOn = (row) => {
+    const quoted = row.cells.filter((c) => c.quoted);
+    return quoted.length ? quoted.reduce((a, b) => (b.base_cost < a.base_cost ? b : a)) : null;
+  };
+
+  const handleMakeOffer = async () => {
+    if (!(await savePicksIfNeeded(serverPicks))) return;
+
+    // An unselected line is priced from the cheapest quote. That is the system
+    // choosing on your behalf, so it says so — and names the vendor — first.
+    const unpicked = data.rows.filter((r) => !Object.keys(awards[r.rfq_item_id] || {}).length);
+    if (unpicked.length) {
+      const shown = unpicked.slice(0, 4).map((r) => {
+        const c = cheapestOn(r);
+        return `• ${lineLabel(r)} → ${c ? vendorName(c.vendor_id) : "nothing quoted yet"}`;
+      });
+      const more = unpicked.length > shown.length ? `\n…and ${unpicked.length - shown.length} more` : "";
+      const ok = await confirm({
+        title: `${unpicked.length} line${unpicked.length === 1 ? "" : "s"} have no vendor selected`,
+        message: `These will be priced from the cheapest quote:\n\n${shown.join("\n")}${more}\n\nTo quote a different vendor's price, select them on the line first.`,
+        confirmText: "Use cheapest & continue",
+      });
+      if (!ok) return;
+    }
+    makeOffer.mutate();
+  };
+
+  const handleGeneratePos = async () => {
+    if (!(await savePicksIfNeeded(serverPicks))) return;
+
+    // The same selection that priced the offer is who we buy from, so show
+    // exactly which vendors are about to be ordered from before committing.
+    const byVendor = {};
+    data.rows.forEach((row) => {
+      Object.entries(awards[row.rfq_item_id] || {}).forEach(([vid, a]) => {
+        byVendor[vid] = byVendor[vid] || { lines: 0, qty: 0 };
+        byVendor[vid].lines += 1;
+        byVendor[vid].qty += Number(a.qty_to_buy) || 0;
+      });
+    });
+
+    const vendors = Object.entries(byVendor);
+    if (!vendors.length) {
+      toast.error("Select a vendor on at least one line before generating purchase orders.");
+      return;
+    }
+
+    const list = vendors
+      .map(([vid, s]) => `• ${vendorName(Number(vid))} — ${s.lines} line${s.lines === 1 ? "" : "s"}`)
+      .join("\n");
+
+    const ok = await confirm({
+      title: "Order from these vendors?",
+      message: `A draft purchase order will be created for each:\n\n${list}\n\nIf you quoted the customer from one vendor but are buying from another, change the selection before continuing.`,
+      confirmText: "Generate POs",
+    });
+    if (ok) generatePos.mutate();
+  };
+
   const pickAward = (row, cell) => {
     if (locked || !cell?.quoted) return;
     setAwards((a) => {
@@ -340,8 +457,10 @@ export default function CompareGrid({ params }) {
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500">
             Base {data.rfq.base_currency} — type a price in any vendor's cell and it converts at today's FX rate.
-            Click a cell to award the line, click again to un-award. Award two vendors on the same line to split it,
-            then set each Qty. Remarks print under the item on the quotation, PO and invoices.
+            Click a cell to select that vendor's price for the customer offer; click again to unselect. Select two on the
+            same line to split it, then set each Qty. You can change the selection any time until purchase orders are
+            generated — that is the point it becomes an actual order. Remarks print under the item on the quotation, PO
+            and invoices.
             {locked && " (Locked)"}
           </p>
         </div>
@@ -349,7 +468,7 @@ export default function CompareGrid({ params }) {
           {!locked ? (
             <>
               <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-4 py-2 text-sm font-semibold text-[#28364b] hover:bg-slate-50">
-                {saveMutation.isLoading && <Spinner className="h-4 w-4" />} Save awards
+                {saveMutation.isLoading && <Spinner className="h-4 w-4" />} Save selection
               </button>
               <button onClick={handleFinish} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63]">
                 <Lock className="h-4 w-4" /> Finish
@@ -478,7 +597,7 @@ export default function CompareGrid({ params }) {
                         <td
                           key={v.vendor_id}
                           onClick={() => pickAward(row, cell)}
-                          title={cell?.quoted && !locked ? (isAwarded ? "Awarded — click again to un-award" : "Click to award this line (award another vendor too to split it)") : undefined}
+                          title={cell?.quoted && !locked ? (isAwarded ? "Selected — this vendor's price is used for the customer offer. Click again to unselect." : "Click to price the offer from this vendor (select a second vendor to split the line)") : undefined}
                           className={`px-3 py-3 align-top transition-colors ${cell?.quoted && !locked ? "cursor-pointer" : ""} ${
                             isAwarded ? "bg-[#28364b]" : isLowest ? "bg-green-50/60 hover:bg-green-100/70" : "hover:bg-slate-50"
                           }`}
@@ -571,7 +690,7 @@ export default function CompareGrid({ params }) {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-[#28364b]">Customer Offer</h2>
             <p className="text-xs text-slate-500">Add your markup to the vendor prices and send the customer a quotation.</p>
           </div>
-          <button onClick={() => makeOffer.mutate()} disabled={makeOffer.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
+          <button onClick={handleMakeOffer} disabled={makeOffer.isLoading || saveMutation.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
             {makeOffer.isLoading ? <Spinner className="h-4 w-4" /> : <Percent className="h-4 w-4" />} Markup &amp; Offer
           </button>
         </motion.div>
@@ -598,7 +717,7 @@ export default function CompareGrid({ params }) {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Purchase Orders</h2>
-            <button onClick={() => generatePos.mutate()} disabled={generatePos.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
+            <button onClick={handleGeneratePos} disabled={generatePos.isLoading || saveMutation.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70">
               {generatePos.isLoading ? <Spinner className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />} Generate POs
             </button>
           </div>
@@ -615,7 +734,7 @@ export default function CompareGrid({ params }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-400">Creates one draft purchase order per awarded vendor, ready to review and send.</p>
+            <p className="text-sm text-slate-400">Creates one draft purchase order per selected vendor, ready to review and send. This is the step that turns a selection into an actual order.</p>
           )}
         </motion.div>
       )}
@@ -630,6 +749,17 @@ function PriceRemarkCell({ cell, vendorCurrency, baseCurrency, isAwarded, isLowe
   const quoted = !!cell?.quoted;
   const [price, setPrice] = useState(quoted ? String(cell.unit_cost) : "");
   const [remark, setRemark] = useState(cell?.remarks ?? "");
+
+  // Same behaviour as the enquiry description box: the remark grows with its
+  // content so a long note stays fully readable instead of scrolling inside a
+  // one-line field, and it can still be dragged taller by hand.
+  const remarkRef = useRef(null);
+  useEffect(() => {
+    const el = remarkRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(26, el.scrollHeight)}px`;
+  }, [remark]);
 
   const commit = () => {
     if (locked) return;
@@ -665,23 +795,26 @@ function PriceRemarkCell({ cell, vendorCurrency, baseCurrency, isAwarded, isLowe
       {quoted ? (
         <div className={`mt-1 text-xs ${isAwarded ? "font-semibold text-white" : "text-slate-500"}`}>
           = {cell.base_cost.toFixed(2)} {baseCurrency}
-          {isAwarded ? " ✓ awarded" : isLowest ? " ↓" : ""}
+          {isAwarded ? " ✓ selected" : isLowest ? " ↓" : ""}
         </div>
       ) : (
         <div className="mt-1 text-[10px] text-slate-400">enter a price</div>
       )}
-      <input
-        type="text"
+      <textarea
+        ref={remarkRef}
+        rows={1}
         value={remark}
         disabled={locked}
         placeholder="Remark…"
         onClick={(e) => e.stopPropagation()}
+        // Enter must add a line here, not bubble up and toggle the award.
+        onKeyDown={(e) => e.stopPropagation()}
         onChange={(e) => setRemark(e.target.value)}
         onBlur={commit}
-        className={`mt-1 w-full rounded border px-1.5 py-0.5 text-[11px] disabled:bg-slate-50 ${
+        className={`mt-1 w-full resize-y overflow-hidden rounded border px-1.5 py-0.5 text-[11px] leading-snug disabled:bg-slate-50 ${
           isAwarded ? "border-slate-500 bg-[#28364b] text-slate-100 placeholder:text-slate-400" : "border-slate-200 bg-white text-slate-600 placeholder:text-slate-300"
         }`}
-        title="Remark for this product — prints below the item on the quotation, PO and invoices"
+        title="Remark for this product — press Enter for a second line. Prints below the item on the quotation, PO and invoices"
       />
     </>
   );

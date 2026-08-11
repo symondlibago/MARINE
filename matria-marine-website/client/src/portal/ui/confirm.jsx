@@ -51,7 +51,9 @@ export function ConfirmProvider({ children }) {
                 </div>
                 <div>
                   <h3 className="font-bold text-[#28364b]">{state.title}</h3>
-                  {state.message && <p className="mt-1 text-sm text-slate-500">{state.message}</p>}
+                  {/* pre-line so a caller can lay out a short list of lines or
+                      vendors instead of one unreadable run-on sentence. */}
+                  {state.message && <p className="mt-1 whitespace-pre-line text-sm text-slate-500">{state.message}</p>}
                 </div>
               </div>
               <div className="mt-5 flex justify-end gap-2">

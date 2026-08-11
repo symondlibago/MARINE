@@ -17,6 +17,8 @@ class OfferItem extends Model
         'unit',
         'qty',
         'base_price',
+        // Which vendor's price this line was built from. Internal note.
+        'base_source',
         'markup_pct',
         'unit_price',
         'discount_pct',

@@ -48,7 +48,8 @@ class OfferController extends Controller
             ]);
         }
 
-        $rfq->load(['items.awards.quoteItem.quote', 'items.quoteItems.quote', 'customer']);
+        // Vendor names come along so each line can record whose price it used.
+        $rfq->load(['items.awards.quoteItem.quote', 'items.awards.vendor:id,name', 'items.quoteItems.quote.vendor:id,name', 'customer']);
 
         $offer = DB::transaction(function () use ($rfq, $request) {
             $offer = Offer::create([
@@ -64,7 +65,7 @@ class OfferController extends Controller
 
             $sort = 0;
             foreach ($rfq->items as $item) {
-                $base = $this->basePriceFor($item);
+                [$base, $baseSource] = $this->baseFor($item);
                 $qty = (float) $item->qty;
                 $offer->items()->create([
                     'rfq_item_id' => $item->id,
@@ -75,6 +76,8 @@ class OfferController extends Controller
                     'unit' => $item->unit,
                     'qty' => $qty,
                     'base_price' => $base,
+                    // Internal note only — never printed on the customer's PDF.
+                    'base_source' => $baseSource,
                     'markup_pct' => 0,
                     'unit_price' => round($base, 2),
                     'line_total' => round($base * $qty, 2),
@@ -171,6 +174,12 @@ class OfferController extends Controller
                     $amount = round(($unit - $discAmt) * $qty, 2);   // line total (net of discount)
                     $markupAmt = round($amount - $base * $qty, 2);   // profit on the line
 
+                    // Typing over the cost makes the vendor label a lie, so the
+                    // line stops claiming a source it no longer has.
+                    $baseSource = abs($base - (float) $item->base_price) > 0.00001
+                        ? 'Entered by hand'
+                        : $item->base_source;
+
                     $item->update([
                         'description' => $row['description'] ?? $item->description,
                         'code' => $row['code'] ?? null,
@@ -178,6 +187,7 @@ class OfferController extends Controller
                         'unit' => $row['unit'] ?? null,
                         'qty' => $qty,
                         'base_price' => $base,
+                        'base_source' => $baseSource,
                         'markup_pct' => $markup,
                         'unit_price' => $unit,
                         'discount_pct' => $discount,
@@ -221,30 +231,82 @@ class OfferController extends Controller
 
         $offer->load('items');
 
-        $source = RfqItem::whereIn('id', $offer->items->pluck('rfq_item_id')->filter())
+        // Awards and quotes come along so the price can be re-read from
+        // whichever vendor is selected on Compare & Award *right now*.
+        $source = RfqItem::with(['awards.quoteItem.quote', 'awards.vendor:id,name', 'quoteItems.quote.vendor:id,name'])
+            ->whereIn('id', $offer->items->pluck('rfq_item_id')->filter())
             ->get()
             ->keyBy('id');
 
-        $changed = 0;
+        $textChanged = 0;
+        $pricesChanged = 0;
 
-        DB::transaction(function () use ($offer, $source, &$changed) {
+        DB::transaction(function () use ($offer, $source, &$textChanged, &$pricesChanged) {
             foreach ($offer->items as $line) {
                 $item = $source->get($line->rfq_item_id);
 
-                if (! $item || $line->description === $item->description) {
+                if (! $item) {
                     continue;
                 }
 
-                $line->update(['description' => $item->description, 'unit' => $item->unit ?: $line->unit]);
-                $changed++;
+                $update = [];
+
+                if ($line->description !== $item->description) {
+                    $update['description'] = $item->description;
+                    $update['unit'] = $item->unit ?: $line->unit;
+                    $textChanged++;
+                }
+
+                // Re-price from the current selection. Changing your mind about
+                // the vendor should reach a draft you haven't sent yet — the
+                // offer only froze its price to protect a quotation already out.
+                [$base, $baseSource] = $this->baseFor($item);
+
+                if (abs($base - (float) $line->base_price) > 0.00001) {
+                    // The markup, discount and lead time are the user's own work
+                    // and are kept; only the cost underneath them moves.
+                    $markup = (float) $line->markup_pct;
+                    $discount = (float) $line->discount_pct;
+                    $qty = (float) $line->qty;
+
+                    $unit = round($base * (1 + $markup / 100), 2);
+                    $discAmt = round($unit * $discount / 100, 2);
+                    $amount = round(($unit - $discAmt) * $qty, 2);
+
+                    $update += [
+                        'base_price' => $base,
+                        'base_source' => $baseSource,
+                        'unit_price' => $unit,
+                        'discount_amount' => $discAmt,
+                        'markup_amount' => round($amount - $base * $qty, 2),
+                        'line_total' => $amount,
+                    ];
+                    $pricesChanged++;
+                } elseif ($baseSource && $baseSource !== $line->base_source) {
+                    // Same figure, different vendor behind it — say so honestly.
+                    $update['base_source'] = $baseSource;
+                }
+
+                if ($update) {
+                    $line->update($update);
+                }
             }
+
+            // Line totals moved, so the offer's own totals have to follow.
+            $offer->recalcTotals();
         });
+
+        $parts = [];
+        if ($pricesChanged) {
+            $parts[] = "{$pricesChanged} price(s) re-read from the selected vendor";
+        }
+        if ($textChanged) {
+            $parts[] = "{$textChanged} description(s) updated";
+        }
 
         return response()->json([
             'success' => true,
-            'message' => $changed
-                ? "{$changed} description(s) updated from the enquiry."
-                : 'Already up to date with the enquiry.',
+            'message' => $parts ? ucfirst(implode(' and ', $parts)).'.' : 'Already up to date with the enquiry.',
             'data' => $offer->fresh('items'),
         ]);
     }
@@ -317,6 +379,51 @@ class OfferController extends Controller
     }
 
     /** Base unit cost in the enquiry's base currency: the awarded price, else the lowest quote. */
+    /**
+     * The base price AND a plain-English note of where it came from.
+     *
+     * Staff pick a vendor on Compare & Award to set the offer price, and may
+     * move that pick later when they decide who to actually buy from. The offer
+     * keeps the price it was built with, so it has to carry its own record of
+     * whose price that was — otherwise nobody can tell afterwards.
+     *
+     * With nothing picked the cheapest quote is used, which is a decision the
+     * system makes on the user's behalf; that case is labelled explicitly so it
+     * never looks like a deliberate choice.
+     *
+     * @return array{0: float, 1: ?string}
+     */
+    private function baseFor($item): array
+    {
+        $price = $this->basePriceFor($item);
+
+        if ($item->awards->isNotEmpty()) {
+            $names = $item->awards
+                ->map(fn ($a) => $a->vendor?->name)
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($names->isEmpty()) {
+                return [$price, null];
+            }
+
+            // A split line is priced on the weighted average, so say so.
+            return [$price, $names->count() > 1
+                ? $names->implode(' + ').' (weighted)'
+                : $names->first()];
+        }
+
+        $cheapest = $item->quoteItems
+            ->filter(fn ($qi) => $qi->unit_cost !== null)
+            ->sortBy(fn ($qi) => (float) $qi->unit_cost * (float) ($qi->quote?->exchange_rate ?? 1))
+            ->first();
+
+        $vendor = $cheapest?->quote?->vendor?->name;
+
+        return [$price, $vendor ? 'Cheapest — '.$vendor : null];
+    }
+
     private function basePriceFor($item): float
     {
         if ($item->awards->isNotEmpty()) {

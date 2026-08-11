@@ -9,6 +9,7 @@ import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import { Spinner, PageLoader } from "./ui/Loading";
+import { useConfirm } from "./ui/confirm";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 const PAYMENT_TERMS = ["", "Prepayment", "Payable on receipt", "Net 7 days", "Net 14 days", "Net 30 days", "Net 60 days", "Net 90 days"];
@@ -34,6 +35,7 @@ const ci = "w-full rounded border border-slate-200 px-2 py-1 text-sm focus:borde
 export default function OfferPage({ params }) {
   const id = params.id;
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
 
   const { data: offer, isLoading, refetch } = useQuery({
     queryKey: ["offer", id],
@@ -72,6 +74,8 @@ export default function OfferPage({ params }) {
           unit: it.unit || "",
           qty: Number(it.qty),
           base_price: Number(it.base_price),
+          // Read-only note of whose price this line was built from.
+          base_source: it.base_source || "",
           markup_pct: Number(it.markup_pct),
           discount_pct: Number(it.discount_pct || 0),
           lead_time: it.lead_time || "",
@@ -83,6 +87,53 @@ export default function OfferPage({ params }) {
 
   const setH = (k, v) => setHeader((h) => ({ ...h, [k]: v }));
   const setItem = (idx, patch) => setItems((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+
+  /**
+   * Spreadsheet-style keyboard movement across the line-item grid.
+   *
+   * On a number input the browser treats Up/Down as its own spinner, so
+   * pressing Down on a 50% markup silently turned it into 49.9 instead of
+   * moving to the next row. Here Up/Down (and Enter) move between rows in the
+   * SAME column, so a whole column of markups can be keyed without touching
+   * the mouse.
+   *
+   * The description cell is a textarea and is left alone — there Up/Down move
+   * the caret through the spec and Enter adds a line, which is what you want.
+   */
+  const gridKeyDown = (e) => {
+    if (!["ArrowUp", "ArrowDown", "Enter"].includes(e.key)) return;
+
+    const el = e.target;
+    if (el.tagName === "TEXTAREA") return;
+
+    const cell = el.closest("td");
+    const row = el.closest("tr");
+    if (!cell || !row) return;
+
+    // Stop the spinner even on the first/last row, so Up/Down never edits a
+    // value by accident — the key means "move" everywhere in this grid.
+    if (e.key !== "Enter") e.preventDefault();
+
+    const col = [...row.children].indexOf(cell);
+    const target = e.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
+    const next = target?.children[col]?.querySelector("input, textarea");
+    if (!next) return;
+
+    e.preventDefault();
+    next.focus();
+    // Land ready to overtype, the way a spreadsheet does.
+    if (next.select) next.select();
+  };
+
+  /**
+   * A wheel over a focused number input scrolls its VALUE, so scrolling the
+   * page after clicking a markup box would quietly change it. Dropping focus
+   * lets the page scroll instead and leaves the figure untouched.
+   */
+  const gridWheel = (e) => {
+    const el = e.target;
+    if (el?.type === "number" && el === document.activeElement) el.blur();
+  };
   const applyBulk = () => {
     const m = Number(bulk);
     if (Number.isNaN(m) || bulk === "") return;
@@ -125,6 +176,17 @@ export default function OfferPage({ params }) {
     },
     onError: (e) => toast.error(e?.response?.data?.message || "Could not refresh from the enquiry."),
   });
+
+  // Refreshing now moves money, not just wording, so it asks first.
+  const handleRefresh = async () => {
+    const ok = await confirm({
+      title: "Re-read from the enquiry?",
+      message:
+        "Base costs are re-read from whichever vendor is selected on Compare & Award right now, and descriptions are refreshed.\n\nYour markup, discount, lead time and remarks are kept. Any base price you typed in by hand will be replaced.",
+      confirmText: "Refresh",
+    });
+    if (ok) syncEnquiry.mutate();
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -317,18 +379,24 @@ export default function OfferPage({ params }) {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Line items &amp; markup</h2>
-              {/* The quotation prints these descriptions, not the enquiry's, so
-                  offer a way to pull across edits made after it was generated. */}
+              {/* An offer is priced once at creation, so this is the only way to
+                  pull a changed vendor selection into a draft. Easy to miss as a
+                  faint link, and missing it means quoting last week's price. */}
               <button
-                onClick={() => syncEnquiry.mutate()}
+                onClick={handleRefresh}
                 disabled={syncEnquiry.isLoading}
-                title="Pull the latest line descriptions from the enquiry"
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-[#28364b] disabled:opacity-50"
+                title="Re-read base costs from the vendor selected on Compare & Award, and refresh descriptions"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#28364b] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#3c4a63] disabled:opacity-50"
               >
-                {syncEnquiry.isLoading ? <Spinner className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />} Refresh from enquiry
+                {syncEnquiry.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh from enquiry
               </button>
             </div>
-            <p className="text-xs text-slate-400">Amber columns are internal — the customer only sees description, unit, qty, unit price, discount &amp; amount.</p>
+            <p className="text-xs text-slate-400">
+              Amber columns are internal — the customer only sees description, unit, qty, unit price, discount &amp; amount.
+              Press <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↑</kbd>{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↓</kbd> or{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">Enter</kbd> to move down the same column.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
             <span className="text-xs text-slate-500">Set all markup</span>
@@ -365,7 +433,7 @@ export default function OfferPage({ params }) {
                 <th className={th}>Remarks</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody onKeyDown={gridKeyDown} onWheel={gridWheel}>
               {rows.map((r, idx) => (
                 <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">
                   {/* textarea, not input: a single-line input silently strips the item's
@@ -375,7 +443,19 @@ export default function OfferPage({ params }) {
                   <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-14`} value={r.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input type="number" step="0.001" className={`${ci} ${num} min-w-[4.5rem] text-right`} value={r.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} /></td>
-                  <td className={`px-1.5 py-2 ${internal}`}><input type="number" step="0.0001" className={`${ci} ${num} min-w-[7rem] text-right`} value={r.base_price} onChange={(e) => setItem(idx, { base_price: e.target.value })} /></td>
+                  <td className={`px-1.5 py-2 ${internal}`}>
+                    <input type="number" step="0.0001" className={`${ci} ${num} min-w-[7rem] text-right`} value={r.base_price} onChange={(e) => setItem(idx, { base_price: e.target.value })} />
+                    {/* Whose price this is. The selection on Compare & Award can
+                        move afterwards, so the line has to say it for itself. */}
+                    {r.base_source && (
+                      <div
+                        className={`mt-0.5 truncate text-right text-[10px] ${r.base_source.startsWith("Cheapest") ? "text-amber-700" : "text-slate-400"}`}
+                        title={`Base price from: ${r.base_source}`}
+                      >
+                        {r.base_source}
+                      </div>
+                    )}
+                  </td>
                   <td className={`px-1.5 py-2 text-right text-slate-500 whitespace-nowrap ${internal}`}>{money(r.base_line)}</td>
                   <td className={`px-1.5 py-2 ${internal}`}><input type="number" step="0.1" className={`${ci} ${num} min-w-[4rem] text-right`} value={r.markup_pct} onChange={(e) => setItem(idx, { markup_pct: e.target.value })} /></td>
                   <td className="px-1.5 py-2 text-right font-medium text-[#28364b] whitespace-nowrap">{money(r.unit_price)}</td>
@@ -385,7 +465,9 @@ export default function OfferPage({ params }) {
                   <td className="px-1.5 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">{money(r.line_total)}</td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.lead_time} onChange={(e) => setItem(idx, { lead_time: e.target.value })} placeholder="e.g. 2 days" /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.delivery_location} onChange={(e) => setItem(idx, { delivery_location: e.target.value })} /></td>
-                  <td className="px-1.5 py-2"><input className={`${ci} w-24`} value={r.remarks} onChange={(e) => setItem(idx, { remarks: e.target.value })} /></td>
+                  {/* textarea, not input: a remark can now carry a second line
+                      from Compare & Award, and a text input silently strips it. */}
+                  <td className="px-1.5 py-2"><textarea rows={2} className={`${ci} w-24 resize-y leading-snug`} value={r.remarks} onChange={(e) => setItem(idx, { remarks: e.target.value })} /></td>
                 </tr>
               ))}
               {rows.length === 0 && (

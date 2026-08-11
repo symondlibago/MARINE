@@ -324,7 +324,9 @@ export default function InvoicePage({ params }) {
                 {!l.is_heading && (
                   <div className="mt-1 flex gap-2 pl-1">
                     <input value={l.code} onChange={(e) => setLine(i, "code", e.target.value)} placeholder="Part-No. (optional)" className={cellInput + " w-1/3 !py-1 text-[11px]"} />
-                    <input value={l.remarks} onChange={(e) => setLine(i, "remarks", e.target.value)} placeholder="Remark — prints below the item (optional)" className={cellInput + " flex-1 !py-1 text-[11px]"} />
+                    {/* textarea, not input: a multi-line remark carried over from
+                        the enquiry would be silently flattened by a text input. */}
+                    <textarea rows={1} value={l.remarks} onChange={(e) => setLine(i, "remarks", e.target.value)} placeholder="Remark — prints below the item (optional)" className={cellInput + " flex-1 resize-y !py-1 text-[11px] leading-snug"} />
                   </div>
                 )}
               </div>
