@@ -19,8 +19,11 @@ use App\Http\Controllers\OfferController;
 use App\Http\Controllers\CreditMemoController;
 use App\Http\Controllers\CustomerInvoiceController;
 use App\Http\Controllers\DeliveryOrderController;
+use App\Http\Controllers\DocumentSeriesController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\OpenEntriesController;
 use App\Http\Controllers\OperatingExpenseController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\FxController;
@@ -197,6 +200,10 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
             Route::post('users', [UserController::class, 'store']);
             Route::match(['put', 'patch'], 'users/{user}', [UserController::class, 'update']);
             Route::delete('users/{user}', [UserController::class, 'destroy']);
+
+            // Document numbering — changing where a series continues from.
+            Route::get('document-series', [DocumentSeriesController::class, 'index']);
+            Route::match(['put', 'patch'], 'document-series/{key}', [DocumentSeriesController::class, 'update']);
         });
 
         // Sent log — record/proof of every document email sent (visible to all staff)
@@ -211,6 +218,26 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('reports/statements', [ReportsController::class, 'statementParties']);
         Route::get('reports/statements/{type}/{id}', [ReportsController::class, 'statement'])
             ->whereIn('type', ['customer', 'vendor'])->whereNumber('id');
+        // Statement of account as a PDF — what gets emailed to chase a debt.
+        Route::get('reports/statements/{type}/{id}/pdf', [ReportsController::class, 'statementPdf'])
+            ->whereIn('type', ['customer', 'vendor'])->whereNumber('id');
+
+        // Open entries across every party at once, as of a chosen date.
+        Route::get('reports/open-entries', [OpenEntriesController::class, 'index']);
+        Route::get('reports/open-entries/pdf', [OpenEntriesController::class, 'pdf']);
+
+        // Payments — bank receipts from customers, payments out to vendors, and
+        // the allocation of each against the invoices / POs it settles.
+        Route::get('payments', [PaymentController::class, 'index']);
+        Route::get('payments/open/{type}/{id}', [PaymentController::class, 'openDocuments'])
+            ->whereIn('type', ['customer', 'vendor'])->whereNumber('id');
+        Route::post('payments', [PaymentController::class, 'store']);
+        Route::match(['put', 'patch'], 'payments/{payment}', [PaymentController::class, 'update']);
+        Route::delete('payments/{payment}', [PaymentController::class, 'destroy']);
+        // Bank slips / invoice copies filed against a payment (private on R2).
+        Route::post('payments/{payment}/attachments', [PaymentController::class, 'uploadAttachments']);
+        Route::get('payments/{payment}/attachments/{attachment}/url', [PaymentController::class, 'attachmentUrl']);
+        Route::delete('payments/{payment}/attachments/{attachment}', [PaymentController::class, 'deleteAttachment']);
 
         // Operating expenses (business overhead — feeds the accounting net profit)
         Route::get('operating-expenses', [OperatingExpenseController::class, 'index']);

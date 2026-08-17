@@ -402,7 +402,13 @@ class ReportsController extends Controller
         return $inv->status === 'paid' || $inv->paid_at !== null;
     }
 
-    /** Fold rows into per-currency {billed, settled, outstanding} buckets. */
+    /**
+     * Fold rows into per-currency {billed, settled, outstanding} buckets.
+     *
+     * Each row carries its own settled figure (credit notes + payments
+     * applied) rather than a paid/unpaid flag, so a part-paid invoice
+     * contributes to both sides instead of landing wholly in one.
+     */
     private function currencyTotals(iterable $rows): array
     {
         $by = [];
@@ -411,8 +417,8 @@ class ReportsController extends Controller
             $cur = $r['currency'] ?: $this->baseCurrency();
             $by[$cur] ??= ['currency' => $cur, 'billed' => 0.0, 'settled' => 0.0, 'outstanding' => 0.0, 'count' => 0];
             $by[$cur]['billed'] += $r['amount'];
-            $by[$cur]['settled'] += $r['paid'] ? $r['amount'] : 0.0;
-            $by[$cur]['outstanding'] += $r['paid'] ? 0.0 : $r['amount'];
+            $by[$cur]['settled'] += $r['settled'];
+            $by[$cur]['outstanding'] += $r['outstanding'];
             $by[$cur]['count']++;
         }
 
@@ -423,6 +429,57 @@ class ReportsController extends Controller
             'outstanding' => round($t['outstanding'], 2),
             'count' => $t['count'],
         ])->sortByDesc('outstanding')->values()->all();
+    }
+
+    /**
+     * Credit notes and payments already applied, keyed by document id.
+     *
+     * Loaded in two grouped queries for the whole page rather than a lookup
+     * per row, so the party list stays one round trip regardless of size.
+     */
+    private function settlementIndex(string $type, array $docIds): array
+    {
+        if (! $docIds) {
+            return ['credits' => [], 'paid' => []];
+        }
+
+        $column = $type === 'customer' ? 'customer_invoice_id' : 'purchase_order_id';
+
+        $paid = \App\Models\PaymentAllocation::whereIn($column, $docIds)
+            ->groupBy($column)
+            ->selectRaw("$column as doc_id, SUM(amount) as total")
+            ->pluck('total', 'doc_id')
+            ->map(fn ($v) => round((float) $v, 2))
+            ->all();
+
+        $credits = $type === 'customer'
+            ? \App\Models\CreditMemo::whereIn('customer_invoice_id', $docIds)
+                ->where('status', 'issued')
+                ->groupBy('customer_invoice_id')
+                ->selectRaw('customer_invoice_id as doc_id, SUM(grand_total) as total')
+                ->pluck('total', 'doc_id')
+                ->map(fn ($v) => round((float) $v, 2))
+                ->all()
+            : [];
+
+        return ['credits' => $credits, 'paid' => $paid];
+    }
+
+    /**
+     * Settled / outstanding for one document, from the pre-loaded index —
+     * the same arithmetic as {@see \App\Support\Settlement::of()} without the
+     * per-row queries.
+     *
+     * @return array{settled: float, outstanding: float, paid: bool, partial: bool, credited: float, allocated: float, billed: float}
+     */
+    private function settlementOf(float $billed, int $docId, array $index, bool $manuallyPaid): array
+    {
+        return \App\Support\Settlement::resolve(
+            $billed,
+            $index['credits'][$docId] ?? 0.0,
+            $index['paid'][$docId] ?? 0.0,
+            $manuallyPaid,
+        );
     }
 
     /**
@@ -477,51 +534,52 @@ class ReportsController extends Controller
             $docs = CustomerInvoice::whereIn('customer_id', $ids)
                 ->get(['id', 'customer_id', 'currency', 'grand_total', 'status', 'paid_at', 'due_date'])
                 ->groupBy('customer_id');
-
-            // Issued credit memos reduce what the customer owes.
-            $credits = \App\Models\CreditMemo::whereIn('customer_id', $ids)
-                ->where('status', 'issued')
-                ->get(['customer_id', 'currency', 'grand_total'])
-                ->groupBy('customer_id');
         } else {
             $docs = PurchaseOrder::whereIn('vendor_id', $ids)
                 ->where('status', '!=', 'cancelled')
                 ->get(['id', 'vendor_id', 'currency', 'subtotal', 'receipt_amount', 'status', 'paid_at'])
                 ->groupBy('vendor_id');
-            $credits = collect();
         }
+
+        // Credit notes and payments for every document on this page, in two
+        // grouped queries rather than a lookup per row.
+        $index = $this->settlementIndex($data['type'], $docs->flatten()->pluck('id')->all());
 
         $today = Carbon::today();
 
-        $rows = $parties->map(function ($p) use ($data, $docs, $credits, $today) {
+        $rows = $parties->map(function ($p) use ($data, $docs, $index, $today) {
             $mine = $docs->get($p->id, collect());
+            $isCustomer = $data['type'] === 'customer';
 
-            $flat = $mine->map(function ($d) use ($data) {
-                $paid = $data['type'] === 'customer'
-                    ? $this->invoicePaid($d)
-                    : $d->paid_at !== null;
-                $amount = $data['type'] === 'customer'
+            $flat = $mine->map(function ($d) use ($isCustomer, $index) {
+                $amount = $isCustomer
                     ? (float) $d->grand_total
                     : (float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal);
 
-                return ['currency' => $d->currency, 'amount' => $amount, 'paid' => $paid];
+                $s = $this->settlementOf(
+                    round($amount, 2),
+                    $d->id,
+                    $index,
+                    $isCustomer ? $this->invoicePaid($d) : $d->paid_at !== null
+                );
+
+                return [
+                    'currency' => $d->currency,
+                    'amount' => round($amount, 2),
+                    'settled' => $s['settled'],
+                    'outstanding' => $s['outstanding'],
+                    'paid' => $s['paid'],
+                ];
             });
 
             $totals = $this->currencyTotals($flat);
 
-            // Credit notes come off the outstanding balance, per currency.
-            foreach ($credits->get($p->id, collect()) as $cm) {
-                $i = collect($totals)->search(fn ($t) => $t['currency'] === $cm->currency);
-                if ($i !== false) {
-                    $totals[$i]['outstanding'] = round($totals[$i]['outstanding'] - (float) $cm->grand_total, 2);
-                }
-            }
-
-            // Age of the oldest still-unpaid document, for the overdue flag.
+            // Age of the oldest document still carrying a balance. $flat keeps
+            // $mine's keys, so a row's settlement is looked up by the same key.
             $oldest = null;
-            if ($data['type'] === 'customer') {
-                $due = $mine->filter(fn ($d) => ! $this->invoicePaid($d))->pluck('due_date')->filter();
-                $oldest = $due->min();
+            if ($isCustomer) {
+                $oldest = $mine->filter(fn ($d, $k) => ! $flat[$k]['paid'])
+                    ->pluck('due_date')->filter()->min();
             }
 
             return [
@@ -534,8 +592,8 @@ class ReportsController extends Controller
             ];
         });
 
-        // Second pass in PHP: a credit note can cancel an unpaid invoice, which
-        // SQL above cannot see.
+        // Second pass in PHP: a credit note or a payment can clear an invoice
+        // the SQL pre-filter above still counts as unpaid.
         if ($onlyOutstanding) {
             $rows = $rows->filter(fn ($r) => collect($r['totals'])->contains(fn ($t) => abs($t['outstanding']) > 0.005));
         }
@@ -569,8 +627,11 @@ class ReportsController extends Controller
                 ->orderByDesc('issue_date')->orderByDesc('id')
                 ->get();
 
-            $lines = $invoices->map(function (CustomerInvoice $inv) use ($today) {
-                $paid = $this->invoicePaid($inv);
+            $index = $this->settlementIndex('customer', $invoices->pluck('id')->all());
+
+            $lines = $invoices->map(function (CustomerInvoice $inv) use ($today, $index) {
+                $billed = round((float) $inv->grand_total, 2);
+                $s = $this->settlementOf($billed, $inv->id, $index, $this->invoicePaid($inv));
                 $due = $inv->due_date ? Carbon::parse($inv->due_date) : null;
 
                 return [
@@ -582,12 +643,17 @@ class ReportsController extends Controller
                     'date' => optional($inv->issue_date)->toDateString(),
                     'due_date' => $due?->toDateString(),
                     'currency' => $inv->currency,
-                    'amount' => round((float) $inv->grand_total, 2),
+                    'amount' => $billed,
+                    'credited' => $s['credited'],
+                    'allocated' => $s['allocated'],
+                    'settled' => $s['settled'],
+                    'outstanding' => $s['outstanding'],
                     'status' => $inv->status,
-                    'paid' => $paid,
+                    'paid' => $s['paid'],
+                    'partial' => $s['partial'],
                     'paid_at' => optional($inv->paid_at)->toDateString(),
                     // Negative = still within terms; positive = days late.
-                    'overdue_days' => (! $paid && $due) ? max(0, $due->diffInDays($today, false)) : 0,
+                    'overdue_days' => (! $s['paid'] && $due) ? max(0, $due->diffInDays($today, false)) : 0,
                 ];
             });
 
@@ -616,11 +682,14 @@ class ReportsController extends Controller
                 ->orderByDesc('issued_date')->orderByDesc('id')
                 ->get();
 
-            $lines = $orders->map(function (PurchaseOrder $po) {
+            $index = $this->settlementIndex('vendor', $orders->pluck('id')->all());
+
+            $lines = $orders->map(function (PurchaseOrder $po) use ($index) {
                 // What we owe this vendor is the goods figure — the receipted
                 // amount once known, otherwise what was ordered. Third-party
                 // expenses are reported separately, not added to their balance.
-                $amount = (float) ($po->receipt_amount !== null ? $po->receipt_amount : $po->subtotal);
+                $amount = round((float) ($po->receipt_amount !== null ? $po->receipt_amount : $po->subtotal), 2);
+                $s = $this->settlementOf($amount, $po->id, $index, $po->paid_at !== null);
 
                 return [
                     'id' => $po->id,
@@ -632,12 +701,17 @@ class ReportsController extends Controller
                     'due_date' => optional($po->expected_date)->toDateString(),
                     'currency' => $po->currency,
                     'ordered' => round((float) $po->subtotal, 2),
-                    'amount' => round($amount, 2),
+                    'amount' => $amount,
+                    'credited' => 0.0,
+                    'allocated' => $s['allocated'],
+                    'settled' => $s['settled'],
+                    'outstanding' => $s['outstanding'],
                     'receipted' => $po->receipt_amount !== null,
                     'expenses' => round((float) $po->expenses, 2),
                     'expense_currency' => $po->expense_currency ?: $po->currency,
                     'status' => $po->status,
-                    'paid' => $po->paid_at !== null,
+                    'paid' => $s['paid'],
+                    'partial' => $s['partial'],
                     'paid_at' => optional($po->paid_at)->toDateString(),
                     'overdue_days' => 0,
                 ];
@@ -646,39 +720,291 @@ class ReportsController extends Controller
             $credits = collect();
         }
 
+        // Credit notes are already netted off each line by settlementOf(), so
+        // they are NOT subtracted again here — that would count them twice.
         $totals = $this->currencyTotals($lines->map(fn ($l) => [
             'currency' => $l['currency'],
             'amount' => $l['amount'],
-            'paid' => $l['paid'],
+            'settled' => $l['settled'],
+            'outstanding' => $l['outstanding'],
         ]));
 
-        // Credit notes reduce the customer's outstanding balance.
-        foreach ($credits as $c) {
-            $i = collect($totals)->search(fn ($t) => $t['currency'] === $c['currency']);
-            if ($i !== false) {
-                $totals[$i]['outstanding'] = round($totals[$i]['outstanding'] - $c['amount'], 2);
-            } else {
-                $totals[] = ['currency' => $c['currency'], 'billed' => 0.0, 'settled' => 0.0, 'outstanding' => round(-$c['amount'], 2), 'count' => 0];
-            }
-        }
-
-        // Ageing of what is still unpaid, per currency bucket.
+        // Ageing of what is still outstanding, per bucket. A part-paid invoice
+        // ages only by its remaining balance, not its full face value.
         $aging = ['current' => 0.0, 'd30' => 0.0, 'd60' => 0.0, 'd90' => 0.0];
         foreach ($lines->where('paid', false) as $l) {
             $d = $l['overdue_days'];
             $key = $d <= 0 ? 'current' : ($d <= 30 ? 'd30' : ($d <= 60 ? 'd60' : 'd90'));
-            $aging[$key] += $l['amount'];
+            $aging[$key] += $l['outstanding'];
         }
         $aging = array_map(fn ($v) => round($v, 2), $aging);
+
+        // Payments recorded against this party in the same window, so the
+        // statement shows the receipts as well as what they settled.
+        $payments = \App\Models\Payment::with([
+            'allocations.invoice:id,invoice_number',
+            'allocations.purchaseOrder:id,po_number',
+            'attachments:id,payment_id,original_name,mime_type,size,kind',
+        ])
+            ->where('party_type', $type)
+            ->where($type === 'customer' ? 'customer_id' : 'vendor_id', $id)
+            ->when($from, fn ($q) => $q->whereDate('payment_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('payment_date', '<=', $to))
+            ->orderByDesc('payment_date')->orderByDesc('id')
+            ->get()
+            ->map(fn ($p) => [
+                'id' => $p->id,
+                'number' => $p->payment_number,
+                'date' => optional($p->payment_date)->toDateString(),
+                'currency' => $p->currency,
+                'amount' => round((float) $p->amount, 2),
+                'allocated' => $p->allocatedAmount(),
+                'unapplied' => $p->unappliedAmount(),
+                'method' => $p->method,
+                'reference' => $p->reference,
+                'bank_account' => $p->bank_account,
+                'account_code' => $p->account_code,
+                'notes' => $p->notes,
+                'applied_to' => $p->allocations->map(fn ($a) => [
+                    'document_id' => $a->customer_invoice_id ?: $a->purchase_order_id,
+                    'number' => $a->invoice?->invoice_number ?: $a->purchaseOrder?->po_number,
+                    'amount' => round((float) $a->amount, 2),
+                ])->values(),
+                'attachments' => $p->attachments->map(fn ($f) => [
+                    'id' => $f->id,
+                    'original_name' => $f->original_name,
+                    'mime_type' => $f->mime_type,
+                    'size' => $f->size,
+                    'kind' => $f->kind,
+                ])->values(),
+            ]);
 
         return response()->json(['success' => true, 'data' => [
             'party' => ['id' => $party->id, 'name' => $party->name, 'email' => $party->email, 'type' => $type],
             'lines' => $lines->values(),
             'credits' => $credits->values(),
+            'payments' => $payments->values(),
             'totals' => $totals,
             'aging' => $aging,
+            'stats' => $this->partyStats($type, $id, $from, $to, $lines, $payments),
             // A single-currency party is the normal case; the UI simplifies then.
             'multi_currency' => count($totals) > 1,
         ]]);
+    }
+
+    /**
+     * The statement as a PDF, for chasing a debt.
+     *
+     * Only documents that still carry a balance are printed — a statement of
+     * account is a request for payment, so a fully settled invoice on it just
+     * invites an argument. Reuses statement() so the paper and the screen can
+     * never disagree.
+     */
+    public function statementPdf(Request $request, string $type, int $id)
+    {
+        abort_unless(in_array($type, ['customer', 'vendor'], true), 404);
+
+        $payload = json_decode($this->statement($request, $type, $id)->getContent(), true)['data'];
+
+        $party = $type === 'customer' ? \App\Models\Customer::find($id) : Vendor::find($id);
+        abort_unless($party, 404);
+
+        $open = collect($payload['lines'])
+            ->filter(fn ($l) => $l['outstanding'] > \App\Support\Settlement::EPSILON)
+            ->sortBy(fn ($l) => $l['due_date'] ?: $l['date'])
+            ->values();
+
+        // Totals are recomputed from the printed rows only, so the figure at
+        // the bottom always equals the column above it.
+        $totals = collect($open)->groupBy('currency')->map(fn ($rows, $cur) => [
+            'currency' => $cur,
+            'outstanding' => round($rows->sum('outstanding'), 2),
+        ])->sortByDesc('outstanding')->values()->all();
+
+        [$from, $to] = $this->range($request);
+        $periodLabel = $from || $to
+            ? ($from?->format('d.m.y') ?: 'start').' – '.($to?->format('d.m.y') ?: Carbon::today()->format('d.m.y'))
+            : 'All open items';
+        $periodSentence = $from || $to
+            ? ' for the period '.($from?->format('d.m.Y') ?: 'the beginning').' to '.($to?->format('d.m.Y') ?: Carbon::today()->format('d.m.Y'))
+            : '';
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.statement', [
+            'party' => $party,
+            'isCustomer' => $type === 'customer',
+            'lines' => $open->all(),
+            'totals' => $totals,
+            'payments' => $payload['payments'],
+            'aging' => $payload['aging'],
+            'showAging' => $type === 'customer' && $open->isNotEmpty(),
+            'multiCurrency' => count($totals) > 1,
+            // Used to suppress a per-row currency tag when there is only one.
+            'singleCurrency' => count($totals) === 1 ? $totals[0]['currency'] : null,
+            'periodLabel' => $periodLabel,
+            'periodSentence' => $periodSentence,
+            'issuedOn' => Carbon::today()->format('d.m.Y'),
+            'company' => config('procurement.company'),
+            'logo' => is_file(public_path('logo.png'))
+                ? 'data:image/png;base64,'.base64_encode(file_get_contents(public_path('logo.png')))
+                : null,
+        ]);
+
+        return $pdf->download('Statement-'.\Illuminate\Support\Str::slug($party->name).'-'.Carbon::today()->format('Y-m-d').'.pdf');
+    }
+
+    /**
+     * The at-a-glance panel: how much business this party has done and what
+     * they still owe.
+     *
+     * Two different questions live here and are deliberately kept apart:
+     *
+     *   · activity — sales, payments, document counts — answers "in this
+     *     period", so it follows the from/to filter;
+     *   · balance — outstanding, overdue — answers "right now", so it ignores
+     *     the filter. A debt does not stop existing because you narrowed the
+     *     dates, and showing it as if it did would understate what to chase.
+     */
+    private function partyStats(string $type, int $id, ?Carbon $from, ?Carbon $to, $lines, $payments): array
+    {
+        $isCustomer = $type === 'customer';
+        $today = Carbon::today();
+
+        /* ---- activity in the selected period (from the rows already loaded) ---- */
+        $byCurrency = [];
+        foreach ($lines as $l) {
+            $cur = $l['currency'] ?: $this->baseCurrency();
+            $byCurrency[$cur] ??= ['currency' => $cur, 'sales' => 0.0, 'credited' => 0.0, 'received' => 0.0];
+            // Net of credit notes — a credited invoice was never really a sale.
+            $byCurrency[$cur]['sales'] += $l['amount'] - $l['credited'];
+            $byCurrency[$cur]['credited'] += $l['credited'];
+        }
+        foreach ($payments as $p) {
+            $cur = $p['currency'] ?: $this->baseCurrency();
+            $byCurrency[$cur] ??= ['currency' => $cur, 'sales' => 0.0, 'credited' => 0.0, 'received' => 0.0];
+            $byCurrency[$cur]['received'] += $p['amount'];
+        }
+
+        $period = collect($byCurrency)->map(fn ($v) => [
+            'currency' => $v['currency'],
+            'sales' => round($v['sales'], 2),
+            'credited' => round($v['credited'], 2),
+            'received' => round($v['received'], 2),
+        ])->sortByDesc('sales')->values()->all();
+
+        /* ---- balance as of today, ignoring the date filter ---- */
+        if ($isCustomer) {
+            $all = CustomerInvoice::where('customer_id', $id)
+                ->get(['id', 'currency', 'grand_total', 'status', 'paid_at', 'due_date']);
+            $amountOf = fn ($d) => round((float) $d->grand_total, 2);
+            $manual = fn ($d) => $this->invoicePaid($d);
+        } else {
+            $all = PurchaseOrder::where('vendor_id', $id)
+                ->where('status', '!=', 'cancelled')
+                ->get(['id', 'currency', 'subtotal', 'receipt_amount', 'status', 'paid_at', 'expected_date']);
+            $amountOf = fn ($d) => round((float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal), 2);
+            $manual = fn ($d) => $d->paid_at !== null;
+        }
+
+        $index = $this->settlementIndex($type, $all->pluck('id')->all());
+
+        $balance = [];
+        $openCount = 0;
+        $overdueCount = 0;
+        $oldestDue = null;
+
+        foreach ($all as $d) {
+            $amount = $amountOf($d);
+            $s = $this->settlementOf($amount, $d->id, $index, $manual($d));
+            $cur = $d->currency ?: $this->baseCurrency();
+            $balance[$cur] ??= ['currency' => $cur, 'billed' => 0.0, 'outstanding' => 0.0, 'overdue' => 0.0];
+            $balance[$cur]['billed'] += $amount;
+            $balance[$cur]['outstanding'] += $s['outstanding'];
+
+            if ($s['outstanding'] > \App\Support\Settlement::EPSILON) {
+                $openCount++;
+                $due = $isCustomer ? $d->due_date : $d->expected_date;
+                if ($due && Carbon::parse($due)->lt($today)) {
+                    $balance[$cur]['overdue'] += $s['outstanding'];
+                    $overdueCount++;
+                }
+                if ($due && (! $oldestDue || Carbon::parse($due)->lt($oldestDue))) {
+                    $oldestDue = Carbon::parse($due);
+                }
+            }
+        }
+
+        $balance = collect($balance)->map(fn ($v) => [
+            'currency' => $v['currency'],
+            'billed' => round($v['billed'], 2),
+            'outstanding' => round($v['outstanding'], 2),
+            'overdue' => round($v['overdue'], 2),
+        ])->sortByDesc('outstanding')->values()->all();
+
+        /* ---- document counts in the period ---- */
+        $inRange = fn ($q, string $column) => $q
+            ->when($from, fn ($x) => $x->whereDate($column, '>=', $from))
+            ->when($to, fn ($x) => $x->whereDate($column, '<=', $to));
+
+        if ($isCustomer) {
+            $counts = [
+                'Enquiries' => $inRange(\App\Models\Rfq::where('customer_id', $id), 'created_at')->count(),
+                'Quotations' => $inRange(\App\Models\Offer::where('customer_id', $id), 'created_at')->count(),
+                'Delivery orders' => $inRange(\App\Models\DeliveryOrder::where('customer_id', $id), 'created_at')->count(),
+                'Invoices' => $lines->count(),
+                'Credit notes' => \App\Models\CreditMemo::where('customer_id', $id)->where('status', 'issued')
+                    ->when($from, fn ($q) => $q->whereDate('memo_date', '>=', $from))
+                    ->when($to, fn ($q) => $q->whereDate('memo_date', '<=', $to))->count(),
+                'Payments' => $payments->count(),
+            ];
+        } else {
+            $counts = [
+                'Enquiries sent' => $inRange(\App\Models\RfqVendor::where('vendor_id', $id), 'created_at')->count(),
+                'Quotes received' => $inRange(\App\Models\Quote::where('vendor_id', $id), 'created_at')->count(),
+                'Purchase orders' => $lines->count(),
+                'Payments' => $payments->count(),
+            ];
+        }
+
+        /* ---- collection behaviour: how long they actually take to pay ---- */
+        $avgDays = null;
+        $lastPayment = null;
+
+        $settled = \App\Models\PaymentAllocation::query()
+            ->join('payments', 'payments.id', '=', 'payment_allocations.payment_id')
+            ->where('payments.party_type', $type)
+            ->where('payments.'.($isCustomer ? 'customer_id' : 'vendor_id'), $id)
+            ->when($isCustomer, fn ($q) => $q
+                ->join('customer_invoices', 'customer_invoices.id', '=', 'payment_allocations.customer_invoice_id')
+                ->select('payments.payment_date', 'customer_invoices.issue_date as doc_date'))
+            ->when(! $isCustomer, fn ($q) => $q
+                ->join('purchase_orders', 'purchase_orders.id', '=', 'payment_allocations.purchase_order_id')
+                ->select('payments.payment_date', 'purchase_orders.issued_date as doc_date'))
+            ->get();
+
+        $spans = $settled->filter(fn ($r) => $r->doc_date && $r->payment_date)
+            ->map(fn ($r) => Carbon::parse($r->doc_date)->diffInDays(Carbon::parse($r->payment_date), false))
+            ->filter(fn ($d) => $d >= 0);
+
+        if ($spans->isNotEmpty()) {
+            $avgDays = (int) round($spans->avg());
+        }
+        if ($settled->isNotEmpty()) {
+            $lastPayment = $settled->max('payment_date');
+        }
+
+        return [
+            // Echoed back so the panel can label itself honestly.
+            'from' => $from?->toDateString(),
+            'to' => $to?->toDateString(),
+            'period' => $period,
+            'balance' => $balance,
+            'counts' => $counts,
+            'open_documents' => $openCount,
+            'overdue_documents' => $overdueCount,
+            'oldest_due' => $oldestDue?->toDateString(),
+            'oldest_due_days' => $oldestDue ? max(0, $oldestDue->diffInDays($today, false)) : null,
+            'avg_days_to_pay' => $avgDays,
+            'last_payment' => $lastPayment ? Carbon::parse($lastPayment)->toDateString() : null,
+        ];
     }
 }

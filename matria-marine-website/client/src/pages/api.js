@@ -8,6 +8,7 @@ const api = axios.create({
   }
 });
 
+// Local development — swap the two blocks over, and swap them BACK before pushing.
 // const api = axios.create({
 //   baseURL: 'http://localhost:8000',
 //   headers: {
@@ -272,6 +273,39 @@ export const reportsAPI = {
   // Statement of account: search parties, then pull one party's ledger.
   statementParties: (params = {}) => api.get(apiUrl('/portal/reports/statements'), { params }),
   statement: (type, id, params = {}) => api.get(apiUrl(`/portal/reports/statements/${type}/${id}`), { params }),
+  // Statement of account as a PDF — what gets emailed to chase a debt.
+  statementPdf: (type, id, params = {}) =>
+    api.get(apiUrl(`/portal/reports/statements/${type}/${id}/pdf`), { params, responseType: 'blob' }),
+
+  // Open entries: every party with a balance, as of a chosen date.
+  openEntries: (params = {}) => api.get(apiUrl('/portal/reports/open-entries'), { params }),
+  openEntriesPdf: (params = {}) =>
+    api.get(apiUrl('/portal/reports/open-entries/pdf'), { params, responseType: 'blob' }),
+};
+
+// --- Document numbering (super admin) ---
+export const documentSeriesAPI = {
+  list: () => api.get(apiUrl('/portal/document-series')),
+  setNext: (key, payload) => api.patch(apiUrl(`/portal/document-series/${key}`), payload),
+};
+
+// --- Payments: bank receipts from customers, payments out to vendors ---
+export const paymentsAPI = {
+  list: (params = {}) => api.get(apiUrl('/portal/payments'), { params }),
+  // Invoices / POs that still have a balance, ready to be ticked off.
+  openDocuments: (type, id) => api.get(apiUrl(`/portal/payments/open/${type}/${id}`)),
+  create: (payload) => api.post(apiUrl('/portal/payments'), payload),
+  update: (id, payload) => api.patch(apiUrl(`/portal/payments/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/payments/${id}`)),
+
+  // Bank slips / invoice copies. R2 is private, so opening a file means
+  // asking for a short-lived signed URL first.
+  uploadFiles: (id, formData) =>
+    api.post(apiUrl(`/portal/payments/${id}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  fileUrl: (id, attachmentId) => api.get(apiUrl(`/portal/payments/${id}/attachments/${attachmentId}/url`)),
+  removeFile: (id, attachmentId) => api.delete(apiUrl(`/portal/payments/${id}/attachments/${attachmentId}`)),
 };
 
 // --- Operating expenses (business overhead: rent, salaries, software…) ---

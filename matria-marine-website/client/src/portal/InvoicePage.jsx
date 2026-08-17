@@ -126,6 +126,33 @@ export default function InvoicePage({ params }) {
     onError: (e) => toast.error(e?.response?.data?.message || "Could not save the invoice."),
   });
 
+  /**
+   * Saving is normally silent. Moving the issue date of an invoice that has
+   * already left the building is not: it shifts the invoice between accounting
+   * periods, so a statement printed last month stops matching. Worth one
+   * question, and only asked when it actually applies.
+   */
+  const saveWithDateCheck = async () => {
+    const moved = form.issue_date !== ymd(data?.issue_date);
+    const issued = (data?.status ?? "draft") !== "draft";
+
+    if (moved && issued) {
+      const paid = data?.payment_count > 0;
+      const ok = await confirm({
+        title: "Move this invoice to a different date?",
+        message:
+          `${data.invoice_number} is dated ${ymd(data.issue_date) || "—"} and you are changing it to ${form.issue_date || "—"}.\n\n` +
+          "It will move between accounting periods, so statements and open-entries reports already printed for those dates will no longer match." +
+          (paid ? `\n\nThis invoice has ${data.payment_count} payment${data.payment_count === 1 ? "" : "s"} applied to it.` : ""),
+        confirmText: "Change the date",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+
+    save.mutate();
+  };
+
   const emailIt = useMutation({
     mutationFn: () => invoicesAPI.email(id),
     onSuccess: (res) => { toast.success(res.data.message || "Invoice emailed."); refetch(); },
@@ -216,7 +243,7 @@ export default function InvoicePage({ params }) {
               {markPaid.isLoading ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} Mark as paid
             </button>
           )}
-          <button onClick={() => save.mutate()} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-70">
+          <button onClick={saveWithDateCheck} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save
           </button>
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">

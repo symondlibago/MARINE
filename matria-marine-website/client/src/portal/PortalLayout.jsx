@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser } from "lucide-react";
+import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser, Hash } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ const NAV = [
   { label: "Vendors", to: "/vendors", icon: Ship },
   { label: "Sent Log", to: "/sent-log", icon: Send },
   { label: "Manage Staff", to: "/staff", icon: UserCog, superAdminOnly: true },
+  { label: "Numbering", to: "/numbering", icon: Hash, superAdminOnly: true },
 ];
 
 export default function PortalLayout({ user, children }) {

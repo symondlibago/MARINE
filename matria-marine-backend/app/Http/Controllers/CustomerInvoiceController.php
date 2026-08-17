@@ -153,6 +153,10 @@ class CustomerInvoiceController extends Controller
 
         $payload = $invoice->toArray();
         $payload['references'] = $this->trail($invoice);
+        // Lets the screen show what has actually been collected, and warn
+        // before a date change moves a settled invoice between periods.
+        $payload['settlement'] = \App\Support\Settlement::of($invoice);
+        $payload['payment_count'] = \App\Models\PaymentAllocation::where('customer_invoice_id', $invoice->id)->count();
 
         return response()->json(['success' => true, 'data' => $payload]);
     }
@@ -209,6 +213,17 @@ class CustomerInvoiceController extends Controller
                 if (array_key_exists($key, $data)) {
                     $invoice->{$key} = $data[$key];
                 }
+            }
+
+            // Dates drive the statement, the ageing buckets and the as-of open
+            // entries report, so a nonsensical pair would quietly produce
+            // nonsensical figures rather than fail. Caught here, once, for
+            // every caller.
+            $issue = $invoice->issue_date ? \Illuminate\Support\Carbon::parse($invoice->issue_date) : null;
+            $due = $invoice->due_date ? \Illuminate\Support\Carbon::parse($invoice->due_date) : null;
+
+            if ($issue && $due && $due->lt($issue)) {
+                abort(422, 'The due date cannot be earlier than the issue date.');
             }
             foreach (['packing_cost', 'transportation_cost', 'tax_rate'] as $key) {
                 if (array_key_exists($key, $data)) {

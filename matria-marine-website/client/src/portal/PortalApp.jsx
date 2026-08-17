@@ -20,6 +20,7 @@ import PurchaseOrderDetail from "./PurchaseOrderDetail";
 import ReturnNotes from "./ReturnNotes";
 import ReturnNoteDetail from "./ReturnNoteDetail";
 import ManageStaff from "./ManageStaff";
+import DocumentSeries from "./DocumentSeries";
 import SentLog from "./SentLog";
 import Reports from "./Reports";
 import Statements from "./Statements";
@@ -100,6 +101,7 @@ export default function PortalApp() {
               <Route path="/operating-expenses" component={OperatingExpenses} />
               <Route path="/customers" component={Customers} />
               <Route path="/staff" component={ManageStaff} />
+              <Route path="/numbering" component={DocumentSeries} />
               <Route path="/sent-log" component={SentLog} />
               <Route>
                 <div className="p-8 text-slate-500">Portal page not found.</div>

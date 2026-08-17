@@ -28,7 +28,82 @@ class DocNumber
         'ProINV' => ['MMS-ProINV', 6],
         'INV' => ['MMS-INV', 6],
         'CM' => ['MMS-CM', 6],
+        'RCPT' => ['MMS-RCPT', 6],   // money received from a customer
+        'PMT' => ['MMS-PMT', 6],     // money paid out to a vendor
     ];
+
+    /** type => human label, in the order an admin would expect to see them. */
+    private const LABELS = [
+        'QTN' => 'Enquiry / Quotation',
+        'PO' => 'Purchase order',
+        'DO' => 'Delivery order',
+        'ProINV' => 'Pro-forma invoice',
+        'INV' => 'Customer invoice',
+        'CM' => 'Credit note',
+        'RCPT' => 'Payment received',
+        'PMT' => 'Payment made',
+    ];
+
+    /**
+     * Where each type's issued numbers actually live: [model, column].
+     *
+     * Used only by {@see DocumentSeries} to work out the highest number ever
+     * issued, so the counter can never be wound back onto a number that is
+     * already on a document. Kept here beside FORMATS because the two must
+     * stay in step — adding a type means adding it in both places.
+     */
+    private const SOURCES = [
+        'QTN' => [[\App\Models\Rfq::class, 'reference']],
+        'PO' => [[\App\Models\PurchaseOrder::class, 'po_number']],
+        'DO' => [[\App\Models\DeliveryOrder::class, 'do_number']],
+        'ProINV' => [[\App\Models\DeliveryOrder::class, 'proforma_number']],
+        // Two homes: the customer invoice itself, and the copy stamped onto a
+        // purchase order when its final invoice is raised.
+        'INV' => [
+            [\App\Models\CustomerInvoice::class, 'invoice_number'],
+            [\App\Models\PurchaseOrder::class, 'invoice_number'],
+        ],
+        'CM' => [[\App\Models\CreditMemo::class, 'cm_number']],
+        // Receipts and payments share a column and are told apart by prefix.
+        'RCPT' => [[\App\Models\Payment::class, 'payment_number']],
+        'PMT' => [[\App\Models\Payment::class, 'payment_number']],
+    ];
+
+    /** @return list<string> every numbering key, in display order */
+    public static function types(): array
+    {
+        return array_keys(self::FORMATS);
+    }
+
+    public static function knows(string $type): bool
+    {
+        return isset(self::FORMATS[$type]);
+    }
+
+    public static function label(string $type): string
+    {
+        return self::LABELS[$type] ?? $type;
+    }
+
+    /** @return array{0: string, 1: int} [prefix, zero-pad width] */
+    public static function format(string $type): array
+    {
+        return self::FORMATS[$type];
+    }
+
+    /** @return list<array{0: class-string, 1: string}> */
+    public static function sources(string $type): array
+    {
+        return self::SOURCES[$type] ?? [];
+    }
+
+    /** Render a sequence the way it would be stamped onto a document. */
+    public static function preview(string $type, int $seq, ?int $year = null): string
+    {
+        [$prefix, $width] = self::FORMATS[$type];
+
+        return sprintf('%s-%d-%s', $prefix, $year ?: now()->year, str_pad((string) $seq, $width, '0', STR_PAD_LEFT));
+    }
 
     /** Atomically take the next number for a document type. */
     public static function next(string $type): string
