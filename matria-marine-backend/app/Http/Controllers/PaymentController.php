@@ -37,13 +37,11 @@ class PaymentController extends Controller
         abort_unless($party, 404);
 
         $docs = $type === 'customer'
-            ? CustomerInvoice::with('rfq:id,reference,ship_name')
+            ? CustomerInvoice::issued()->with('rfq:id,reference,ship_name')
                 ->where('customer_id', $id)
-                ->where('status', '!=', 'draft')       // a draft invoice is not yet a receivable
                 ->orderBy('due_date')->orderBy('id')->get()
-            : PurchaseOrder::with('rfq:id,reference,ship_name')
+            : PurchaseOrder::live()->with('rfq:id,reference,ship_name')
                 ->where('vendor_id', $id)
-                ->where('status', '!=', 'cancelled')
                 ->orderBy('issued_date')->orderBy('id')->get();
 
         $rows = $docs->map(function ($d) use ($type) {
@@ -67,7 +65,15 @@ class PaymentController extends Controller
         })->filter(fn ($r) => $r['outstanding'] > Settlement::EPSILON)->values();
 
         return response()->json(['success' => true, 'data' => [
-            'party' => ['id' => $party->id, 'name' => $party->name, 'type' => $type],
+            'party' => [
+                'id' => $party->id,
+                'name' => $party->name,
+                'type' => $type,
+                // What this party normally trades in. The payment screen falls
+                // back to it when nothing is outstanding, so there is still a
+                // sensible currency to record against.
+                'currency' => $party->currency,
+            ],
             'documents' => $rows,
         ]]);
     }

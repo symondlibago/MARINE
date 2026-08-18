@@ -15,6 +15,10 @@ const money = (n) =>
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
 
+// Same list the enquiry, customer and document screens offer.
+const ALL_CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
+const DEFAULT_CURRENCY = "SGD";
+
 const METHODS = [
   { value: "bank transfer", label: "Bank transfer" },
   { value: "cheque", label: "Cheque" },
@@ -57,11 +61,20 @@ export default function PaymentModal({ open, onClose, type, party, onSaved }) {
   const documents = useMemo(() => data?.documents || [], [data]);
 
   // Currencies present among the open documents — a payment settles documents
-  // in its own currency only, so the currency choice drives the whole list.
-  const currencies = useMemo(
+  // in its own currency only, so the currency choice drives the list below.
+  const openCurrencies = useMemo(
     () => [...new Set(documents.map((d) => d.currency))].sort(),
     [documents]
   );
+
+  // …but the field must never be empty or locked. A party can be fully settled
+  // and still receive money (a refund, an advance), and that payment still has
+  // to be recorded in SOME currency. Offer the ones actually owed first, then
+  // this party's own, then the rest.
+  const currencies = useMemo(() => {
+    const partyCurrency = data?.party?.currency;
+    return [...new Set([...openCurrencies, partyCurrency, DEFAULT_CURRENCY, ...ALL_CURRENCIES].filter(Boolean))];
+  }, [openCurrencies, data?.party?.currency]);
 
   // Reset each time the modal opens; default to whichever currency is owed most.
   useEffect(() => {
@@ -76,10 +89,12 @@ export default function PaymentModal({ open, onClose, type, party, onSaved }) {
     setFiles([]);
   }, [open, party?.id]);
 
+  // Pick what is actually owed; if nothing is, this party's own currency; if
+  // they have none, the house default.
   useEffect(() => {
-    if (!open || currencies.length === 0) return;
-    setCurrency((c) => (currencies.includes(c) ? c : currencies[0]));
-  }, [open, currencies]);
+    if (!open) return;
+    setCurrency(openCurrencies[0] || data?.party?.currency || DEFAULT_CURRENCY);
+  }, [open, openCurrencies, data?.party?.currency]);
 
   // Switching currency invalidates every tick — those documents are gone.
   useEffect(() => { setPicks({}); }, [currency]);
@@ -216,14 +231,11 @@ export default function PaymentModal({ open, onClose, type, party, onSaved }) {
             <DatePicker value={date} onChange={setDate} placeholder="Date" />
           </Field>
 
+          {/* Always a live dropdown: a locked field cannot be corrected, and a
+              party with nothing outstanding used to leave it blank and
+              unfixable. */}
           <Field label="Currency">
-            {currencies.length > 1 ? (
-              <Select value={currency} onChange={setCurrency} options={currencies} placeholder="Currency" />
-            ) : (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-[#28364b]">
-                {currency || "—"}
-              </div>
-            )}
+            <Select value={currency} onChange={setCurrency} options={currencies} placeholder="Currency" />
           </Field>
 
           <Field label="Amount">

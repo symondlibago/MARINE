@@ -2,12 +2,13 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
-  Download, FileDown, ChevronRight, Wallet, AlertCircle, Landmark, Search,
+  Download, FileDown, ChevronRight, Wallet, AlertCircle, Landmark, Search, History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { reportsAPI } from "@/pages/api";
 import { Spinner } from "./ui/Loading";
 import DatePicker from "./ui/DatePicker";
+import LedgerEntries from "./LedgerEntries";
 
 const money = (n) =>
   Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -25,7 +26,42 @@ const today = () => new Date().toISOString().slice(0, 10);
  * excluded and payments banked after it are not deducted, so the figure
  * reconciles against a bank statement for that day.
  */
+/**
+ * The all-parties view, in two modes.
+ *
+ * "Open items" answers what is still owed as at a date; "Full history" answers
+ * what actually happened over a period. They are different enough to live in
+ * different components, but they belong on the same screen — the question
+ * "does this only show the open ones?" should be answerable by looking at it.
+ */
 export default function OpenEntries({ type }) {
+  const [mode, setMode] = useState("open");
+
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
+        {[
+          ["open", "Open items", Wallet],
+          ["history", "Full history", History],
+        ].map(([key, label, Icon]) => (
+          <button
+            key={key}
+            onClick={() => setMode(key)}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              mode === key ? "bg-[#28364b] text-white" : "text-slate-500 hover:text-[#28364b]"
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === "open" ? <OpenItemsView type={type} /> : <LedgerEntries type={type} />}
+    </div>
+  );
+}
+
+function OpenItemsView({ type }) {
   const isCustomer = type === "customer";
 
   const [asOf, setAsOf] = useState(today());
@@ -159,12 +195,7 @@ export default function OpenEntries({ type }) {
       {isLoading && !data ? (
         <div className="flex min-h-[240px] items-center justify-center"><Spinner className="h-6 w-6" /></div>
       ) : (data?.party_count || 0) === 0 ? (
-        <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-10 text-center">
-          <Wallet className="h-8 w-8 text-slate-200" />
-          <p className="text-sm text-slate-400">
-            Nothing outstanding on {asOf}. Every {type} was settled.
-          </p>
-        </div>
+        <EmptyState data={data} asOf={asOf} type={type} isCustomer={isCustomer} />
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -211,6 +242,46 @@ export default function OpenEntries({ type }) {
         </>
       )}
     </motion.div>
+  );
+}
+
+/**
+ * Nothing to show — but say WHY.
+ *
+ * "Everyone has paid" and "there was nothing here to begin with" look identical
+ * on screen and mean opposite things. Reporting the first when the second is
+ * true reads as a clean bill of health on accounts nobody has billed yet.
+ */
+function EmptyState({ data, asOf, type, isCustomer }) {
+  const seen = data?.documents_seen ?? 0;
+  const drafts = data?.drafts_excluded ?? 0;
+  const noun = isCustomer ? "invoice" : "purchase order";
+
+  return (
+    <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-10 text-center">
+      <Wallet className="h-8 w-8 text-slate-200" />
+      {seen > 0 ? (
+        <p className="text-sm text-slate-400">
+          Nothing outstanding on {asOf} — every {type} was settled.
+        </p>
+      ) : (
+        <>
+          <p className="text-sm font-medium text-slate-500">
+            No issued {noun}s dated on or before {asOf}.
+          </p>
+          <p className="max-w-md text-xs text-slate-400">
+            Nothing has been settled or written off — there is simply nothing to report at this date.
+            {drafts === 0 && " Try moving the date forward."}
+          </p>
+        </>
+      )}
+      {drafts > 0 && (
+        <p className="mt-1 max-w-md rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {drafts} {isCustomer ? "draft" : "cancelled"} {noun}{drafts === 1 ? "" : "s"} {drafts === 1 ? "was" : "were"} left out.
+          {isCustomer && " A draft has not been issued to the customer yet, so it is not money owed."}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\LedgerEntries;
 use App\Support\OpenEntries;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -23,6 +24,28 @@ class OpenEntriesController extends Controller
         return response()->json([
             'success' => true,
             'data' => OpenEntries::build($type, $asOf, $includeUnapplied),
+        ]);
+    }
+
+    /**
+     * The full ledger: every invoice, credit note and payment in date order,
+     * grouped by party — not just what is still open.
+     */
+    public function ledger(Request $request)
+    {
+        $data = $request->validate([
+            'type' => ['required', 'in:customer,vendor'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => LedgerEntries::build(
+                $data['type'],
+                isset($data['from']) ? Carbon::parse($data['from']) : null,
+                isset($data['to']) ? Carbon::parse($data['to']) : null,
+            ),
         ]);
     }
 

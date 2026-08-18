@@ -40,8 +40,8 @@ class ReportsController extends Controller
     {
         [$from, $to] = $this->range($request);
 
-        $pos = PurchaseOrder::with(['vendor:id,name', 'rfq:id,ship_name'])
-            ->where('status', '!=', 'cancelled')
+        $pos = PurchaseOrder::live()
+            ->with(['vendor:id,name', 'rfq:id,ship_name'])
             ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
             ->get();
@@ -105,10 +105,10 @@ class ReportsController extends Controller
 
         // Cost side: the POs behind each job, grouped by enquiry.
         $rfqIds = $invoices->pluck('rfq_id')->filter()->unique()->all();
-        $posByRfq = PurchaseOrder::withCount('attachments')
+        $posByRfq = PurchaseOrder::live()
+            ->withCount('attachments')
             ->with('vendor:id,name')
             ->whereIn('rfq_id', $rfqIds)
-            ->where('status', '!=', 'cancelled')
             ->get()
             ->groupBy('rfq_id');
 
@@ -273,7 +273,7 @@ class ReportsController extends Controller
                 ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
                 ->count();
 
-            $pos = PurchaseOrder::where('vendor_id', $v->id)->where('status', '!=', 'cancelled')
+            $pos = PurchaseOrder::live()->where('vendor_id', $v->id)
                 ->when($from, fn ($q) => $q->where('created_at', '>=', $from))
                 ->when($to, fn ($q) => $q->where('created_at', '<=', $to))
                 ->get();
@@ -515,8 +515,8 @@ class ReportsController extends Controller
         // would silently never appear.
         if ($onlyOutstanding) {
             $debtors = $data['type'] === 'customer'
-                ? CustomerInvoice::whereNull('paid_at')->where('status', '!=', 'paid')->distinct()->pluck('customer_id')
-                : PurchaseOrder::whereNull('paid_at')->where('status', '!=', 'cancelled')->distinct()->pluck('vendor_id');
+                ? CustomerInvoice::issued()->whereNull('paid_at')->where('status', '!=', 'paid')->distinct()->pluck('customer_id')
+                : PurchaseOrder::live()->whereNull('paid_at')->distinct()->pluck('vendor_id');
 
             $query->whereIn('id', $debtors->filter()->all() ?: [0]);
         }
@@ -531,12 +531,11 @@ class ReportsController extends Controller
 
         // One pass over the documents for the whole page of parties.
         if ($data['type'] === 'customer') {
-            $docs = CustomerInvoice::whereIn('customer_id', $ids)
+            $docs = CustomerInvoice::issued()->whereIn('customer_id', $ids)
                 ->get(['id', 'customer_id', 'currency', 'grand_total', 'status', 'paid_at', 'due_date'])
                 ->groupBy('customer_id');
         } else {
-            $docs = PurchaseOrder::whereIn('vendor_id', $ids)
-                ->where('status', '!=', 'cancelled')
+            $docs = PurchaseOrder::live()->whereIn('vendor_id', $ids)
                 ->get(['id', 'vendor_id', 'currency', 'subtotal', 'receipt_amount', 'status', 'paid_at'])
                 ->groupBy('vendor_id');
         }
@@ -620,7 +619,8 @@ class ReportsController extends Controller
         abort_unless($party, 404);
 
         if ($type === 'customer') {
-            $invoices = CustomerInvoice::with(['rfq:id,reference,ship_name'])
+            $invoices = CustomerInvoice::issued()
+                ->with(['rfq:id,reference,ship_name'])
                 ->where('customer_id', $id)
                 ->when($from, fn ($q) => $q->where('issue_date', '>=', $from))
                 ->when($to, fn ($q) => $q->where('issue_date', '<=', $to))
@@ -674,9 +674,9 @@ class ReportsController extends Controller
                 'reason' => $m->reason,
             ]);
         } else {
-            $orders = PurchaseOrder::with(['rfq:id,reference,ship_name'])
+            $orders = PurchaseOrder::live()
+                ->with(['rfq:id,reference,ship_name'])
                 ->where('vendor_id', $id)
-                ->where('status', '!=', 'cancelled')
                 ->when($from, fn ($q) => $q->whereDate('created_at', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('created_at', '<=', $to))
                 ->orderByDesc('issued_date')->orderByDesc('id')
@@ -893,13 +893,12 @@ class ReportsController extends Controller
 
         /* ---- balance as of today, ignoring the date filter ---- */
         if ($isCustomer) {
-            $all = CustomerInvoice::where('customer_id', $id)
+            $all = CustomerInvoice::issued()->where('customer_id', $id)
                 ->get(['id', 'currency', 'grand_total', 'status', 'paid_at', 'due_date']);
             $amountOf = fn ($d) => round((float) $d->grand_total, 2);
             $manual = fn ($d) => $this->invoicePaid($d);
         } else {
-            $all = PurchaseOrder::where('vendor_id', $id)
-                ->where('status', '!=', 'cancelled')
+            $all = PurchaseOrder::live()->where('vendor_id', $id)
                 ->get(['id', 'currency', 'subtotal', 'receipt_amount', 'status', 'paid_at', 'expected_date']);
             $amountOf = fn ($d) => round((float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal), 2);
             $manual = fn ($d) => $d->paid_at !== null;

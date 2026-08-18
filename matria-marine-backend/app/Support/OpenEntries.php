@@ -108,7 +108,33 @@ class OpenEntries
             'grand_totals' => self::grandTotals($parties),
             'party_count' => $parties->count(),
             'entry_count' => $parties->sum(fn ($p) => count($p['entries']) + count($p['unapplied'])),
+            // Context for the empty state. "Nobody owes anything" and "there was
+            // nothing to look at" are different answers, and saying the first
+            // when the second is true reads as a clean bill of health.
+            'documents_seen' => count($docIds),
+            'drafts_excluded' => self::draftsExcluded($isCustomer, $asOf),
         ];
+    }
+
+    /**
+     * Documents that exist on the date but are deliberately not receivables:
+     * unfinished customer invoices, cancelled purchase orders. Reported so the
+     * screen can say why a party is missing rather than leaving it a mystery.
+     */
+    private static function draftsExcluded(bool $isCustomer, Carbon $asOf): int
+    {
+        if ($isCustomer) {
+            return CustomerInvoice::where('status', 'draft')
+                ->whereNotNull('customer_id')
+                ->whereDate('issue_date', '<=', $asOf)
+                ->count();
+        }
+
+        return PurchaseOrder::where('status', 'cancelled')
+            ->whereNotNull('vendor_id')
+            ->where(fn ($q) => $q->whereDate('issued_date', '<=', $asOf)
+                ->orWhere(fn ($w) => $w->whereNull('issued_date')->whereDate('created_at', '<=', $asOf)))
+            ->count();
     }
 
     /* ------------------------------------------------------------------ */
@@ -119,8 +145,7 @@ class OpenEntries
     private static function documentsAsOf(bool $isCustomer, Carbon $asOf): Collection
     {
         if ($isCustomer) {
-            return CustomerInvoice::query()
-                ->where('status', '!=', 'draft')          // a draft is not a receivable
+            return CustomerInvoice::issued()
                 ->whereNotNull('customer_id')
                 ->whereDate('issue_date', '<=', $asOf)
                 ->with('rfq:id,reference,ship_name')
@@ -128,8 +153,7 @@ class OpenEntries
                     'grand_total', 'status', 'paid_at', 'issue_date', 'due_date']);
         }
 
-        return PurchaseOrder::query()
-            ->where('status', '!=', 'cancelled')
+        return PurchaseOrder::live()
             ->whereNotNull('vendor_id')
             // Not every PO carries an issued date; fall back to when it was raised.
             ->where(fn ($q) => $q->whereDate('issued_date', '<=', $asOf)
@@ -333,6 +357,8 @@ class OpenEntries
             'grand_totals' => [],
             'party_count' => 0,
             'entry_count' => 0,
+            'documents_seen' => 0,
+            'drafts_excluded' => self::draftsExcluded($type === 'customer', $asOf),
         ];
     }
 }

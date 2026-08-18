@@ -58,6 +58,20 @@ class CustomerInvoice extends Model
         });
     }
 
+    /**
+     * Invoices that are actually money owed.
+     *
+     * A draft has not been issued to the customer, so it is not a receivable:
+     * it must not appear on a statement, an ageing bucket, an open-entries
+     * report or a payment screen. This scope is the single definition of that
+     * rule — every report goes through it rather than restating the condition,
+     * which is how the statement and the open-entries report came to disagree.
+     */
+    public function scopeIssued($query)
+    {
+        return $query->where('status', '!=', 'draft');
+    }
+
     public function items()
     {
         return $this->hasMany(CustomerInvoiceItem::class)->orderBy('sort')->orderBy('id');

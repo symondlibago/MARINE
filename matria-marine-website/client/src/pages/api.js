@@ -281,6 +281,8 @@ export const reportsAPI = {
   openEntries: (params = {}) => api.get(apiUrl('/portal/reports/open-entries'), { params }),
   openEntriesPdf: (params = {}) =>
     api.get(apiUrl('/portal/reports/open-entries/pdf'), { params, responseType: 'blob' }),
+  // Full history across every party — invoices, credit notes and payments.
+  ledgerEntries: (params = {}) => api.get(apiUrl('/portal/reports/ledger-entries'), { params }),
 };
 
 // --- Document numbering (super admin) ---

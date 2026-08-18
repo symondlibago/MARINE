@@ -59,6 +59,18 @@ class PurchaseOrder extends Model
         });
     }
 
+    /**
+     * Orders that are actually money we owe.
+     *
+     * The vendor-side counterpart to {@see CustomerInvoice::scopeIssued()}: a
+     * cancelled order is not a payable and must not reach a statement, an
+     * open-entries report or a payment screen.
+     */
+    public function scopeLive($query)
+    {
+        return $query->where('status', '!=', 'cancelled');
+    }
+
     public function items()
     {
         return $this->hasMany(PurchaseOrderItem::class)->orderBy('sort')->orderBy('id');

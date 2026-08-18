@@ -225,6 +225,8 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         // Open entries across every party at once, as of a chosen date.
         Route::get('reports/open-entries', [OpenEntriesController::class, 'index']);
         Route::get('reports/open-entries/pdf', [OpenEntriesController::class, 'pdf']);
+        // The same sweep, but the full history rather than only what is open.
+        Route::get('reports/ledger-entries', [OpenEntriesController::class, 'ledger']);
 
         // Payments — bank receipts from customers, payments out to vendors, and
         // the allocation of each against the invoices / POs it settles.
