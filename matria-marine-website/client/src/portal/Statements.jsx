@@ -32,6 +32,9 @@ export default function Statements() {
   const [onlyOutstanding, setOnlyOutstanding] = useState(false);
   const [selected, setSelected] = useState(null);
   const [range, setRange] = useState({ from: "", to: "" });
+  // A draft is not money owed, so it is off by default — but staff still want
+  // to see work in progress on an account sometimes.
+  const [includeDrafts, setIncludeDrafts] = useState(false);
 
   // Debounced so typing a long customer name doesn't fire a query per keystroke.
   useEffect(() => {
@@ -52,9 +55,10 @@ export default function Statements() {
   });
 
   const { data: statement, isLoading: stLoading } = useQuery({
-    queryKey: ["statement", type, selected?.id, range.from, range.to],
+    queryKey: ["statement", type, selected?.id, range.from, range.to, includeDrafts],
     queryFn: async () =>
       (await reportsAPI.statement(type, selected.id, {
+        include_drafts: includeDrafts,
         ...(range.from ? { from: range.from } : {}),
         ...(range.to ? { to: range.to } : {}),
       })).data.data,
@@ -210,6 +214,8 @@ export default function Statements() {
               party={selected}
               range={range}
               setRange={setRange}
+              includeDrafts={includeDrafts}
+              setIncludeDrafts={setIncludeDrafts}
               onBack={() => setSelected(null)}
             />
           )}
@@ -422,8 +428,9 @@ function StatsPanel({ stats, isCustomer }) {
   );
 }
 
-function StatementPanel({ data, type, party: listParty, range, setRange, onBack }) {
+function StatementPanel({ data, type, party: listParty, range, setRange, includeDrafts, setIncludeDrafts, onBack }) {
   const { party, lines, credits, payments = [], totals, aging, stats } = data;
+  const draftsAvailable = data.drafts_available || 0;
   const isCustomer = type === "customer";
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -517,6 +524,19 @@ function StatementPanel({ data, type, party: listParty, range, setRange, onBack 
           {(range.from || range.to) && (
             <button onClick={() => setRange({ from: "", to: "" })} className="text-xs text-slate-400 hover:text-[#28364b] hover:underline">
               Clear
+            </button>
+          )}
+          {/* Offered only when this customer actually has drafts — a dead
+              toggle on every other account is just noise. */}
+          {isCustomer && (draftsAvailable > 0 || includeDrafts) && (
+            <button
+              onClick={() => setIncludeDrafts((v) => !v)}
+              title="Show invoices that have not been issued to this customer yet"
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                includeDrafts ? "border-amber-500 bg-amber-500 text-white" : "border-slate-200 text-slate-500 hover:text-[#28364b]"
+              }`}
+            >
+              Include {draftsAvailable} draft{draftsAvailable === 1 ? "" : "s"}
             </button>
           )}
           <button

@@ -108,7 +108,9 @@ class DeliveryOrder extends Model
                     'unit' => $it->unit,
                     'qty' => $it->qty,
                     'unit_price' => $it->unit_price,
-                    'discount_amount' => $it->discount_amount,
+                    // Not carried across: the offer's discount is the vendor's,
+                    // so deducting it here would quietly undercharge the customer.
+                    'discount_amount' => 0,
                     'line_total' => $it->line_total,
                     'remarks' => $it->remarks, // carry the offer line's remark through
                     'sort' => $sort++,
@@ -170,7 +172,6 @@ class DeliveryOrder extends Model
             foreach ($po->items as $line) {
                 $oi = $line->rfq_item_id ? $offerByRfqItem->get($line->rfq_item_id) : null;
                 $unit = (float) ($oi?->unit_price ?? 0);
-                $discount = (float) ($oi?->discount_amount ?? 0);
                 $qty = (float) $line->qty;
 
                 $do->items()->create([
@@ -180,8 +181,9 @@ class DeliveryOrder extends Model
                     'unit' => $line->unit,
                     'qty' => $qty,
                     'unit_price' => $unit,
-                    'discount_amount' => $discount,
-                    'line_total' => round(($unit - $discount) * $qty, 2),
+                    // See above: the offer's discount belongs to us, not the customer.
+                    'discount_amount' => 0,
+                    'line_total' => round($unit * $qty, 2),
                     'remarks' => $oi?->remarks ?? $line->remarks,
                     'sort' => $sort++,
                 ]);

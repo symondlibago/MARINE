@@ -66,15 +66,16 @@ function OpenItemsView({ type }) {
 
   const [asOf, setAsOf] = useState(today());
   const [includeUnapplied, setIncludeUnapplied] = useState(true);
+  const [includeDrafts, setIncludeDrafts] = useState(false);
   const [newPagePerParty, setNewPagePerParty] = useState(false);
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState({});      // { partyId: true } — expanded rows
   const [pdfBusy, setPdfBusy] = useState(false);
 
-  const params = { type, as_of: asOf, include_unapplied: includeUnapplied };
+  const params = { type, as_of: asOf, include_unapplied: includeUnapplied, include_drafts: includeDrafts };
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["open-entries", type, asOf, includeUnapplied],
+    queryKey: ["open-entries", type, asOf, includeUnapplied, includeDrafts],
     queryFn: async () => (await reportsAPI.openEntries(params)).data.data,
     keepPreviousData: true,
   });
@@ -150,6 +151,20 @@ function OpenItemsView({ type }) {
           Include money on account
         </button>
 
+        {/* Drafts only exist customer-side; a vendor order is never a draft
+            receivable, so the toggle would mean nothing there. */}
+        {isCustomer && (
+          <button
+            onClick={() => setIncludeDrafts((v) => !v)}
+            title="Show invoices that have not been issued to the customer yet"
+            className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+              includeDrafts ? "border-amber-500 bg-amber-500 text-white" : "border-slate-200 text-slate-500 hover:text-[#28364b]"
+            }`}
+          >
+            Include drafts
+          </button>
+        )}
+
         <button
           onClick={() => setNewPagePerParty((v) => !v)}
           title="PDF only: start each party on a fresh page"
@@ -189,6 +204,11 @@ function OpenItemsView({ type }) {
       <p className="text-[11px] text-slate-400">
         Stated as at <b className="text-slate-500">{asOf}</b> — documents raised after that date are excluded, and payments
         banked after it are not deducted. An invoice paid later still shows here as open.
+        {includeDrafts && (
+          <span className="ml-1 font-medium text-amber-600">
+            Drafts are included, so these figures are not what is legally owed.
+          </span>
+        )}
       </p>
 
       {/* ---------------- grand totals ---------------- */}
@@ -278,7 +298,7 @@ function EmptyState({ data, asOf, type, isCustomer }) {
       {drafts > 0 && (
         <p className="mt-1 max-w-md rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {drafts} {isCustomer ? "draft" : "cancelled"} {noun}{drafts === 1 ? "" : "s"} {drafts === 1 ? "was" : "were"} left out.
-          {isCustomer && " A draft has not been issued to the customer yet, so it is not money owed."}
+          {isCustomer && " A draft has not been issued to the customer yet, so it is not money owed — tick Include drafts to see them anyway."}
         </p>
       )}
     </div>

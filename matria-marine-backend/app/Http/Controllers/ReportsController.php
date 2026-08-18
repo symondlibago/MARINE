@@ -611,6 +611,9 @@ class ReportsController extends Controller
 
         [$from, $to] = $this->range($request);
         $today = Carbon::today();
+        // Off by default: a draft is not money owed. On when the user wants to
+        // see work in progress alongside what has actually been billed.
+        $includeDrafts = $request->boolean('include_drafts');
 
         $party = $type === 'customer'
             ? \App\Models\Customer::find($id)
@@ -619,7 +622,7 @@ class ReportsController extends Controller
         abort_unless($party, 404);
 
         if ($type === 'customer') {
-            $invoices = CustomerInvoice::issued()
+            $invoices = CustomerInvoice::issued($includeDrafts)
                 ->with(['rfq:id,reference,ship_name'])
                 ->where('customer_id', $id)
                 ->when($from, fn ($q) => $q->where('issue_date', '>=', $from))
@@ -786,7 +789,12 @@ class ReportsController extends Controller
             'payments' => $payments->values(),
             'totals' => $totals,
             'aging' => $aging,
-            'stats' => $this->partyStats($type, $id, $from, $to, $lines, $payments),
+            'stats' => $this->partyStats($type, $id, $from, $to, $lines, $payments, $includeDrafts),
+            'include_drafts' => $includeDrafts,
+            // So the screen can offer the toggle only when it would change something.
+            'drafts_available' => $type === 'customer'
+                ? CustomerInvoice::where('customer_id', $id)->where('status', 'draft')->count()
+                : 0,
             // A single-currency party is the normal case; the UI simplifies then.
             'multi_currency' => count($totals) > 1,
         ]]);
@@ -864,7 +872,7 @@ class ReportsController extends Controller
      *     the filter. A debt does not stop existing because you narrowed the
      *     dates, and showing it as if it did would understate what to chase.
      */
-    private function partyStats(string $type, int $id, ?Carbon $from, ?Carbon $to, $lines, $payments): array
+    private function partyStats(string $type, int $id, ?Carbon $from, ?Carbon $to, $lines, $payments, bool $includeDrafts = false): array
     {
         $isCustomer = $type === 'customer';
         $today = Carbon::today();
@@ -893,7 +901,7 @@ class ReportsController extends Controller
 
         /* ---- balance as of today, ignoring the date filter ---- */
         if ($isCustomer) {
-            $all = CustomerInvoice::issued()->where('customer_id', $id)
+            $all = CustomerInvoice::issued($includeDrafts)->where('customer_id', $id)
                 ->get(['id', 'currency', 'grand_total', 'status', 'paid_at', 'due_date']);
             $amountOf = fn ($d) => round((float) $d->grand_total, 2);
             $manual = fn ($d) => $this->invoicePaid($d);

@@ -19,11 +19,11 @@ class OpenEntriesController extends Controller
 {
     public function index(Request $request)
     {
-        [$type, $asOf, $includeUnapplied] = $this->params($request);
+        [$type, $asOf, $includeUnapplied, $includeDrafts] = $this->params($request);
 
         return response()->json([
             'success' => true,
-            'data' => OpenEntries::build($type, $asOf, $includeUnapplied),
+            'data' => OpenEntries::build($type, $asOf, $includeUnapplied, $includeDrafts),
         ]);
     }
 
@@ -45,16 +45,17 @@ class OpenEntriesController extends Controller
                 $data['type'],
                 isset($data['from']) ? Carbon::parse($data['from']) : null,
                 isset($data['to']) ? Carbon::parse($data['to']) : null,
+                $request->boolean('include_drafts'),
             ),
         ]);
     }
 
     public function pdf(Request $request)
     {
-        [$type, $asOf, $includeUnapplied] = $this->params($request);
+        [$type, $asOf, $includeUnapplied, $includeDrafts] = $this->params($request);
         $newPagePerParty = $request->boolean('new_page_per_party');
 
-        $report = OpenEntries::build($type, $asOf, $includeUnapplied);
+        $report = OpenEntries::build($type, $asOf, $includeUnapplied, $includeDrafts);
 
         // Refuse loudly rather than time out half way through rendering. A
         // silent truncation here would read as "this is everyone", which on a
@@ -88,7 +89,7 @@ class OpenEntriesController extends Controller
         ));
     }
 
-    /** @return array{0: string, 1: ?Carbon, 2: bool} */
+    /** @return array{0: string, 1: ?Carbon, 2: bool, 3: bool} */
     private function params(Request $request): array
     {
         $data = $request->validate([
@@ -103,6 +104,7 @@ class OpenEntriesController extends Controller
             // carries these as the words "true"/"false", which Laravel's
             // boolean rule rejects.
             $request->has('include_unapplied') ? $request->boolean('include_unapplied') : true,
+            $request->boolean('include_drafts'),
         ];
     }
 }

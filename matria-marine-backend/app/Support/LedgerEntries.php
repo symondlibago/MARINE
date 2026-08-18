@@ -39,12 +39,12 @@ class LedgerEntries
      *   party_count: int, row_count: int, truncated: bool
      * }
      */
-    public static function build(string $type, ?Carbon $from = null, ?Carbon $to = null): array
+    public static function build(string $type, ?Carbon $from = null, ?Carbon $to = null, bool $includeDrafts = false): array
     {
         $isCustomer = $type === 'customer';
         $partyKey = $isCustomer ? 'customer_id' : 'vendor_id';
 
-        $documents = self::documents($isCustomer, $from, $to);
+        $documents = self::documents($isCustomer, $from, $to, $includeDrafts);
         $credits = $isCustomer ? self::credits($from, $to) : collect();
         $payments = self::payments($isCustomer, $from, $to);
 
@@ -91,6 +91,7 @@ class LedgerEntries
 
         return [
             'type' => $type,
+            'include_drafts' => $includeDrafts,
             'from' => $from?->toDateString(),
             'to' => $to?->toDateString(),
             'parties' => $parties->all(),
@@ -106,10 +107,10 @@ class LedgerEntries
     /*  Loaders                                                            */
     /* ------------------------------------------------------------------ */
 
-    private static function documents(bool $isCustomer, ?Carbon $from, ?Carbon $to): Collection
+    private static function documents(bool $isCustomer, ?Carbon $from, ?Carbon $to, bool $includeDrafts = false): Collection
     {
         if ($isCustomer) {
-            return CustomerInvoice::issued()
+            return CustomerInvoice::issued($includeDrafts)
                 ->whereNotNull('customer_id')
                 ->when($from, fn ($q) => $q->whereDate('issue_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('issue_date', '<=', $to))

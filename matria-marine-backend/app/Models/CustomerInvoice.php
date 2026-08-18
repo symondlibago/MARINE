@@ -67,9 +67,9 @@ class CustomerInvoice extends Model
      * rule — every report goes through it rather than restating the condition,
      * which is how the statement and the open-entries report came to disagree.
      */
-    public function scopeIssued($query)
+    public function scopeIssued($query, bool $includeDrafts = false)
     {
-        return $query->where('status', '!=', 'draft');
+        return $includeDrafts ? $query : $query->where('status', '!=', 'draft');
     }
 
     public function items()

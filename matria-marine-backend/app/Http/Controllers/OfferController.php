@@ -74,6 +74,8 @@ class OfferController extends Controller
                     'award_id' => $item->awards->first()?->id,
                     'description' => $item->description,
                     'unit' => $item->unit,
+                    // Internal cost coding, carried through from the enquiry.
+                    'accounting_code' => $item->accounting_code,
                     'qty' => $qty,
                     'base_price' => $base,
                     // Internal note only — never printed on the customer's PDF.
@@ -120,9 +122,15 @@ class OfferController extends Controller
             'status' => ['sometimes', 'string', 'in:draft,sent,accepted,declined'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
+            // A row with no id is a line Matria is adding itself; its price is
+            // typed in rather than marked up from a vendor cost.
+            'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'remove_item_ids' => ['sometimes', 'array'],
+            'remove_item_ids.*' => ['integer'],
             'items.*.description' => ['nullable', 'string', 'max:8000'],
             'items.*.code' => ['nullable', 'string', 'max:100'],
             'items.*.customs_code' => ['nullable', 'string', 'max:100'],
+            'items.*.accounting_code' => ['nullable', 'string', 'max:100'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.qty' => ['nullable', 'numeric', 'min:0'],
             'items.*.base_price' => ['nullable', 'numeric', 'min:0'],
@@ -155,9 +163,52 @@ class OfferController extends Controller
                 'status' => $data['status'] ?? $offer->status,
             ])->save();
 
+            // Lines Matria added by hand can be taken away again. Lines that
+            // came from the enquiry cannot — those belong to the enquiry, and
+            // removing one here would leave the two documents disagreeing.
+            if (! empty($data['remove_item_ids'])) {
+                $offer->items()
+                    ->whereIn('id', $data['remove_item_ids'])
+                    ->whereNull('rfq_item_id')
+                    ->delete();
+            }
+
             if (array_key_exists('items', $data)) {
                 foreach ($data['items'] as $row) {
+                    // No id: a new line of Matria's own — an agency fee, a
+                    // service — with no enquiry line and no vendor behind it.
                     if (empty($row['id'])) {
+                        if (trim((string) ($row['description'] ?? '')) === '') {
+                            continue;   // an empty row the user never filled in
+                        }
+
+                        $qty = (float) ($row['qty'] ?? 1);
+                        $unit = (float) ($row['unit_price'] ?? 0);
+                        $m = $this->lineMaths(0, 0, 0, $qty, $unit);
+
+                        $offer->items()->create([
+                            'rfq_item_id' => null,
+                            'is_heading' => false,
+                            'description' => $row['description'],
+                            'code' => $row['code'] ?? null,
+                            'customs_code' => $row['customs_code'] ?? null,
+                            'accounting_code' => $row['accounting_code'] ?? null,
+                            'unit' => $row['unit'] ?? null,
+                            'qty' => $qty,
+                            'base_price' => 0,
+                            'base_source' => 'Added by Matria',
+                            'markup_pct' => 0,
+                            'unit_price' => $m['unit'],
+                            'discount_pct' => 0,
+                            'discount_amount' => 0,
+                            'markup_amount' => $m['markup_amount'],
+                            'line_total' => $m['line_total'],
+                            'lead_time' => $row['lead_time'] ?? null,
+                            'delivery_location' => $row['delivery_location'] ?? null,
+                            'remarks' => $row['remarks'] ?? null,
+                            'sort' => (int) ($row['sort'] ?? 999),
+                        ]);
+
                         continue;
                     }
                     $item = $offer->items()->whereKey($row['id'])->first();
@@ -169,10 +220,17 @@ class OfferController extends Controller
                     $discount = array_key_exists('discount_pct', $row) ? (float) $row['discount_pct'] : (float) $item->discount_pct;
                     $qty = array_key_exists('qty', $row) ? (float) $row['qty'] : (float) $item->qty;
 
-                    $unit = round($base * (1 + $markup / 100), 2);   // marked-up unit price
-                    $discAmt = round($unit * $discount / 100, 2);    // discount per unit
-                    $amount = round(($unit - $discAmt) * $qty, 2);   // line total (net of discount)
-                    $markupAmt = round($amount - $base * $qty, 2);   // profit on the line
+                    // A line with no enquiry behind it keeps its typed price:
+                    // there is no vendor cost to mark up.
+                    $manualUnit = $item->rfq_item_id === null
+                        ? (float) ($row['unit_price'] ?? $item->unit_price)
+                        : null;
+
+                    $m = $this->lineMaths($base, $markup, $discount, $qty, $manualUnit);
+                    $unit = $m['unit'];
+                    $discAmt = $m['discount_amount'];
+                    $amount = $m['line_total'];
+                    $markupAmt = $m['markup_amount'];
 
                     // Typing over the cost makes the vendor label a lie, so the
                     // line stops claiming a source it no longer has.
@@ -184,6 +242,7 @@ class OfferController extends Controller
                         'description' => $row['description'] ?? $item->description,
                         'code' => $row['code'] ?? null,
                         'customs_code' => $row['customs_code'] ?? null,
+                        'accounting_code' => $row['accounting_code'] ?? $item->accounting_code,
                         'unit' => $row['unit'] ?? null,
                         'qty' => $qty,
                         'base_price' => $base,
@@ -231,17 +290,23 @@ class OfferController extends Controller
 
         $offer->load('items');
 
+        // The WHOLE enquiry, not just the lines already on the offer: a line
+        // added to the enquiry after this quotation was built has to be able to
+        // find its way on, which is the point of pressing Refresh.
+        //
         // Awards and quotes come along so the price can be re-read from
         // whichever vendor is selected on Compare & Award *right now*.
         $source = RfqItem::with(['awards.quoteItem.quote', 'awards.vendor:id,name', 'quoteItems.quote.vendor:id,name'])
-            ->whereIn('id', $offer->items->pluck('rfq_item_id')->filter())
+            ->where('rfq_id', $offer->rfq_id)
+            ->orderBy('sort')->orderBy('id')
             ->get()
             ->keyBy('id');
 
         $textChanged = 0;
         $pricesChanged = 0;
+        $added = 0;
 
-        DB::transaction(function () use ($offer, $source, &$textChanged, &$pricesChanged) {
+        DB::transaction(function () use ($offer, $source, &$textChanged, &$pricesChanged, &$added) {
             foreach ($offer->items as $line) {
                 $item = $source->get($line->rfq_item_id);
 
@@ -269,17 +334,15 @@ class OfferController extends Controller
                     $discount = (float) $line->discount_pct;
                     $qty = (float) $line->qty;
 
-                    $unit = round($base * (1 + $markup / 100), 2);
-                    $discAmt = round($unit * $discount / 100, 2);
-                    $amount = round(($unit - $discAmt) * $qty, 2);
+                    $m = $this->lineMaths($base, $markup, $discount, $qty);
 
                     $update += [
                         'base_price' => $base,
                         'base_source' => $baseSource,
-                        'unit_price' => $unit,
-                        'discount_amount' => $discAmt,
-                        'markup_amount' => round($amount - $base * $qty, 2),
-                        'line_total' => $amount,
+                        'unit_price' => $m['unit'],
+                        'discount_amount' => $m['discount_amount'],
+                        'markup_amount' => $m['markup_amount'],
+                        'line_total' => $m['line_total'],
                     ];
                     $pricesChanged++;
                 } elseif ($baseSource && $baseSource !== $line->base_source) {
@@ -292,11 +355,50 @@ class OfferController extends Controller
                 }
             }
 
+            // Lines added to the enquiry since this quotation was built. They
+            // come on at cost with no markup, exactly as generate() would have
+            // created them, so the pricing decision is still the user's.
+            $onOffer = $offer->items->pluck('rfq_item_id')->filter()->all();
+            $sort = (int) $offer->items->max('sort');
+
+            foreach ($source as $item) {
+                if (in_array($item->id, $onOffer, true)) {
+                    continue;
+                }
+
+                [$base, $baseSource] = $this->baseFor($item);
+                $qty = (float) $item->qty;
+
+                $offer->items()->create([
+                    'rfq_item_id' => $item->id,
+                    'award_id' => $item->awards->first()?->id,
+                    'description' => $item->description,
+                    'unit' => $item->unit,
+                    'accounting_code' => $item->accounting_code,
+                    'qty' => $qty,
+                    'base_price' => $base,
+                    'base_source' => $baseSource,
+                    'markup_pct' => 0,
+                    'unit_price' => round($base, 2),
+                    'line_total' => round($base * $qty, 2),
+                    'remarks' => $item->awards
+                        ->map(fn ($a) => $a->quoteItem?->remarks)
+                        ->filter(fn ($r) => $r !== null && $r !== '')
+                        ->unique()
+                        ->implode("\n") ?: null,
+                    'sort' => ++$sort,
+                ]);
+                $added++;
+            }
+
             // Line totals moved, so the offer's own totals have to follow.
             $offer->recalcTotals();
         });
 
         $parts = [];
+        if ($added) {
+            $parts[] = "{$added} new line(s) brought in from the enquiry";
+        }
         if ($pricesChanged) {
             $parts[] = "{$pricesChanged} price(s) re-read from the selected vendor";
         }
@@ -376,6 +478,53 @@ class OfferController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Quotation emailed to '.$email.'.']);
+    }
+
+    /**
+     * The money on one offer line — the single definition, used by every path
+     * that prices an offer.
+     *
+     * The discount here is the VENDOR'S, not the customer's. The vendor knocks
+     * 10% off their own price: we buy at 585, still sell at 650, and the 65 is
+     * our margin. So it does NOT reduce what the customer pays — which is why
+     * it must never appear on a customer-facing document.
+     *
+     * Markup and discount stack; a line can be marked up AND bought cheap.
+     * With no discount set this reduces to plain base + markup, so every line
+     * priced before the discount meant this is left exactly as it was.
+     *
+     * A manual line — an agency fee, a service Matria performs itself — has no
+     * vendor behind it. Its price is typed straight in rather than derived from
+     * a cost, and since nothing was bought to provide it, the whole amount is
+     * profit.
+     *
+     * @return array{unit: float, cost: float, discount_amount: float, line_total: float, markup_amount: float}
+     */
+    private function lineMaths(float $base, float $markup, float $discount, float $qty, ?float $manualUnit = null): array
+    {
+        if ($manualUnit !== null) {
+            $amount = round($manualUnit * $qty, 2);
+
+            return [
+                'unit' => round($manualUnit, 2),
+                'cost' => 0.0,
+                'discount_amount' => 0.0,
+                'line_total' => $amount,
+                'markup_amount' => $amount,   // no cost was incurred, so it is all margin
+            ];
+        }
+
+        $unit = round($base * (1 + $markup / 100), 2);      // what the customer pays, per unit
+        $cost = round($base * (1 - $discount / 100), 2);    // what we pay the vendor, per unit
+
+        return [
+            'unit' => $unit,
+            'cost' => $cost,
+            // The vendor's discount per unit — money we keep, not money they save.
+            'discount_amount' => round($base - $cost, 2),
+            'line_total' => round($unit * $qty, 2),
+            'markup_amount' => round(($unit - $cost) * $qty, 2),
+        ];
     }
 
     /** Base unit cost in the enquiry's base currency: the awarded price, else the lowest quote. */

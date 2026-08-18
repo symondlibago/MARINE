@@ -104,7 +104,10 @@ class PublicOfferController extends Controller
                 'unit' => $i->unit,
                 'qty' => (float) $i->qty,
                 'unit_price' => (float) $i->unit_price,
-                'discount' => round((float) $i->discount_amount * (float) $i->qty, 2),
+                // No discount is sent: the only discount an offer line carries
+                // is the vendor's, which is our margin and none of the
+                // customer's business. Showing it would invite them to expect
+                // it off their own price.
                 'line_total' => (float) $i->line_total,
             ])->values(),
         ];

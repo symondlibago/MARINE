@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt, RefreshCw, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { offersAPI, customersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -68,12 +68,16 @@ export default function OfferPage({ params }) {
         .filter((it) => !it.is_heading)
         .map((it) => ({
           id: it.id,
+          // No enquiry line behind it = Matria's own charge, priced by hand.
+          manual: it.rfq_item_id == null,
           description: it.description || "",
           code: it.code || "",
           customs_code: it.customs_code || "",
+          accounting_code: it.accounting_code || "",
           unit: it.unit || "",
           qty: Number(it.qty),
           base_price: Number(it.base_price),
+          unit_price: Number(it.unit_price || 0),
           // Read-only note of whose price this line was built from.
           base_source: it.base_source || "",
           markup_pct: Number(it.markup_pct),
@@ -87,6 +91,29 @@ export default function OfferPage({ params }) {
 
   const setH = (k, v) => setHeader((h) => ({ ...h, [k]: v }));
   const setItem = (idx, patch) => setItems((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+
+  // Ids of saved manual lines the user has removed; sent on save so the server
+  // deletes them. Enquiry lines are never in here — the server refuses those.
+  const [removedIds, setRemovedIds] = useState([]);
+
+  /** A charge of Matria's own — agency fee, handling, a service we perform. */
+  const addManualLine = () =>
+    setItems((arr) => [
+      ...arr,
+      {
+        id: null, manual: true, description: "", code: "", customs_code: "", accounting_code: "", unit: "",
+        qty: 1, base_price: 0, unit_price: 0, base_source: "Added by Matria",
+        markup_pct: 0, discount_pct: 0, lead_time: "", delivery_location: "", remarks: "",
+      },
+    ]);
+
+  const removeLine = (idx) =>
+    setItems((arr) => {
+      const row = arr[idx];
+      if (!row?.manual) return arr;           // enquiry lines belong to the enquiry
+      if (row.id) setRemovedIds((ids) => [...ids, row.id]);
+      return arr.filter((_, i) => i !== idx);
+    });
 
   /**
    * Spreadsheet-style keyboard movement across the line-item grid.
@@ -144,14 +171,35 @@ export default function OfferPage({ params }) {
     setItems((arr) => arr.map((it) => ({ ...it, lead_time: bulkLead.trim() })));
   };
 
-  // Live maths: base → markup% → unit price → discount → amount; markup amount = profit.
+  // Live maths — must mirror OfferController::lineMaths() exactly.
+  //
+  // The discount is the VENDOR'S: they knock 10% off their price, so we buy at
+  // 585, still sell at 650, and the 65 is profit. It lowers our cost, never the
+  // customer's price.
   const rows = items.map((it) => {
     const base = Number(it.base_price) || 0;
     const qty = Number(it.qty) || 0;
-    const unit = base * (1 + (Number(it.markup_pct) || 0) / 100);
-    const discAmt = unit * (Number(it.discount_pct) || 0) / 100;
-    const amount = (unit - discAmt) * qty;
-    return { ...it, unit_price: unit, disc_amount: discAmt, line_total: amount, markup_amount: amount - base * qty, base_line: base * qty };
+
+    // A line Matria added itself: nothing was bought, so the typed price IS the
+    // price and every cent of it is profit.
+    if (it.manual) {
+      const unit = Number(it.unit_price) || 0;
+      const amount = unit * qty;
+      return { ...it, unit_price: unit, disc_amount: 0, cost_line: 0, line_total: amount, markup_amount: amount, base_line: 0 };
+    }
+
+    const unit = base * (1 + (Number(it.markup_pct) || 0) / 100);   // customer pays
+    const cost = base * (1 - (Number(it.discount_pct) || 0) / 100); // we pay
+    const amount = unit * qty;
+    return {
+      ...it,
+      unit_price: unit,
+      disc_amount: base - cost,          // the vendor's discount per unit — ours
+      cost_line: cost * qty,
+      line_total: amount,
+      markup_amount: (unit - cost) * qty,
+      base_line: cost * qty,             // what the line actually costs us
+    };
   });
   const baseTotal = rows.reduce((s, r) => s + r.base_line, 0);
   const custTotal = rows.reduce((s, r) => s + r.line_total, 0);
@@ -202,22 +250,28 @@ export default function OfferPage({ params }) {
         tax_rate: Number(header.tax_rate) || 0,
         status: header.status,
         notes: header.notes || null,
-        items: items.map((it) => ({
+        remove_item_ids: removedIds,
+        items: items.map((it, i) => ({
           id: it.id,
           description: it.description,
           code: it.code || null,
           customs_code: it.customs_code || null,
+          accounting_code: it.accounting_code || null,
           unit: it.unit || null,
           qty: Number(it.qty) || 0,
           base_price: Number(it.base_price) || 0,
+          // Only meaningful on a manual line; ignored for enquiry lines, whose
+          // price is derived from the vendor cost.
+          unit_price: Number(it.unit_price) || 0,
           markup_pct: Number(it.markup_pct) || 0,
           discount_pct: Number(it.discount_pct) || 0,
           lead_time: it.lead_time || null,
           delivery_location: it.delivery_location || null,
           remarks: it.remarks || null,
+          sort: i,
         })),
       }),
-    onSuccess: () => { toast.success("Offer saved."); refetch(); },
+    onSuccess: () => { toast.success("Offer saved."); setRemovedIds([]); refetch(); },
     onError: (e) => toast.error(e?.response?.data?.message || "Could not save."),
   });
 
@@ -390,9 +444,19 @@ export default function OfferPage({ params }) {
               >
                 {syncEnquiry.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh from enquiry
               </button>
+              {/* Matria's own charges — an agency fee, handling, a service we
+                  perform ourselves. No vendor, so the whole amount is profit. */}
+              <button
+                onClick={addManualLine}
+                title="Add a charge of your own — agency fee, handling, a service Matria provides"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-[#28364b] hover:text-[#28364b]"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add own line
+              </button>
             </div>
             <p className="text-xs text-slate-400">
-              Amber columns are internal — the customer only sees description, unit, qty, unit price, discount &amp; amount.
+              Amber columns are internal — the customer only sees description, unit, qty, unit price &amp; amount.
+              A vendor discount lowers <em>our</em> cost and becomes profit; it never reduces what the customer pays.
               Press <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↑</kbd>{" "}
               <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↓</kbd> or{" "}
               <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">Enter</kbd> to move down the same column.
@@ -416,35 +480,49 @@ export default function OfferPage({ params }) {
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className={`${th} sticky left-0 z-10 bg-white min-w-[170px]`}>Description</th>
-                <th className={th}>Code</th>
-                <th className={th}>Customs</th>
+                <th className={th} title="Supplier / part number">Code</th>
+                <th className={th} title="HS / customs tariff code, for shipping paperwork">Customs</th>
+                {/* Amber: the office's own cost coding, never shown to the customer. */}
+                <th className={`${th} ${internal}`} title="The office's own cost coding — internal, never printed for the customer">
+                  Acct Code
+                </th>
                 <th className={th}>Unit</th>
                 <th className={`${th} text-right`}>Qty</th>
                 <th className={`${th} ${internal} text-right`}>Base</th>
                 <th className={`${th} ${internal} text-right`}>Base Amt</th>
                 <th className={`${th} ${internal} text-right`}>Markup %</th>
                 <th className={`${th} text-right`}>Unit Price</th>
-                <th className={`${th} text-right`}>Disc %</th>
-                <th className={`${th} text-right`}>Disc Amt</th>
+                {/* Amber: the vendor's discount is internal, never shown to the customer. */}
+                <th className={`${th} ${internal} text-right`} title="Discount the VENDOR gives us — lowers our cost, not the customer's price">
+                  Vendor Disc %
+                </th>
+                <th className={`${th} ${internal} text-right`} title="The vendor's discount per unit — money we keep">Disc Amt</th>
                 <th className={`${th} ${internal} text-right`}>Markup Amt</th>
                 <th className={`${th} text-right`}>Amount</th>
                 <th className={th}>Lead time</th>
                 <th className={th}>Delivery</th>
                 <th className={th}>Remarks</th>
+                <th className={th}></th>
               </tr>
             </thead>
             <tbody onKeyDown={gridKeyDown} onWheel={gridWheel}>
               {rows.map((r, idx) => (
-                <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">
+                // Unsaved manual lines have no id yet, so fall back to position.
+                <tr key={r.id ?? `new-${idx}`} className={`border-b border-slate-100 last:border-0 align-top ${r.manual ? "bg-sky-50/40" : ""}`}>
                   {/* textarea, not input: a single-line input silently strips the item's
     second description line when the offer is saved. */}
                   <td className="px-1.5 py-2 sticky left-0 z-10 bg-white"><textarea rows={2} className={ci + " resize-y leading-snug"} value={r.description} onChange={(e) => setItem(idx, { description: e.target.value })} /></td>
-                  <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.code} onChange={(e) => setItem(idx, { code: e.target.value })} /></td>
-                  <td className="px-1.5 py-2"><input className={`${ci} w-16`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-32`} value={r.code} onChange={(e) => setItem(idx, { code: e.target.value })} placeholder="Part no." /></td>
+                  <td className="px-1.5 py-2"><input className={`${ci} w-28`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} placeholder="HS code" /></td>
+                  <td className={`px-1.5 py-2 ${internal}`}><input className={`${ci} w-28`} value={r.accounting_code} onChange={(e) => setItem(idx, { accounting_code: e.target.value })} placeholder="Acct code" /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-14`} value={r.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input type="number" step="0.001" className={`${ci} ${num} min-w-[4.5rem] text-right`} value={r.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} /></td>
                   <td className={`px-1.5 py-2 ${internal}`}>
-                    <input type="number" step="0.0001" className={`${ci} ${num} min-w-[7rem] text-right`} value={r.base_price} onChange={(e) => setItem(idx, { base_price: e.target.value })} />
+                    {r.manual ? (
+                      <div className="text-right text-xs text-slate-300" title="Matria's own charge — nothing was bought for it">—</div>
+                    ) : (
+                      <input type="number" step="0.0001" className={`${ci} ${num} min-w-[7rem] text-right`} value={r.base_price} onChange={(e) => setItem(idx, { base_price: e.target.value })} />
+                    )}
                     {/* Whose price this is. The selection on Compare & Award can
                         move afterwards, so the line has to say it for itself. */}
                     {r.base_source && (
@@ -457,10 +535,29 @@ export default function OfferPage({ params }) {
                     )}
                   </td>
                   <td className={`px-1.5 py-2 text-right text-slate-500 whitespace-nowrap ${internal}`}>{money(r.base_line)}</td>
-                  <td className={`px-1.5 py-2 ${internal}`}><input type="number" step="0.1" className={`${ci} ${num} min-w-[4rem] text-right`} value={r.markup_pct} onChange={(e) => setItem(idx, { markup_pct: e.target.value })} /></td>
-                  <td className="px-1.5 py-2 text-right font-medium text-[#28364b] whitespace-nowrap">{money(r.unit_price)}</td>
-                  <td className="px-1.5 py-2"><input type="number" step="0.1" className={`${ci} ${num} min-w-[3.5rem] text-right`} value={r.discount_pct} onChange={(e) => setItem(idx, { discount_pct: e.target.value })} /></td>
-                  <td className="px-1.5 py-2 text-right text-slate-500 whitespace-nowrap">{money(r.disc_amount)}</td>
+                  <td className={`px-1.5 py-2 ${internal}`}>
+                    {r.manual ? (
+                      <div className="text-right text-xs text-slate-300">—</div>
+                    ) : (
+                      <input type="number" step="0.1" className={`${ci} ${num} min-w-[4rem] text-right`} value={r.markup_pct} onChange={(e) => setItem(idx, { markup_pct: e.target.value })} />
+                    )}
+                  </td>
+                  {/* A manual line is priced here directly — there is no cost to mark up. */}
+                  <td className="px-1.5 py-2 text-right font-medium text-[#28364b] whitespace-nowrap">
+                    {r.manual ? (
+                      <input type="number" step="0.01" className={`${ci} ${num} min-w-[6rem] text-right font-medium`} value={r.unit_price} onChange={(e) => setItem(idx, { unit_price: e.target.value })} />
+                    ) : (
+                      money(r.unit_price)
+                    )}
+                  </td>
+                  <td className={`px-1.5 py-2 ${internal}`}>
+                    {r.manual ? (
+                      <div className="text-right text-xs text-slate-300">—</div>
+                    ) : (
+                      <input type="number" step="0.1" className={`${ci} ${num} min-w-[3.5rem] text-right`} value={r.discount_pct} onChange={(e) => setItem(idx, { discount_pct: e.target.value })} />
+                    )}
+                  </td>
+                  <td className={`px-1.5 py-2 text-right whitespace-nowrap ${internal} ${Number(r.disc_amount) > 0 ? "font-medium text-green-700" : "text-slate-500"}`}>{money(r.disc_amount)}</td>
                   <td className={`px-1.5 py-2 text-right font-medium text-green-700 whitespace-nowrap ${internal}`}>{money(r.markup_amount)}</td>
                   <td className="px-1.5 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">{money(r.line_total)}</td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.lead_time} onChange={(e) => setItem(idx, { lead_time: e.target.value })} placeholder="e.g. 2 days" /></td>
@@ -468,15 +565,29 @@ export default function OfferPage({ params }) {
                   {/* textarea, not input: a remark can now carry a second line
                       from Compare & Award, and a text input silently strips it. */}
                   <td className="px-1.5 py-2"><textarea rows={2} className={`${ci} w-24 resize-y leading-snug`} value={r.remarks} onChange={(e) => setItem(idx, { remarks: e.target.value })} /></td>
+                  {/* Only Matria's own lines can be removed here; an enquiry
+                      line is removed on the enquiry, not on the quotation. */}
+                  <td className="px-1.5 py-2 text-center">
+                    {r.manual && (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(idx)}
+                        title="Remove this line"
+                        className="rounded p-1 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={16} className="py-8 text-center text-slate-400">No line items on this offer.</td></tr>
+                <tr><td colSpan={18} className="py-8 text-center text-slate-400">No line items on this offer.</td></tr>
               )}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-slate-200 bg-slate-50 align-bottom">
-                <td colSpan={6} className="px-1.5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Items subtotal ({header.currency})</td>
+                <td colSpan={7} className="px-1.5 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Items subtotal ({header.currency})</td>
                 <td className="px-1.5 py-2 text-right whitespace-nowrap">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total base</div>
                   <div className="text-xs font-semibold text-slate-600">{money(baseTotal)}</div>
@@ -490,26 +601,26 @@ export default function OfferPage({ params }) {
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">After mark-up</div>
                   <div className="text-sm font-semibold text-[#28364b]">{money(custTotal)}</div>
                 </td>
-                <td colSpan={3}></td>
+                <td colSpan={4}></td>
               </tr>
               {packing > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={12} className="px-1.5 py-1 text-right text-xs text-slate-500">Packing cost</td>
+                  <td colSpan={13} className="px-1.5 py-1 text-right text-xs text-slate-500">Packing cost</td>
                   <td className="px-1.5 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(packing)}</td>
-                  <td colSpan={3}></td>
+                  <td colSpan={4}></td>
                 </tr>
               )}
               {transportation > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={12} className="px-1.5 py-1 text-right text-xs text-slate-500">Transportation cost</td>
+                  <td colSpan={13} className="px-1.5 py-1 text-right text-xs text-slate-500">Transportation cost</td>
                   <td className="px-1.5 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(transportation)}</td>
-                  <td colSpan={3}></td>
+                  <td colSpan={4}></td>
                 </tr>
               )}
               <tr className="border-t border-slate-200 bg-slate-50">
-                <td colSpan={12} className="px-1.5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
+                <td colSpan={13} className="px-1.5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
                 <td className="px-1.5 py-3 text-right text-base font-bold text-[#28364b] whitespace-nowrap">{money(grandTotal)}</td>
-                <td colSpan={3}></td>
+                <td colSpan={4}></td>
               </tr>
             </tfoot>
           </table>

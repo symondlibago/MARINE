@@ -35,7 +35,7 @@ class OpenEntries
      *   parties: array, grand_totals: array, party_count: int, entry_count: int
      * }
      */
-    public static function build(string $type, ?Carbon $asOf = null, bool $includeUnapplied = true): array
+    public static function build(string $type, ?Carbon $asOf = null, bool $includeUnapplied = true, bool $includeDrafts = false): array
     {
         $asOf = ($asOf ?: Carbon::today())->endOfDay();
         $isCustomer = $type === 'customer';
@@ -47,7 +47,7 @@ class OpenEntries
         //    No early return when this is empty: a party can hold money on
         //    account with no document raised against it yet, and that balance
         //    still has to be reported.
-        $documents = self::documentsAsOf($isCustomer, $asOf);
+        $documents = self::documentsAsOf($isCustomer, $asOf, $includeDrafts);
         $docIds = $documents->pluck('id')->all();
 
         // 2 & 3. Payments applied and credit notes issued on or before the date.
@@ -112,7 +112,9 @@ class OpenEntries
             // nothing to look at" are different answers, and saying the first
             // when the second is true reads as a clean bill of health.
             'documents_seen' => count($docIds),
-            'drafts_excluded' => self::draftsExcluded($isCustomer, $asOf),
+            'include_drafts' => $includeDrafts,
+            // Nothing is left out once they are being included.
+            'drafts_excluded' => $includeDrafts ? 0 : self::draftsExcluded($isCustomer, $asOf),
         ];
     }
 
@@ -142,10 +144,10 @@ class OpenEntries
     /* ------------------------------------------------------------------ */
 
     /** Documents that existed on the date, whatever their balance. */
-    private static function documentsAsOf(bool $isCustomer, Carbon $asOf): Collection
+    private static function documentsAsOf(bool $isCustomer, Carbon $asOf, bool $includeDrafts = false): Collection
     {
         if ($isCustomer) {
-            return CustomerInvoice::issued()
+            return CustomerInvoice::issued($includeDrafts)
                 ->whereNotNull('customer_id')
                 ->whereDate('issue_date', '<=', $asOf)
                 ->with('rfq:id,reference,ship_name')
@@ -358,6 +360,7 @@ class OpenEntries
             'party_count' => 0,
             'entry_count' => 0,
             'documents_seen' => 0,
+            'include_drafts' => false,
             'drafts_excluded' => self::draftsExcluded($type === 'customer', $asOf),
         ];
     }

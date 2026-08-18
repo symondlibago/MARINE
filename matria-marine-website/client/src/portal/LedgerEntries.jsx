@@ -21,14 +21,16 @@ export default function LedgerEntries({ type }) {
   const isCustomer = type === "customer";
 
   const [range, setRange] = useState({ from: "", to: "" });
+  const [includeDrafts, setIncludeDrafts] = useState(false);
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState({});
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["ledger-entries", type, range.from, range.to],
+    queryKey: ["ledger-entries", type, range.from, range.to, includeDrafts],
     queryFn: async () =>
       (await reportsAPI.ledgerEntries({
         type,
+        include_drafts: includeDrafts,
         ...(range.from ? { from: range.from } : {}),
         ...(range.to ? { to: range.to } : {}),
       })).data.data,
@@ -78,6 +80,18 @@ export default function LedgerEntries({ type }) {
           </button>
         )}
 
+        {isCustomer && (
+          <button
+            onClick={() => setIncludeDrafts((v) => !v)}
+            title="Show invoices that have not been issued to the customer yet"
+            className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+              includeDrafts ? "border-amber-500 bg-amber-500 text-white" : "border-slate-200 text-slate-500 hover:text-[#28364b]"
+            }`}
+          >
+            Include drafts
+          </button>
+        )}
+
         <div className="relative min-w-[180px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
@@ -100,6 +114,9 @@ export default function LedgerEntries({ type }) {
       <p className="text-[11px] text-slate-400">
         Every invoice, credit note and payment in date order — settled ones included.
         {range.from || range.to ? "" : " Showing all time; set a period to narrow it."}
+        {includeDrafts && (
+          <span className="ml-1 font-medium text-amber-600">Drafts are included.</span>
+        )}
       </p>
 
       {isLoading && !data ? (
