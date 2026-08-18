@@ -13,6 +13,7 @@ import { Analytics } from '@vercel/analytics/react';
 // Code-split: the staff portal and the public vendor quote page are lazy-loaded
 // so they stay out of the marketing bundle.
 const PortalApp = lazy(() => import("@/portal/PortalApp"));
+const PayrollApp = lazy(() => import("@/payroll/PayrollApp"));
 const QuotePage = lazy(() => import("@/pages/QuotePage"));
 const PoAcceptancePage = lazy(() => import("@/pages/PoAcceptancePage"));
 const OfferAcceptancePage = lazy(() => import("@/pages/OfferAcceptancePage"));
@@ -61,6 +62,13 @@ function Router() {
       <Route path="/portal" nest>
         <Suspense fallback={<RouteLoader />}>
           <PortalApp />
+        </Suspense>
+      </Route>
+
+      {/* Payroll — a separate operation, same staff login. */}
+      <Route path="/payroll" nest>
+        <Suspense fallback={<RouteLoader />}>
+          <PayrollApp />
         </Suspense>
       </Route>
 

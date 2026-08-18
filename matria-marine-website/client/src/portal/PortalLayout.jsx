@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser, Hash } from "lucide-react";
+import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser, Hash, ArrowLeftRight } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +81,20 @@ export default function PortalLayout({ user, children }) {
             );
           })}
         </nav>
-        <div className="border-t border-slate-200 p-3">
+        <div className="space-y-1 border-t border-slate-200 p-3">
+          {/* Payroll is a separate operation with its own screens, but the same
+              staff login — the same way Inventory links back to here. */}
+          <a
+            href="/payroll"
+            title={collapsed ? "Payroll" : undefined}
+            className={cn(
+              "flex items-center rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100",
+              collapsed ? "justify-center" : "gap-2"
+            )}
+          >
+            <ArrowLeftRight className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Payroll</span>}
+          </a>
           <button
             onClick={() => setCollapsed((c) => !c)}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}

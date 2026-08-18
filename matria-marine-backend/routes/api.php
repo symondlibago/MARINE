@@ -265,3 +265,8 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
 if (file_exists(__DIR__.'/inventory.php')) {
     require __DIR__.'/inventory.php';
 }
+
+// Payroll — likewise a separate operation, likewise optional at boot.
+if (file_exists(__DIR__.'/payroll.php')) {
+    require __DIR__.'/payroll.php';
+}
