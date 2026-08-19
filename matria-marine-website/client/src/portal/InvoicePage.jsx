@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send } from "lucide-react";
 import { toast } from "sonner";
 import { invoicesAPI, customersAPI, creditMemosAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -166,6 +166,13 @@ export default function InvoicePage({ params }) {
     onError: () => toast.error("Could not update the payment status."),
   });
 
+  // Quick status change to/from "sent", so the common case doesn't need the dropdown.
+  const markSent = useMutation({
+    mutationFn: (status) => invoicesAPI.update(id, { status }),
+    onSuccess: (_res, status) => { toast.success(status === "sent" ? "Marked as sent." : "Moved back to draft."); refetch(); },
+    onError: () => toast.error("Could not update the status."),
+  });
+
   const del = useMutation({
     mutationFn: () => invoicesAPI.remove(id),
     onSuccess: () => { toast.success("Invoice deleted."); setLocation("/invoices"); },
@@ -234,6 +241,16 @@ export default function InvoicePage({ params }) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Quick "Mark as sent" so the status dropdown isn't needed for the usual flow. */}
+          {data.status === "sent" ? (
+            <button onClick={() => markSent.mutate("draft")} disabled={markSent.isLoading} title="Undo — back to draft" className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-70">
+              {markSent.isLoading ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />} Sent
+            </button>
+          ) : data.status === "draft" ? (
+            <button onClick={() => markSent.mutate("sent")} disabled={markSent.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-70">
+              {markSent.isLoading ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />} Mark as sent
+            </button>
+          ) : null}
           {data.status === "paid" ? (
             <button onClick={() => markPaid.mutate("sent")} disabled={markPaid.isLoading} title="Undo — mark as unpaid" className="inline-flex items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 disabled:opacity-70">
               {markPaid.isLoading ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} Paid{data.paid_at ? ` · ${ymd(data.paid_at)}` : ""}
