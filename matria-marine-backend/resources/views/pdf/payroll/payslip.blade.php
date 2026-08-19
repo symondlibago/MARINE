@@ -33,6 +33,15 @@
         .info td.num { text-align: right; }
         .note { margin-top: 12px; border-left: 3px solid #cebd88; background: #fdfbf5;
                 padding: 7px 10px; font-size: 9.5px; color: #6b5b32; line-height: 1.55; }
+        .ytd { width: 100%; margin-top: 16px; border: 1px solid #e5e7eb; }
+        .ytd th { background: #28364b; color: #fff; font-size: 8.5px; text-transform: uppercase;
+                  letter-spacing: 0.6px; padding: 5px 9px; text-align: left; font-weight: bold; }
+        .ytd th .sub { font-weight: normal; text-transform: none; letter-spacing: 0; color: #cbd3df; }
+        .ytd td { width: 33.33%; border-top: 1px solid #eef0f3; text-align: center; }
+        .ytd .lab td { color: #6b7280; font-size: 8.5px; text-transform: uppercase;
+                       letter-spacing: 0.6px; padding: 6px 9px 2px 9px; }
+        .ytd .val td { color: #28364b; font-size: 13.5px; font-weight: bold; padding: 0 9px 7px 9px; }
+        .ytd td + td { border-left: 1px solid #eef0f3; }
         .page-footer { position: fixed; bottom: -58px; left: 0; right: 0; text-align: center;
                        font-size: 8.5px; color: #8a94a3; line-height: 1.6; }
     </style>
@@ -162,6 +171,26 @@
         <td class="num">{{ $money($line->cpf_wages) }}</td>
         <td>CPF Age Band</td>
         <td class="num">{{ $ageBand }}</td>
+    </tr>
+</table>
+
+{{-- Year to date: totals paid so far this calendar year, for tax declaration --}}
+<table class="ytd">
+    <tr>
+        <th colspan="3">
+            Year to Date &mdash; {{ $run->period->format('Y') }}
+            <span class="sub">&nbsp; totals paid Jan&ndash;{{ $run->period->format('M') }}, for tax declaration</span>
+        </th>
+    </tr>
+    <tr class="lab">
+        <td>YTD Gross Earnings</td>
+        <td>YTD Employee CPF</td>
+        <td>YTD Employer CPF</td>
+    </tr>
+    <tr class="val">
+        <td>{{ $currency }} {{ $money($ytd['gross']) }}</td>
+        <td>{{ $currency }} {{ $money($ytd['employee_cpf']) }}</td>
+        <td>{{ $currency }} {{ $money($ytd['employer_cpf']) }}</td>
     </tr>
 </table>
 

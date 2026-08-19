@@ -18,10 +18,10 @@ import {
 import { toast } from "sonner";
 import { payrollAPI } from "./api";
 import { money, dim, dateOf, btn, inputCls, cellCls, StatCard, StatusPill, downloadBlob } from "./lib";
+import DatePicker from "./DatePicker";
 import { PageLoader, Spinner } from "@/portal/ui/Loading";
 import { useConfirm } from "@/portal/ui/confirm";
 import Select from "@/portal/ui/Select";
-import DatePicker from "@/portal/ui/DatePicker";
 
 /** The columns the office types into, in the order they appear on screen. */
 const INPUTS = [
@@ -143,6 +143,7 @@ export default function RunPage() {
 
   const locked = run.locked;
   const t = run.totals;
+  const ccy = run.currency || "SGD";
   const flagged = run.lines.filter((l) => (l.review_flags || []).length > 0);
 
   return (
@@ -158,7 +159,7 @@ export default function RunPage() {
             <StatusPill status={run.status} />
           </h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            {t.headcount} employee(s) · paid {dateOf(run.payment_date)} · figures in {run.currency}
+            {t.headcount} employee(s) · paid {dateOf(run.payment_date)} · figures in {ccy}
           </p>
         </div>
 
@@ -180,10 +181,10 @@ export default function RunPage() {
 
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Gross Earnings" value={money(t.gross_earnings)} icon={Wallet} />
-        <StatCard label="Total Deductions" value={money(t.total_deductions)} hint={`CPF ${money(t.employee_cpf)} · SHG ${money(t.shg_deduction)}`} icon={Receipt} />
-        <StatCard label="Total Net Pay" value={money(t.net_salary)} tone="navy" icon={Landmark} />
-        <StatCard label="Total Employer Cost" value={money(t.total_employer_cost)} hint={`Employer CPF ${money(t.employer_cpf)} · SDL ${money(t.sdl)}`} icon={Building2} />
+        <StatCard label="Gross Earnings" value={money(t.gross_earnings)} currency={ccy} icon={Wallet} />
+        <StatCard label="Total Deductions" value={money(t.total_deductions)} currency={ccy} hint={`CPF ${money(t.employee_cpf)} · SHG ${money(t.shg_deduction)}`} icon={Receipt} />
+        <StatCard label="Total Net Pay" value={money(t.net_salary)} currency={ccy} tone="navy" icon={Landmark} />
+        <StatCard label="Total Employer Cost" value={money(t.total_employer_cost)} currency={ccy} hint={`Employer CPF ${money(t.employer_cpf)} · SDL ${money(t.sdl)}`} icon={Building2} />
       </div>
 
       {locked && (

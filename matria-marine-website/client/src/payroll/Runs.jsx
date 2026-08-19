@@ -5,11 +5,11 @@ import { CalendarRange, Plus, ChevronRight, Trash2, Save, Users } from "lucide-r
 import { toast } from "sonner";
 import { payrollAPI } from "./api";
 import { dateOf, monthOf, btn, inputCls, StatusPill } from "./lib";
+import DatePicker from "./DatePicker";
 import { PageLoader, Spinner } from "@/portal/ui/Loading";
 import { useConfirm } from "@/portal/ui/confirm";
 import Modal from "@/portal/ui/Modal";
 import Select from "@/portal/ui/Select";
-import DatePicker from "@/portal/ui/DatePicker";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",

@@ -1,11 +1,3 @@
-/**
- * Shared helpers for the payroll screens.
- *
- * Nothing here calculates pay: the backend owns every figure. These only format
- * what the API already returned, so a number can never differ between the
- * screen and the payslip.
- */
-
 /** Money, always two decimals. */
 export const money = (n) =>
   Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -42,7 +34,7 @@ export const btn = {
 };
 
 /** Summary card used across the payroll screens. */
-export function StatCard({ label, value, hint, tone = "default", icon: Icon }) {
+export function StatCard({ label, value, hint, tone = "default", icon: Icon, currency }) {
   const tones = {
     default: "border-slate-200 bg-white",
     good: "border-emerald-200 bg-emerald-50/50",
@@ -59,7 +51,14 @@ export function StatCard({ label, value, hint, tone = "default", icon: Icon }) {
         </p>
         {Icon && <Icon className={`h-4 w-4 shrink-0 ${isNavy ? "text-[#cebd88]" : "text-slate-300"}`} />}
       </div>
-      <p className={`mt-1.5 text-2xl font-bold ${isNavy ? "text-white" : "text-[#28364b]"}`}>{value}</p>
+      <p className={`mt-1.5 text-2xl font-bold ${isNavy ? "text-white" : "text-[#28364b]"}`}>
+        {currency ? (
+          <span className={`mr-1 align-baseline text-sm font-semibold ${isNavy ? "text-white/70" : "text-slate-400"}`}>
+            {currency}
+          </span>
+        ) : null}
+        {value}
+      </p>
       {hint && <p className={`mt-0.5 text-xs ${isNavy ? "text-white/60" : "text-slate-400"}`}>{hint}</p>}
     </div>
   );
