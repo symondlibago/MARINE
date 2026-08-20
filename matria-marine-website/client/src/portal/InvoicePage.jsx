@@ -8,6 +8,7 @@ import { invoicesAPI, customersAPI, creditMemosAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
+import ProofOfDelivery from "./ProofOfDelivery";
 import { PageLoader, Spinner } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
@@ -527,6 +528,16 @@ export default function InvoicePage({ params }) {
           </div>
         );
       })()}
+
+      {/* Proof of delivery — filed against the linked delivery order, so the
+          signed copy is uploaded once and shows on both screens. */}
+      <ProofOfDelivery
+        deliveryOrderId={data.proof_of_delivery_do?.id}
+        doNumber={data.proof_of_delivery_do?.do_number}
+        attachments={data.proof_of_delivery || []}
+        onChange={() => refetch()}
+        hint="Attach the delivery order signed and stamped by the vessel, confirming this invoice's goods were received."
+      />
     </motion.div>
   );
 }

@@ -191,6 +191,13 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::get('delivery-orders/{deliveryOrder}/pdf', [DeliveryOrderController::class, 'pdf']);
         Route::get('delivery-orders/{deliveryOrder}/proforma', [DeliveryOrderController::class, 'proforma']);
         Route::get('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'show']);
+
+        // Proof of delivery — the signed copy back from the vessel (R2).
+        // Internal only: never attached to a customer email.
+        Route::post('delivery-orders/{deliveryOrder}/attachments', [DeliveryOrderController::class, 'uploadAttachments']);
+        Route::get('delivery-orders/{deliveryOrder}/attachments/{attachment}/url', [DeliveryOrderController::class, 'attachmentUrl']);
+        Route::delete('delivery-orders/{deliveryOrder}/attachments/{attachment}', [DeliveryOrderController::class, 'deleteAttachment']);
+
         Route::match(['put', 'patch'], 'delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'update']);
         Route::delete('delivery-orders/{deliveryOrder}', [DeliveryOrderController::class, 'destroy']);
 

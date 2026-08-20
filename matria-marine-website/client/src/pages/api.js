@@ -237,6 +237,16 @@ export const deliveryOrdersAPI = {
   remove: (id) => api.delete(apiUrl(`/portal/delivery-orders/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}/pdf`), { responseType: 'blob' }),
   proforma: (id) => api.get(apiUrl(`/portal/delivery-orders/${id}/proforma`), { responseType: 'blob' }),
+
+  // Proof of delivery — the copy the vessel signed. Internal only: these are
+  // never attached to a customer email. R2 is private, so opening a file means
+  // asking for a short-lived signed URL first.
+  uploadFiles: (id, formData) =>
+    api.post(apiUrl(`/portal/delivery-orders/${id}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  fileUrl: (id, attachmentId) => api.get(apiUrl(`/portal/delivery-orders/${id}/attachments/${attachmentId}/url`)),
+  removeFile: (id, attachmentId) => api.delete(apiUrl(`/portal/delivery-orders/${id}/attachments/${attachmentId}`)),
 };
 
 // --- Customer invoices (money in): from an offer, or a direct invoice ---

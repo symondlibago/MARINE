@@ -146,6 +146,9 @@ class CustomerInvoiceController extends Controller
             'rfq:id,reference',
             'rfq.purchaseOrders:id,rfq_id,po_number',
             'deliveryOrder:id,do_number,proforma_number',
+            // Proof of delivery is filed against the delivery order; the invoice
+            // screen reads it from there so one signed copy serves both.
+            'deliveryOrder.attachments:id,delivery_order_id,original_name,mime_type,size,kind,note,created_at',
             'customer:id,name,address,email',
             'creator:id,name,phone',
             'creditMemos.items',
@@ -153,6 +156,15 @@ class CustomerInvoiceController extends Controller
 
         $payload = $invoice->toArray();
         $payload['references'] = $this->trail($invoice);
+
+        // delivery_order_id is often left unset — the delivery order is reached
+        // through the offer or the enquiry instead. Resolve it either way so the
+        // signed copy always has somewhere to go.
+        $pod = $this->deliveryOrderFor($invoice);
+        $payload['proof_of_delivery_do'] = $pod ? ['id' => $pod->id, 'do_number' => $pod->do_number] : null;
+        $payload['proof_of_delivery'] = $pod
+            ? $pod->attachments()->get(['id', 'delivery_order_id', 'original_name', 'mime_type', 'size', 'kind', 'note', 'created_at'])
+            : [];
         // Lets the screen show what has actually been collected, and warn
         // before a date change moves a settled invoice between periods.
         $payload['settlement'] = \App\Support\Settlement::of($invoice);
@@ -362,6 +374,31 @@ class CustomerInvoiceController extends Controller
     }
 
     /** The full document trail for the job behind an invoice (QTN → DO → ProINV → PO → INV). */
+    /**
+     * The delivery order this invoice's goods went out on.
+     *
+     * Prefers the direct link, then the one raised from the same offer, and
+     * falls back to the enquiry. Proof of delivery is filed against whichever
+     * this returns, so the office never has to hunt for the right screen.
+     */
+    private function deliveryOrderFor(CustomerInvoice $invoice): ?DeliveryOrder
+    {
+        if ($invoice->delivery_order_id) {
+            return $invoice->deliveryOrder;
+        }
+
+        if ($invoice->offer_id) {
+            $byOffer = DeliveryOrder::where('offer_id', $invoice->offer_id)->orderBy('id')->first();
+            if ($byOffer) {
+                return $byOffer;
+            }
+        }
+
+        return $invoice->rfq_id
+            ? DeliveryOrder::where('rfq_id', $invoice->rfq_id)->orderBy('id')->first()
+            : null;
+    }
+
     private function trail(CustomerInvoice $invoice): array
     {
         return [

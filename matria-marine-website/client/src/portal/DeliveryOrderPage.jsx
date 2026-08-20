@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { deliveryOrdersAPI, purchaseOrdersAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import DatePicker from "./ui/DatePicker";
+import ProofOfDelivery from "./ProofOfDelivery";
 import { Spinner, PageLoader } from "./ui/Loading";
 
 const STATUSES = [
@@ -243,6 +244,14 @@ export default function DeliveryOrderPage({ params }) {
           );
         })()}
       </div>
+
+      {/* Proof of delivery — the copy the vessel signed. Internal only. */}
+      <ProofOfDelivery
+        deliveryOrderId={doc.id}
+        doNumber={doc.do_number}
+        attachments={doc.attachments || []}
+        onChange={() => refetch()}
+      />
     </motion.div>
   );
 }

@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\DeliveryOrder;
+use App\Models\DeliveryOrderAttachment;
 use App\Models\Offer;
 use App\Models\PurchaseOrder;
 use App\Support\DocNumber;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class DeliveryOrderController extends Controller
 {
@@ -25,7 +28,80 @@ class DeliveryOrderController extends Controller
     {
         $deliveryOrder->load(['items', 'offer:id,offer_number', 'rfq:id,reference,ship_name', 'customer:id,name,address,email', 'purchaseOrder:id,po_number']);
 
-        return response()->json(['success' => true, 'data' => $deliveryOrder]);
+        $payload = $deliveryOrder->toArray();
+        $payload['attachments'] = $this->attachmentList($deliveryOrder);
+
+        return response()->json(['success' => true, 'data' => $payload]);
+    }
+
+    /* ---------------------- proof of delivery ------------------------- */
+
+    /**
+     * File the signed copy back from the vessel.
+     *
+     * Internal evidence only — nothing filed here is ever attached to a
+     * customer email or printed on a customer document.
+     */
+    public function uploadAttachments(Request $request, DeliveryOrder $deliveryOrder)
+    {
+        $request->validate([
+            'files' => ['required', 'array', 'max:10'],
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp'],
+            'kind' => ['nullable', Rule::in(array_keys(DeliveryOrderAttachment::KINDS))],
+            'note' => ['nullable', 'string', 'max:190'],
+        ]);
+
+        foreach ($request->file('files') as $file) {
+            $path = $file->store('delivery-orders/'.$deliveryOrder->id, 'r2');
+            $deliveryOrder->attachments()->create([
+                'disk' => 'r2',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+                'kind' => $request->input('kind', 'signed_do'),
+                'note' => $request->input('note'),
+                'uploaded_by' => $request->user()?->id,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Filed against '.$deliveryOrder->do_number.'.',
+            'data' => $this->attachmentList($deliveryOrder->fresh()),
+        ]);
+    }
+
+    public function deleteAttachment(DeliveryOrder $deliveryOrder, DeliveryOrderAttachment $attachment)
+    {
+        abort_unless($attachment->delivery_order_id === $deliveryOrder->id, 404);
+
+        Storage::disk($attachment->disk)->delete($attachment->path);
+        $attachment->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File removed.',
+            'data' => $this->attachmentList($deliveryOrder->fresh()),
+        ]);
+    }
+
+    /** Short-lived signed URL — the bucket is private. */
+    public function attachmentUrl(DeliveryOrder $deliveryOrder, DeliveryOrderAttachment $attachment)
+    {
+        abort_unless($attachment->delivery_order_id === $deliveryOrder->id, 404);
+
+        return response()->json(['success' => true, 'data' => [
+            'url' => Storage::disk($attachment->disk)->temporaryUrl($attachment->path, now()->addMinutes(10)),
+            'name' => $attachment->original_name,
+        ]]);
+    }
+
+    private function attachmentList(DeliveryOrder $deliveryOrder)
+    {
+        return $deliveryOrder->attachments()
+            ->with('uploader:id,name')
+            ->get(['id', 'delivery_order_id', 'original_name', 'mime_type', 'size', 'kind', 'note', 'uploaded_by', 'created_at']);
     }
 
     /** Build (or return the existing) delivery order from an accepted offer. */

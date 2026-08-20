@@ -38,6 +38,15 @@ class DeliveryOrder extends Model
         return $this->hasMany(DeliveryOrderItem::class)->orderBy('sort')->orderBy('id');
     }
 
+    /**
+     * Proof of delivery — the signed copy back from the vessel, and anything
+     * that came with it. Internal only: never emailed to a customer.
+     */
+    public function attachments()
+    {
+        return $this->hasMany(DeliveryOrderAttachment::class)->latest('id');
+    }
+
     public function offer()
     {
         return $this->belongsTo(Offer::class);
