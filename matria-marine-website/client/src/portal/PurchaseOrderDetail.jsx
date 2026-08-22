@@ -8,6 +8,7 @@ import { purchaseOrdersAPI, returnNotesAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
+import { gridKeyDown } from "./ui/gridKeys";
 import { fetchRates, rateToBase } from "@/lib/fx";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
@@ -411,7 +412,8 @@ export default function PurchaseOrderDetail({ params }) {
               {isDraft && <th className="w-10 px-2 py-3"></th>}
             </tr>
           </thead>
-          <tbody>
+          {/* Arrow keys move around the grid — see ui/gridKeys */}
+          <tbody onKeyDown={gridKeyDown}>
             {items.map((it, idx) => (
               <tr key={it.id ?? `new-${idx}`} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-2">
@@ -508,7 +510,7 @@ export default function PurchaseOrderDetail({ params }) {
                   <th className="w-32 px-3 py-2.5 text-right font-semibold">Credit</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody onKeyDown={gridKeyDown}>
                 {returns.map((r, idx) => {
                   const credit = Math.min(Number(r.qty) || 0, r.ordered) * (r.unit_cost || 0);
                   const over = (Number(r.qty) || 0) > r.ordered;

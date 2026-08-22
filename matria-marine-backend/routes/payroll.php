@@ -40,6 +40,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::patch('runs/{run}/lines/{line}', [RunController::class, 'updateLine']);
         Route::delete('runs/{run}/lines/{line}', [RunController::class, 'removeLine']);
 
+        // Pull corrected employee details into an open month
+        Route::post('runs/{run}/refresh', [RunController::class, 'syncFromEmployees']);
+
         Route::post('runs/{run}/finalise', [RunController::class, 'finalise']);
         Route::post('runs/{run}/reopen', [RunController::class, 'reopen']);
 

@@ -14,6 +14,7 @@ import {
   Landmark,
   Receipt,
   Building2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { payrollAPI } from "./api";
@@ -92,6 +93,17 @@ export default function RunPage() {
     onError: (e) => toast.error(e?.response?.data?.message || "Could not remove that line."),
   });
 
+  // A month is a snapshot, so a correction made on the employee record after it
+  // was opened has to be pulled in deliberately.
+  const refresh = useMutation({
+    mutationFn: () => payrollAPI.refresh(id),
+    onSuccess: (res) => {
+      toast.success(res?.data?.message || "Refreshed.");
+      applyRun(res);
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not refresh this month."),
+  });
+
   const lock = useMutation({
     mutationFn: (finalise) => (finalise ? payrollAPI.finalise(id) : payrollAPI.reopen(id)),
     onSuccess: (res) => {
@@ -164,6 +176,12 @@ export default function RunPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {!locked && (
+            <button onClick={() => refresh.mutate()} disabled={refresh.isLoading} className={btn.ghost}
+              title="Pull corrected employee details — date of birth, CPF scheme, salary — into this month">
+              {refresh.isLoading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />} Refresh from employees
+            </button>
+          )}
           <button onClick={() => getPdf("summary")} disabled={downloading === "summary"} className={btn.ghost}>
             {downloading === "summary" ? <Spinner className="h-4 w-4" /> : <FileText className="h-4 w-4" />} Summary PDF
           </button>
@@ -208,6 +226,12 @@ export default function RunPage() {
               ))
             )}
           </ul>
+          {!locked && (
+            <p className="mt-2 pl-6 text-[12.5px] text-amber-800/80">
+              Corrected something on the employee record since this month was opened? Use{" "}
+              <strong>Refresh from employees</strong> above to bring it in.
+            </p>
+          )}
         </div>
       )}
 

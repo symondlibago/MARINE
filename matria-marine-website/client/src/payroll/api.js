@@ -28,6 +28,9 @@ export const payrollAPI = {
   updateLine: (runId, lineId, payload) => api.patch(url(`/runs/${runId}/lines/${lineId}`), payload),
   removeLine: (runId, lineId) => api.delete(url(`/runs/${runId}/lines/${lineId}`)),
 
+  // Pull corrected employee details (date of birth, CPF scheme…) into an open month
+  refresh: (id) => api.post(url(`/runs/${id}/refresh`)),
+
   finalise: (id) => api.post(url(`/runs/${id}/finalise`)),
   reopen: (id) => api.post(url(`/runs/${id}/reopen`)),
 

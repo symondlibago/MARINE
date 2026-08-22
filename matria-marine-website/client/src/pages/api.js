@@ -180,6 +180,8 @@ export const purchaseOrdersAPI = {
   list: (params = {}) => api.get(apiUrl('/portal/purchase-orders'), { params }),
   get: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}`)),
   generate: (rfqId, payload = {}) => api.post(apiUrl(`/portal/rfqs/${rfqId}/purchase-orders`), payload),
+  // A purchase with no enquiry behind it — office items, tools, anything bought directly.
+  createDirect: (payload) => api.post(apiUrl('/portal/purchase-orders'), payload),
   update: (id, payload) => api.patch(apiUrl(`/portal/purchase-orders/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/purchase-orders/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/purchase-orders/${id}/pdf`), { responseType: 'blob' }),

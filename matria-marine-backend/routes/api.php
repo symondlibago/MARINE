@@ -134,6 +134,7 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
 
         // Phase 3 — purchase orders (awards -> POs to vendors)
         Route::post('rfqs/{rfq}/purchase-orders', [PurchaseOrderController::class, 'generate']);
+        Route::post('purchase-orders', [PurchaseOrderController::class, 'store']); // direct purchase, no enquiry
         Route::get('purchase-orders', [PurchaseOrderController::class, 'index']);
         Route::get('purchase-orders/{purchaseOrder}/pdf', [PurchaseOrderController::class, 'pdf']);
         Route::get('purchase-orders/{purchaseOrder}/final-invoice', [PurchaseOrderController::class, 'finalInvoice']);

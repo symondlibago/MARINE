@@ -143,6 +143,69 @@ class RunController extends PayrollController
         return $this->ok(['run' => $this->present($this->recalculate($run))]);
     }
 
+    /**
+     * Pull corrections to the employee master into an open month.
+     *
+     * A month is a snapshot on purpose, so that a later pay rise cannot rewrite
+     * a payslip already issued. But when the snapshot was taken from incomplete
+     * records — a missing date of birth, the wrong CPF scheme — the office needs
+     * a way to bring the correction in without deleting and reopening the month.
+     *
+     * Identity and CPF details are refreshed because they are facts about the
+     * person. A basic pay that was typed over by hand is left alone: only a
+     * figure still sitting at the old salary follows the employee master.
+     */
+    public function syncFromEmployees(Run $run)
+    {
+        if ($run->isLocked()) {
+            return $this->fail('This month is finalised. Reopen it before refreshing it.');
+        }
+
+        $employees = Employee::whereIn('code', $run->lines()->pluck('code'))->get()->keyBy('code');
+        $changed = 0;
+
+        foreach ($run->lines as $line) {
+            $employee = $employees->get($line->code);
+
+            if (! $employee) {
+                continue;   // their record was deleted; the line keeps its own copy
+            }
+
+            $fresh = [
+                'employee_id' => $employee->id,
+                'full_name' => $employee->full_name,
+                'nric' => $employee->nric,
+                'date_of_birth' => $employee->date_of_birth,
+                'cpf_scheme' => $employee->cpf_scheme,
+                'shg_fund' => $employee->shg_fund,
+                'payment_method' => $employee->payment_method ?: $line->payment_method,
+                'bank_ref' => $employee->bank_ref,
+                'monthly_basic' => $employee->basic_salary,
+            ];
+
+            // Untouched pay follows the master; a hand-typed figure does not.
+            if ((float) $line->basic_pay === (float) $line->monthly_basic) {
+                $fresh['basic_pay'] = $employee->basic_salary;
+            }
+
+            $line->fill($fresh);
+
+            if ($line->isDirty()) {
+                $line->save();
+                $changed++;
+            }
+        }
+
+        $this->recalculate($run);
+
+        return $this->ok(
+            ['run' => $this->present($run->fresh()->load('lines'))],
+            $changed === 0
+                ? 'Already up to date with the employee records.'
+                : $changed.' line(s) refreshed from the employee records.'
+        );
+    }
+
     /** Bring someone onto a month they were not on — a mid-month joiner. */
     public function addLine(Request $request, Run $run)
     {

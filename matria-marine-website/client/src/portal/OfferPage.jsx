@@ -8,6 +8,7 @@ import { offersAPI, customersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
+import { gridKeyDown } from "./ui/gridKeys";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
@@ -115,42 +116,6 @@ export default function OfferPage({ params }) {
       return arr.filter((_, i) => i !== idx);
     });
 
-  /**
-   * Spreadsheet-style keyboard movement across the line-item grid.
-   *
-   * On a number input the browser treats Up/Down as its own spinner, so
-   * pressing Down on a 50% markup silently turned it into 49.9 instead of
-   * moving to the next row. Here Up/Down (and Enter) move between rows in the
-   * SAME column, so a whole column of markups can be keyed without touching
-   * the mouse.
-   *
-   * The description cell is a textarea and is left alone — there Up/Down move
-   * the caret through the spec and Enter adds a line, which is what you want.
-   */
-  const gridKeyDown = (e) => {
-    if (!["ArrowUp", "ArrowDown", "Enter"].includes(e.key)) return;
-
-    const el = e.target;
-    if (el.tagName === "TEXTAREA") return;
-
-    const cell = el.closest("td");
-    const row = el.closest("tr");
-    if (!cell || !row) return;
-
-    // Stop the spinner even on the first/last row, so Up/Down never edits a
-    // value by accident — the key means "move" everywhere in this grid.
-    if (e.key !== "Enter") e.preventDefault();
-
-    const col = [...row.children].indexOf(cell);
-    const target = e.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
-    const next = target?.children[col]?.querySelector("input, textarea");
-    if (!next) return;
-
-    e.preventDefault();
-    next.focus();
-    // Land ready to overtype, the way a spreadsheet does.
-    if (next.select) next.select();
-  };
 
   /**
    * A wheel over a focused number input scrolls its VALUE, so scrolling the
@@ -459,7 +424,9 @@ export default function OfferPage({ params }) {
               A vendor discount lowers <em>our</em> cost and becomes profit; it never reduces what the customer pays.
               Press <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↑</kbd>{" "}
               <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↓</kbd> or{" "}
-              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">Enter</kbd> to move down the same column.
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">←</kbd>{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">→</kbd> or{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">Enter</kbd> to move around the grid.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2">

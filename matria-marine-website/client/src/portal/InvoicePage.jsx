@@ -9,6 +9,7 @@ import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import ProofOfDelivery from "./ProofOfDelivery";
+import { gridKeyDown } from "./ui/gridKeys";
 import { PageLoader, Spinner } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
@@ -331,9 +332,10 @@ export default function InvoicePage({ params }) {
         {lines.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">No lines yet — add an item or a section heading above.</p>
         ) : (
-          <div className="space-y-2">
+          // onKeyDown: arrow keys move around the grid — see ui/gridKeys
+          <div className="space-y-2" onKeyDown={gridKeyDown}>
             {lines.map((l, i) => (
-              <div key={l.id ?? `new-${i}`}>
+              <div key={l.id ?? `new-${i}`} data-grid-row>
                 <div className="flex gap-2">
                   {l.is_heading ? (
                     <input
@@ -487,7 +489,7 @@ export default function InvoicePage({ params }) {
                       <th className="px-3 py-2 font-semibold">Reason</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody onKeyDown={gridKeyDown}>
                     {cmLines.map((l, i) => (
                       <tr key={l.customer_invoice_item_id} className="border-b border-slate-100 last:border-0">
                         <td className="px-3 py-2 text-slate-700 whitespace-pre-line">{l.description}</td>

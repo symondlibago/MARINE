@@ -9,6 +9,7 @@ import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import Combobox from "./ui/Combobox";
 import DatePicker from "./ui/DatePicker";
+import { gridKeyDown } from "./ui/gridKeys";
 import { Spinner } from "./ui/Loading";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
@@ -380,6 +381,14 @@ export default function EnquiryForm({ params }) {
               description for a second line. Drag the <span className="inline-block h-2.5 w-0.5 translate-y-0.5 rounded-full bg-slate-400" /> divider
               in the header to widen any column. Files attached to a line go to the vendors asked to quote that line.
             </p>
+            <p className="text-xs text-slate-400">
+              Use{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↑</kbd>{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">↓</kbd>{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">←</kbd>{" "}
+              <kbd className="rounded border border-slate-200 bg-slate-50 px-1 font-sans text-[10px] text-slate-500">→</kbd> to move
+              between the one-line boxes without reaching for the mouse.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             {widthsChanged && (
@@ -414,9 +423,10 @@ export default function EnquiryForm({ params }) {
               <div className="w-8 shrink-0" />
             </div>
 
-            <div className="space-y-2">
+            {/* Arrow keys move around the grid; see ui/gridKeys. */}
+            <div className="space-y-2" onKeyDown={gridKeyDown}>
               {items.map((it, i) => (
-                <div key={it.id ?? `new-${i}`} className="rounded-lg px-1 py-1 hover:bg-slate-50/60">
+                <div key={it.id ?? `new-${i}`} data-grid-row className="rounded-lg px-1 py-1 hover:bg-slate-50/60">
                   <div className="flex items-start gap-2">
                     {/* Line number — positional only, nothing is stored for it. */}
                     <div className="w-8 shrink-0 pt-2.5 text-center text-xs font-semibold text-slate-400">{i + 1}</div>

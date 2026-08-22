@@ -8,6 +8,7 @@ use App\Models\PurchaseOrderAttachment;
 use App\Models\Quote;
 use App\Models\SentLog;
 use App\Models\Rfq;
+use App\Models\Vendor;
 use App\Support\DocNumber;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -43,6 +44,8 @@ class PurchaseOrderController extends Controller
             'po_number' => $po->po_number,
             'rfq_id' => $po->rfq_id,
             'reference' => $po->rfq?->reference,
+            // No enquiry behind it — bought directly, e.g. office items.
+            'is_direct' => $po->rfq_id === null,
             'vendor' => $po->vendor?->name,
             'prepared_by' => $po->creator?->name,
             'currency' => $po->currency,
@@ -55,6 +58,49 @@ class PurchaseOrderController extends Controller
         ]);
 
         return response()->json(['success' => true, 'data' => $pos]);
+    }
+
+    /**
+     * A purchase that did not come from an enquiry — office items, tools,
+     * anything bought directly. The same document as a generated purchase
+     * order, minus the enquiry; items are added on the detail screen.
+     *
+     * Mirrors the direct customer invoice. A vendor is required here because a
+     * purchase without one has nobody to pay and nothing to reconcile against.
+     */
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'vendor_id' => ['required', 'integer', 'exists:vendors,id'],
+            'currency' => ['nullable', 'string', 'size:3'],
+            'expected_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $vendor = Vendor::findOrFail($data['vendor_id']);
+        // Same base the reports use, so a direct purchase is costed like any other.
+        $base = strtoupper(config('procurement.base_currency', 'USD'));
+
+        $po = PurchaseOrder::create([
+            'rfq_id' => null,
+            'vendor_id' => $vendor->id,
+            'currency' => strtoupper($data['currency'] ?? $vendor->currency ?? $base),
+            'base_currency' => $base,
+            'exchange_rate' => 1,
+            'status' => 'draft',
+            'expected_date' => $data['expected_date'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'created_by' => $request->user()?->id,
+        ]);
+
+        $po->po_number = DocNumber::next('PO');
+        $po->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Purchase order '.$po->po_number.' created.',
+            'data' => $po->load('items'),
+        ], 201);
     }
 
     public function show(PurchaseOrder $purchaseOrder)

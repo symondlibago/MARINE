@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { Search, ShoppingCart, CheckCircle2, ChevronRight, ChevronDown } from "lucide-react";
-import { purchaseOrdersAPI } from "@/pages/api";
-import { TableSkeleton } from "./ui/Loading";
+import { Search, ShoppingCart, CheckCircle2, ChevronRight, ChevronDown, Plus, Save } from "lucide-react";
+import { toast } from "sonner";
+import { purchaseOrdersAPI, vendorsAPI } from "@/pages/api";
+import { TableSkeleton, Spinner } from "./ui/Loading";
 import Select from "./ui/Select";
+import Modal from "./ui/Modal";
+import EntityPicker from "./ui/EntityPicker";
+
+const CURRENCIES = ["SGD", "USD", "EUR", "AED", "PHP", "INR", "GBP", "JPY"];
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
@@ -30,9 +35,28 @@ function StatusBadge({ status }) {
 
 export default function PurchaseOrders() {
   const [, setLocation] = useLocation();
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [open, setOpen] = useState({});
+  const [form, setForm] = useState(null);   // the direct-purchase dialog
+
+  // A purchase with no enquiry behind it. Created with just a vendor, then
+  // the items are added on the detail screen like any other purchase order.
+  const createDirect = useMutation({
+    mutationFn: () =>
+      purchaseOrdersAPI.createDirect({
+        vendor_id: Number(form.vendor_id),
+        currency: form.currency || undefined,
+      }),
+    onSuccess: (res) => {
+      toast.success(res?.data?.message || "Purchase order created.");
+      setForm(null);
+      qc.invalidateQueries({ queryKey: ["purchase-orders"] });
+      setLocation(`/purchase-orders/${res.data.data.id}`);
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not create the purchase order."),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["purchase-orders", status],
@@ -77,11 +101,19 @@ export default function PurchaseOrders() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-[#28364b]">Purchase Orders</h1>
-        <p className="text-sm text-slate-500">
-          {groups.length} enquir{groups.length === 1 ? "y" : "ies"} · {rows.length} order{rows.length === 1 ? "" : "s"}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#28364b]">Purchase Orders</h1>
+          <p className="text-sm text-slate-500">
+            {groups.length} enquir{groups.length === 1 ? "y" : "ies"} · {rows.length} order{rows.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        <button
+          onClick={() => setForm({ vendor_id: "", currency: "" })}
+          className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70"
+        >
+          <Plus className="h-4 w-4" /> New Direct Purchase
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -120,7 +152,8 @@ export default function PurchaseOrders() {
                 <td colSpan={7} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center gap-2">
                     <ShoppingCart className="h-8 w-8 text-slate-300" />
-                    No purchase orders yet — generate them from a finished enquiry's <span className="font-medium">Delivery Order</span>.
+                    No purchase orders yet — generate them from a finished enquiry's <span className="font-medium">Delivery Order</span>,
+                    or click <span className="font-medium">New Direct Purchase</span> for something bought outside an enquiry.
                   </div>
                 </td>
               </tr>
@@ -143,7 +176,10 @@ export default function PurchaseOrders() {
                       <td className="px-4 py-3 font-semibold text-[#28364b]">
                         <span className="inline-flex items-center gap-1.5">
                           {isOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
-                          {g.reference || "—"}
+                          {g.reference || (g.rfq_id ? "—" : g.pos[0]?.po_number)}
+                          {!g.rfq_id && (
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Direct</span>
+                          )}
                           <span className="ml-1 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
                             {g.pos.length} PO{g.pos.length === 1 ? "" : "s"}
                           </span>
@@ -205,6 +241,56 @@ export default function PurchaseOrders() {
             )}
         </table>
       </div>
+
+      <Modal open={!!form} onClose={() => setForm(null)} title="New direct purchase">
+        {form && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (form.vendor_id) createDirect.mutate();
+            }}
+            className="space-y-4 px-6 py-5"
+          >
+            <p className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-500">
+              For anything bought outside an enquiry — office items, tools, consumables. You add the items on the next
+              screen, and it reconciles against the vendor's invoice like any other purchase order.
+            </p>
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vendor</span>
+              <EntityPicker
+                api={vendorsAPI}
+                queryKey="vendors"
+                value={form.vendor_id}
+                onChange={(v) => setForm((f) => ({ ...f, vendor_id: v }))}
+                placeholder="— Select vendor —"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Currency</span>
+              <Select
+                value={form.currency}
+                onChange={(v) => setForm((f) => ({ ...f, currency: v }))}
+                options={[{ value: "", label: "Use the vendor's currency" }, ...CURRENCIES.map((c) => ({ value: c, label: c }))]}
+              />
+            </label>
+
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button type="button" onClick={() => setForm(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-[#28364b] hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!form.vendor_id || createDirect.isLoading}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-50"
+              >
+                {createDirect.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Create
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </motion.div>
   );
 }
