@@ -125,6 +125,9 @@ class OfferController extends Controller
             // A row with no id is a line Matria is adding itself; its price is
             // typed in rather than marked up from a vendor cost.
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            // Which way round this line was priced. Absent (an older page still
+            // open in a browser) means the percentage drives it, as it always has.
+            'items.*.priced_by' => ['nullable', 'string', 'in:markup,unit'],
             'remove_item_ids' => ['sometimes', 'array'],
             'remove_item_ids.*' => ['integer'],
             'items.*.description' => ['nullable', 'string', 'max:8000'],
@@ -226,7 +229,15 @@ class OfferController extends Controller
                         ? (float) ($row['unit_price'] ?? $item->unit_price)
                         : null;
 
-                    $m = $this->lineMaths($base, $markup, $discount, $qty, $manualUnit);
+                    // Priced the other way round: the seller typed what the line
+                    // sells at and the percentage is worked out from it. Kept to
+                    // the cent, because deriving it back from a percentage
+                    // rounded to two decimals lands a cent or two away.
+                    $pinnedUnit = ($manualUnit === null && ($row['priced_by'] ?? null) === 'unit')
+                        ? (float) ($row['unit_price'] ?? 0)
+                        : null;
+
+                    $m = $this->lineMaths($base, $markup, $discount, $qty, $manualUnit, $pinnedUnit);
                     $unit = $m['unit'];
                     $discAmt = $m['discount_amount'];
                     $amount = $m['line_total'];
@@ -247,7 +258,8 @@ class OfferController extends Controller
                         'qty' => $qty,
                         'base_price' => $base,
                         'base_source' => $baseSource,
-                        'markup_pct' => $markup,
+                        // Derived when the price was typed; as entered otherwise.
+                        'markup_pct' => $m['markup_pct'],
                         'unit_price' => $unit,
                         'discount_pct' => $discount,
                         'discount_amount' => $discAmt,
@@ -500,8 +512,14 @@ class OfferController extends Controller
      *
      * @return array{unit: float, cost: float, discount_amount: float, line_total: float, markup_amount: float}
      */
-    private function lineMaths(float $base, float $markup, float $discount, float $qty, ?float $manualUnit = null): array
-    {
+    private function lineMaths(
+        float $base,
+        float $markup,
+        float $discount,
+        float $qty,
+        ?float $manualUnit = null,
+        ?float $pinnedUnit = null
+    ): array {
         if ($manualUnit !== null) {
             $amount = round($manualUnit * $qty, 2);
 
@@ -511,11 +529,22 @@ class OfferController extends Controller
                 'discount_amount' => 0.0,
                 'line_total' => $amount,
                 'markup_amount' => $amount,   // no cost was incurred, so it is all margin
+                'markup_pct' => round($markup, 2),
             ];
         }
 
-        $unit = round($base * (1 + $markup / 100), 2);      // what the customer pays, per unit
         $cost = round($base * (1 - $discount / 100), 2);    // what we pay the vendor, per unit
+
+        // A typed price IS the price. 1,060.2267 sold at 1,500.00 needs 41.479176%;
+        // stored at two decimals that is 41.48%, which multiplies back to 1,500.01.
+        // So the figure entered is kept and the percentage is derived from it.
+        $unit = $pinnedUnit !== null
+            ? round($pinnedUnit, 2)
+            : round($base * (1 + $markup / 100), 2);        // what the customer pays, per unit
+
+        $pct = $pinnedUnit !== null
+            ? ($base > 0 ? round(($unit / $base - 1) * 100, 2) : 0.0)
+            : round($markup, 2);
 
         return [
             'unit' => $unit,
@@ -524,6 +553,7 @@ class OfferController extends Controller
             'discount_amount' => round($base - $cost, 2),
             'line_total' => round($unit * $qty, 2),
             'markup_amount' => round(($unit - $cost) * $qty, 2),
+            'markup_pct' => $pct,
         ];
     }
 

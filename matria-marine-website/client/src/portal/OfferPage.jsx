@@ -31,6 +31,7 @@ const STATUS_STYLES = {
 };
 
 const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const ci = "w-full rounded border border-slate-200 px-2 py-1 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
 
 export default function OfferPage({ params }) {
@@ -82,6 +83,13 @@ export default function OfferPage({ params }) {
           // Read-only note of whose price this line was built from.
           base_source: it.base_source || "",
           markup_pct: Number(it.markup_pct),
+          // Which box drives this line. A saved price that does not match its
+          // own percentage was typed in by hand — keep it that way, so the
+          // figure the customer was quoted is the figure that stays on screen.
+          priced_by:
+            Math.abs(Number(it.unit_price || 0) - round2(Number(it.base_price) * (1 + Number(it.markup_pct) / 100))) > 0.005
+              ? "unit"
+              : "markup",
           discount_pct: Number(it.discount_pct || 0),
           lead_time: it.lead_time || "",
           delivery_location: it.delivery_location || "",
@@ -91,6 +99,58 @@ export default function OfferPage({ params }) {
   }, [offer]);
 
   const setH = (k, v) => setHeader((h) => ({ ...h, [k]: v }));
+
+  /**
+   * The two ways to price a line, kept in step.
+   *
+   * Set the percentage and the price follows, as it always has. Or set the
+   * price — "this one goes out at 1,500" — and the percentage is worked out.
+   * The typed price is then what is saved, to the cent: deriving it back from
+   * a percentage rounded to two decimals lands a cent or two away.
+   */
+  const setMarkup = (idx, value) => setItem(idx, { markup_pct: value, priced_by: "markup", amount_typed: null });
+
+  /**
+   * Price from the line total instead: type what the whole line should come to
+   * and the unit price is worked back from it.
+   *
+   * The unit price stays the authoritative figure, because the customer's
+   * quotation prints unit x qty and the two must agree on the page. With a
+   * quantity that does not divide the total evenly the result can land a cent
+   * or two away — the grid shows what it actually became, so nothing is hidden.
+   */
+  const setAmount = (idx, value) =>
+    setItems((arr) =>
+      arr.map((it, i) => {
+        if (i !== idx) return it;
+        const qty = Number(it.qty) || 0;
+        const base = Number(it.base_price) || 0;
+        const unit = qty > 0 ? round2((Number(value) || 0) / qty) : Number(value) || 0;
+        return {
+          ...it,
+          unit_price: unit,
+          priced_by: "unit",
+          amount_typed: value,       // what they meant, kept while the box has focus
+          markup_pct: it.manual ? 0 : base > 0 ? round2((unit / base - 1) * 100) : 0,
+        };
+      })
+    );
+
+  const setUnitPrice = (idx, value) =>
+    setItems((arr) =>
+      arr.map((it, i) => {
+        if (i !== idx) return it;
+        const base = Number(it.base_price) || 0;
+        const unit = Number(value) || 0;
+        return {
+          ...it,
+          unit_price: value,
+          priced_by: "unit",
+          amount_typed: null,
+          markup_pct: it.manual ? 0 : base > 0 ? round2((unit / base - 1) * 100) : 0,
+        };
+      })
+    );
   const setItem = (idx, patch) => setItems((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
 
   // Ids of saved manual lines the user has removed; sent on save so the server
@@ -129,7 +189,9 @@ export default function OfferPage({ params }) {
   const applyBulk = () => {
     const m = Number(bulk);
     if (Number.isNaN(m) || bulk === "") return;
-    setItems((arr) => arr.map((it) => ({ ...it, markup_pct: m })));
+    // Applying a percentage to everything puts every line back under the
+    // percentage, including any that had been priced by hand.
+    setItems((arr) => arr.map((it) => ({ ...it, markup_pct: m, priced_by: "markup" })));
   };
   const applyBulkLead = () => {
     if (bulkLead.trim() === "") return;
@@ -153,12 +215,20 @@ export default function OfferPage({ params }) {
       return { ...it, unit_price: unit, disc_amount: 0, cost_line: 0, line_total: amount, markup_amount: amount, base_line: 0 };
     }
 
-    const unit = base * (1 + (Number(it.markup_pct) || 0) / 100);   // customer pays
+    // Priced by hand: the typed figure is the price, and the percentage above
+    // merely describes it. Otherwise the percentage drives the price.
+    const byUnit = it.priced_by === "unit";
+    const unit = byUnit ? Number(it.unit_price) || 0 : base * (1 + (Number(it.markup_pct) || 0) / 100);
     const cost = base * (1 - (Number(it.discount_pct) || 0) / 100); // we pay
     const amount = unit * qty;
     return {
       ...it,
       unit_price: unit,
+      // What the boxes show: the raw text while it is being typed, so a
+      // half-finished "15" is not reformatted under the cursor. On blur the
+      // typed total is dropped and the real figure takes its place.
+      unit_display: byUnit ? it.unit_price : unit.toFixed(2),
+      amount_display: it.amount_typed != null ? it.amount_typed : amount.toFixed(2),
       disc_amount: base - cost,          // the vendor's discount per unit — ours
       cost_line: cost * qty,
       line_total: amount,
@@ -225,10 +295,11 @@ export default function OfferPage({ params }) {
           unit: it.unit || null,
           qty: Number(it.qty) || 0,
           base_price: Number(it.base_price) || 0,
-          // Only meaningful on a manual line; ignored for enquiry lines, whose
-          // price is derived from the vendor cost.
           unit_price: Number(it.unit_price) || 0,
           markup_pct: Number(it.markup_pct) || 0,
+          // Tells the server which figure to trust. Omitted by an older page
+          // still open in a browser, which falls back to the percentage.
+          priced_by: it.manual ? undefined : it.priced_by === "unit" ? "unit" : "markup",
           discount_pct: Number(it.discount_pct) || 0,
           lead_time: it.lead_time || null,
           delivery_location: it.delivery_location || null,
@@ -506,16 +577,21 @@ export default function OfferPage({ params }) {
                     {r.manual ? (
                       <div className="text-right text-xs text-slate-300">—</div>
                     ) : (
-                      <input type="number" step="0.1" className={`${ci} ${num} min-w-[4rem] text-right`} value={r.markup_pct} onChange={(e) => setItem(idx, { markup_pct: e.target.value })} />
+                      <input type="number" step="0.1" className={`${ci} ${num} min-w-[4rem] text-right`} value={r.markup_pct}
+                        onChange={(e) => setMarkup(idx, e.target.value)} />
                     )}
                   </td>
-                  {/* A manual line is priced here directly — there is no cost to mark up. */}
+                  {/* Either box can be typed into: set the percentage and the price
+                      follows, or set the price and the percentage is worked out. */}
                   <td className="px-1.5 py-2 text-right font-medium text-[#28364b] whitespace-nowrap">
-                    {r.manual ? (
-                      <input type="number" step="0.01" className={`${ci} ${num} min-w-[6rem] text-right font-medium`} value={r.unit_price} onChange={(e) => setItem(idx, { unit_price: e.target.value })} />
-                    ) : (
-                      money(r.unit_price)
-                    )}
+                    <input
+                      type="number"
+                      step="0.01"
+                      className={`${ci} ${num} min-w-[6rem] text-right font-medium`}
+                      value={r.manual ? r.unit_price : r.unit_display}
+                      onChange={(e) => (r.manual ? setItem(idx, { unit_price: e.target.value }) : setUnitPrice(idx, e.target.value))}
+                      title={r.manual ? undefined : "Type the price you want to sell at — the markup % is worked out for you"}
+                    />
                   </td>
                   <td className={`px-1.5 py-2 ${internal}`}>
                     {r.manual ? (
@@ -526,7 +602,19 @@ export default function OfferPage({ params }) {
                   </td>
                   <td className={`px-1.5 py-2 text-right whitespace-nowrap ${internal} ${Number(r.disc_amount) > 0 ? "font-medium text-green-700" : "text-slate-500"}`}>{money(r.disc_amount)}</td>
                   <td className={`px-1.5 py-2 text-right font-medium text-green-700 whitespace-nowrap ${internal}`}>{money(r.markup_amount)}</td>
-                  <td className="px-1.5 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">{money(r.line_total)}</td>
+                  {/* Typeable too: set the line total and the unit price and
+                      percentage are worked back from it. */}
+                  <td className="px-1.5 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">
+                    <input
+                      type="number"
+                      step="0.01"
+                      className={`${ci} ${num} min-w-[6rem] text-right font-semibold`}
+                      value={r.amount_display}
+                      onChange={(e) => setAmount(idx, e.target.value)}
+                      onBlur={() => setItem(idx, { amount_typed: null })}
+                      title="Type the total you want to offer for this line"
+                    />
+                  </td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.lead_time} onChange={(e) => setItem(idx, { lead_time: e.target.value })} placeholder="e.g. 2 days" /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-20`} value={r.delivery_location} onChange={(e) => setItem(idx, { delivery_location: e.target.value })} /></td>
                   {/* textarea, not input: a remark can now carry a second line
