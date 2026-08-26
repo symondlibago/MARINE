@@ -50,8 +50,13 @@ class QuoteController extends Controller
             'success' => true,
             'data' => [
                 'vendor' => ['name' => $vendor->name, 'currency' => $vendor->currency],
+                // Only what this vendor uploaded themselves. Files staff filed on
+                // their behalf are internal and stay off this page.
                 'attachments' => $existing
-                    ? $existing->attachments->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])->values()
+                    ? $existing->attachments
+                        ->reject(fn ($a) => $a->isInternal())
+                        ->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])
+                        ->values()
                     : [],
                 'rfq' => [
                     'reference' => $rfq->reference,
@@ -203,6 +208,8 @@ class QuoteController extends Controller
 
         $quote = Quote::where('rfq_id', $rv->rfq_id)->where('vendor_id', $rv->vendor_id)->first();
         abort_unless($quote && $attachment->quote_id === $quote->id, 404);
+        // A vendor can only remove what they uploaded — never our own copy.
+        abort_if($attachment->isInternal(), 404);
 
         Storage::disk($attachment->disk)->delete($attachment->path);
         $attachment->delete();
@@ -210,9 +217,11 @@ class QuoteController extends Controller
         return response()->json(['success' => true, 'message' => 'File removed.', 'data' => $this->attachmentList($quote)]);
     }
 
+    /** The vendor's view of their files — their own uploads only. */
     private function attachmentList(Quote $quote): array
     {
         return $quote->attachments()->get()
+            ->reject(fn ($a) => $a->isInternal())
             ->map(fn ($a) => ['id' => $a->id, 'name' => $a->original_name, 'size' => $a->size])
             ->values()
             ->all();

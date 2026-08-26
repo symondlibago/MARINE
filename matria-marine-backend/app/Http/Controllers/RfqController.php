@@ -349,10 +349,13 @@ class RfqController extends Controller
                 'quoted_count' => $quoted,
                 'item_count' => $askedCount,
                 'complete' => $askedCount > 0 && $quoted === $askedCount,
+                // Both the vendor's own uploads and the ones staff filed for them.
+                // Staff never see less than the vendor does; the vendor sees less.
                 'attachments' => $q->attachments->map(fn ($a) => [
                     'id' => $a->id,
                     'name' => $a->original_name,
                     'size' => $a->size,
+                    'internal' => $a->isInternal(),
                 ])->values(),
             ];
         })->values();
@@ -851,6 +854,69 @@ class RfqController extends Controller
         $url = Storage::disk($attachment->disk)->temporaryUrl($attachment->path, now()->addMinutes(10));
 
         return response()->json(['success' => true, 'data' => ['url' => $url, 'name' => $attachment->original_name]]);
+    }
+
+    /**
+     * Staff file a vendor's own quotation themselves — the PDF, Word or Excel a
+     * vendor emailed back instead of using their quote link. It lands in that
+     * vendor's column on Compare & Award, beside anything they uploaded.
+     *
+     * Internal only, twice over: it is stored under the staff folder so the
+     * vendor's own link neither lists nor can delete it, and quote attachments
+     * are read back through this controller alone — no customer offer, PDF or
+     * email ever carries one.
+     */
+    public function uploadQuoteAttachments(Request $request, Quote $quote)
+    {
+        $request->validate([
+            'files' => ['required', 'array', 'max:10'],
+            'files.*' => ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,csv,txt,jpg,jpeg,png,webp'],
+        ]);
+
+        foreach ($request->file('files') as $file) {
+            $path = $file->store(QuoteAttachment::staffPathFor($quote->id), 'r2');
+            $quote->attachments()->create([
+                'disk' => 'r2',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File(s) attached to the vendor quote.',
+            'data' => $this->quoteAttachmentList($quote),
+        ]);
+    }
+
+    /** Staff remove a file from a vendor's quote — their upload or ours. */
+    public function deleteQuoteAttachment(Quote $quote, QuoteAttachment $attachment)
+    {
+        abort_unless($attachment->quote_id === $quote->id, 404);
+
+        Storage::disk($attachment->disk)->delete($attachment->path);
+        $attachment->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File removed.',
+            'data' => $this->quoteAttachmentList($quote),
+        ]);
+    }
+
+    private function quoteAttachmentList(Quote $quote): array
+    {
+        return $quote->attachments()->get()
+            ->map(fn ($a) => [
+                'id' => $a->id,
+                'name' => $a->original_name,
+                'size' => $a->size,
+                'internal' => $a->isInternal(),
+            ])
+            ->values()
+            ->all();
     }
 
     /** Save the awarded vendor + qty per line item. */

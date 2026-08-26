@@ -141,8 +141,17 @@ export const rfqsAPI = {
     api.patch(apiUrl(`/portal/quotes/${quoteId}`), { quotation_number }),
   saveVendorPrices: (quoteId, items) =>
     api.patch(apiUrl(`/portal/quotes/${quoteId}/prices`), { items }),
+  // A vendor's quotation file (PDF/Word/Excel). Vendors upload their own through
+  // their quote link; staff file one here for the vendors who just email it back.
+  // Internal only — never attached to anything the customer receives.
   attachmentUrl: (quoteId, attachmentId) =>
     api.get(apiUrl(`/portal/quotes/${quoteId}/attachments/${attachmentId}`)),
+  uploadQuoteFiles: (quoteId, formData) =>
+    api.post(apiUrl(`/portal/quotes/${quoteId}/attachments`), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  deleteQuoteFile: (quoteId, attachmentId) =>
+    api.delete(apiUrl(`/portal/quotes/${quoteId}/attachments/${attachmentId}`)),
   itemSuggestions: (q) => api.get(apiUrl('/portal/item-suggestions'), { params: q ? { q } : {} }),
   vendorAwardPdf: (id, vendorId) =>
     api.get(apiUrl(`/portal/rfqs/${id}/vendors/${vendorId}/award-pdf`), { responseType: 'blob' }),
@@ -228,6 +237,9 @@ export const offersAPI = {
   email: (id) => api.post(apiUrl(`/portal/offers/${id}/email`)),
   // Re-pull line descriptions from the enquiry (the offer holds its own copy).
   syncEnquiry: (id) => api.post(apiUrl(`/portal/offers/${id}/sync-enquiry`)),
+  // For a quotation already sent: back to draft and the enquiry's new lines
+  // pulled in, in one call. Re-sending it to the customer stays manual.
+  reopenAndSync: (id) => api.post(apiUrl(`/portal/offers/${id}/reopen-sync`)),
 };
 
 // --- Delivery Orders: customer order + delivery address (from an accepted offer) ---

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Save, TrendingUp, Lock, Truck, Send, CheckCircle2, Receipt, RefreshCw, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Save, TrendingUp, Lock, Unlock, Truck, Send, CheckCircle2, Receipt, RefreshCw, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { offersAPI, customersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -260,12 +260,33 @@ export default function OfferPage({ params }) {
     onError: (e) => toast.error(e?.response?.data?.message || "Could not refresh from the enquiry."),
   });
 
+  // A quotation already sent needs three steps to correct — Status, Save,
+  // Refresh — with nothing on screen saying so. This is those three in one.
+  const reopenSync = useMutation({
+    mutationFn: () => offersAPI.reopenAndSync(id),
+    onSuccess: (res) => {
+      toast.success(res.data.message);
+      refetch();
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not reopen this quotation."),
+  });
+
+  const handleReopenSync = async () => {
+    const ok = await confirm({
+      title: "Reopen this quotation as a draft?",
+      message:
+        "It goes back to Draft and the enquiry's new lines are brought in at cost with no markup.\n\nThe customer already has the old quotation, so set your markup and send it to them again — that stays your call, nothing goes out on its own.",
+      confirmText: "Reopen & bring them in",
+    });
+    if (ok) reopenSync.mutate();
+  };
+
   // Refreshing now moves money, not just wording, so it asks first.
   const handleRefresh = async () => {
     const ok = await confirm({
       title: "Re-read from the enquiry?",
       message:
-        "Base costs are re-read from whichever vendor is selected on Compare & Award right now, and descriptions are refreshed.\n\nYour markup, discount, lead time and remarks are kept. Any base price you typed in by hand will be replaced.",
+        "Any line added to the enquiry since this quotation was built is brought in at cost with no markup. Base costs are re-read from whichever vendor is selected on Compare & Award right now, and descriptions are refreshed.\n\nYour markup, discount, lead time and remarks are kept. Any base price you typed in by hand will be replaced.",
       confirmText: "Refresh",
     });
     if (ok) syncEnquiry.mutate();
@@ -364,7 +385,13 @@ export default function OfferPage({ params }) {
         <div>
           <h1 className="text-2xl font-bold text-[#28364b]">
             {offer.offer_number}
-            <span className={`ml-3 inline-flex rounded-full px-2 py-0.5 align-middle text-xs font-medium ${STATUS_STYLES[header.status] || "bg-slate-100"}`}>{header.status}</span>
+            {/* The SAVED status, not the dropdown. Picking "Draft" without
+                saving used to make this read draft while the server still had
+                it as sent — and every action that needs a draft then failed. */}
+            <span className={`ml-3 inline-flex rounded-full px-2 py-0.5 align-middle text-xs font-medium ${STATUS_STYLES[offer.status] || "bg-slate-100"}`}>{offer.status}</span>
+            {header.status !== offer.status && (
+              <span className="ml-2 align-middle text-xs font-medium text-amber-600">→ {header.status} (unsaved)</span>
+            )}
           </h1>
           <p className="mt-1 text-sm text-slate-500">Quotation for <span className="font-medium text-[#28364b]">{custName || offer.customer_name || "—"}</span></p>
         </div>
@@ -463,6 +490,57 @@ export default function OfferPage({ params }) {
         </div>
       </div>
 
+      {/* A quotation keeps its own copy of every line, so a line added to the
+          enquiry afterwards never arrives on its own. Without this you would have
+          to hold both pages side by side to notice one was missing. */}
+      {offer.enquiry_lines_missing?.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1 text-sm text-amber-900">
+            <span className="font-semibold">
+              {offer.enquiry_lines_missing.length} line
+              {offer.enquiry_lines_missing.length === 1 ? " on the enquiry is" : "s on the enquiry are"} not on this
+              quotation:
+            </span>{" "}
+            <span className="text-amber-800">
+              {offer.enquiry_lines_missing.map((l) => l.description || "(no description)").join(", ")}
+            </span>
+            {offer.status === "sent" && (
+              <span className="mt-0.5 block text-xs text-amber-700">
+                This quotation has already been sent — reopening puts it back to Draft, so re-send it to the customer
+                once you have set the markup.
+              </span>
+            )}
+            {offer.status === "accepted" && (
+              <span className="mt-0.5 block text-xs text-amber-700">
+                The customer has accepted this quotation, so it is not reopened automatically — changing its lines now
+                would put it out of step with the order.
+              </span>
+            )}
+          </div>
+          {offer.status === "draft" ? (
+            <button
+              onClick={handleRefresh}
+              disabled={syncEnquiry.isLoading}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-amber-700 disabled:opacity-50"
+            >
+              {syncEnquiry.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Bring
+              them in
+            </button>
+          ) : offer.status !== "accepted" ? (
+            <button
+              onClick={handleReopenSync}
+              disabled={reopenSync.isLoading}
+              title="Set this quotation back to Draft and bring in the enquiry's new lines"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-amber-700 disabled:opacity-50"
+            >
+              {reopenSync.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />} Reopen
+              &amp; bring them in
+            </button>
+          ) : null}
+        </div>
+      )}
+
       {/* Line items with markup */}
       <div className="rounded-xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4">
@@ -474,9 +552,13 @@ export default function OfferPage({ params }) {
                   faint link, and missing it means quoting last week's price. */}
               <button
                 onClick={handleRefresh}
-                disabled={syncEnquiry.isLoading}
-                title="Re-read base costs from the vendor selected on Compare & Award, and refresh descriptions"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[#28364b] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#3c4a63] disabled:opacity-50"
+                disabled={syncEnquiry.isLoading || offer.status !== "draft"}
+                title={
+                  offer.status !== "draft"
+                    ? "This quotation has already been sent — set its status back to Draft and save before refreshing."
+                    : "Bring in lines added to the enquiry since this quotation was built, re-read base costs from the vendor selected on Compare & Award, and refresh descriptions"
+                }
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#28364b] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#3c4a63] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {syncEnquiry.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh from enquiry
               </button>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw, Paperclip } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw, Paperclip, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, purchaseOrdersAPI, offersAPI } from "@/pages/api";
 import { fetchRates, rateToBase } from "@/lib/fx";
@@ -18,6 +18,9 @@ export default function CompareGrid({ params }) {
   // rfq_item_id -> { vendor_id -> { quote_item_id, unit_cost, qty_to_buy } }
   // A line can be split across vendors, so each line holds one entry per vendor.
   const [awards, setAwards] = useState({});
+  // One hidden file input per vendor column, so two uploads can't cross wires.
+  const quoteFileInputs = useRef({});
+  const [uploadingQuoteId, setUploadingQuoteId] = useState(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["compare", id],
@@ -393,6 +396,44 @@ export default function CompareGrid({ params }) {
     }
   };
 
+  // Staff file a vendor's own quotation themselves — the PDF, Word or Excel the
+  // vendors who ignore their link just email back. Internal to us: it sits in
+  // their column here and never travels to the customer.
+  const uploadQuoteFiles = async (vendor, fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const fd = new FormData();
+    Array.from(fileList).forEach((f) => fd.append("files[]", f));
+    setUploadingQuoteId(vendor.quote_id);
+    try {
+      await rfqsAPI.uploadQuoteFiles(vendor.quote_id, fd);
+      toast.success(`File attached to ${vendor.vendor_name}.`);
+      refetch();
+    } catch (e) {
+      toast.error(
+        e?.response?.data?.message || "Upload failed. Use PDF, Word, Excel, CSV or an image (max 10 MB each)."
+      );
+    } finally {
+      setUploadingQuoteId(null);
+      const input = quoteFileInputs.current[vendor.quote_id];
+      if (input) input.value = "";
+    }
+  };
+
+  const removeQuoteFile = async (vendor, att) => {
+    const ok = await confirm({
+      title: "Remove this file?",
+      message: `${att.name} will be deleted from ${vendor.vendor_name}'s quote.`,
+      confirmText: "Remove",
+    });
+    if (!ok) return;
+    try {
+      await rfqsAPI.deleteQuoteFile(vendor.quote_id, att.id);
+      refetch();
+    } catch {
+      toast.error("Could not remove the file.");
+    }
+  };
+
   // Pull today's live rate for one vendor (manual ↻) and save it to their quote.
   const applyLiveRate = async (vendor) => {
     let rates;
@@ -460,7 +501,8 @@ export default function CompareGrid({ params }) {
             Click a cell to select that vendor's price for the customer offer; click again to unselect. Select two on the
             same line to split it, then set each Qty. You can change the selection any time until purchase orders are
             generated — that is the point it becomes an actual order. Remarks print under the item on the quotation, PO
-            and invoices.
+            and invoices. Use <span className="font-medium text-slate-600">Attach quote</span> to keep a vendor's own
+            PDF, Word or Excel quotation on their column — those files stay internal and never reach the customer.
             {locked && " (Locked)"}
           </p>
         </div>
@@ -548,22 +590,67 @@ export default function CompareGrid({ params }) {
                         </button>
                       )}
                     </div>
-                    {v.attachments?.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {v.attachments.map((a) => (
+                    {/* This vendor's quotation files — theirs and any we filed for them. */}
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {v.attachments?.map((a) => (
+                        <span
+                          key={a.id}
+                          title={
+                            a.internal
+                              ? `${a.name} — filed by us, the vendor cannot see it`
+                              : `${a.name} — uploaded by the vendor`
+                          }
+                          className={`inline-flex max-w-[160px] items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium normal-case ${
+                            a.internal ? "bg-[#28364b]/10 text-[#28364b]" : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          <Paperclip className="h-3 w-3 shrink-0" />
                           <button
-                            key={a.id}
                             type="button"
                             onClick={() => openAttachment(v.quote_id, a)}
-                            title={`Open ${a.name}`}
-                            className="inline-flex max-w-[150px] items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium normal-case text-slate-600 transition-colors hover:bg-slate-200"
+                            className="truncate hover:underline"
                           >
-                            <Paperclip className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{a.name}</span>
+                            {a.name}
                           </button>
-                        ))}
-                      </div>
-                    )}
+                          {!locked && (
+                            <button
+                              type="button"
+                              onClick={() => removeQuoteFile(v, a)}
+                              title="Remove this file"
+                              className="shrink-0 text-slate-400 transition-colors hover:text-red-600"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {!locked && (
+                        <>
+                          <input
+                            ref={(el) => { quoteFileInputs.current[v.quote_id] = el; }}
+                            type="file"
+                            multiple
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp"
+                            onChange={(e) => uploadQuoteFiles(v, e.target.files)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => quoteFileInputs.current[v.quote_id]?.click()}
+                            disabled={uploadingQuoteId === v.quote_id}
+                            title="Attach this vendor's quotation — PDF, Word or Excel. Internal only; the customer never sees it."
+                            className="inline-flex items-center gap-1 rounded border border-dashed border-slate-300 px-1.5 py-0.5 text-[10px] font-medium normal-case text-slate-500 transition-colors hover:border-[#28364b] hover:text-[#28364b] disabled:opacity-50"
+                          >
+                            {uploadingQuoteId === v.quote_id ? (
+                              <Spinner className="h-3 w-3" />
+                            ) : (
+                              <UploadCloud className="h-3 w-3" />
+                            )}
+                            Attach quote
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </th>
                 ))}
                 <th className="px-3 py-3 text-right font-semibold">Total buy</th>

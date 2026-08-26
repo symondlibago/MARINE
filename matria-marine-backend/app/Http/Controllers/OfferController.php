@@ -29,7 +29,41 @@ class OfferController extends Controller
     {
         $offer->load(['items', 'rfq:id,reference,ship_name', 'customer:id,name,address,email']);
 
-        return response()->json(['success' => true, 'data' => $offer]);
+        // Lines added to the enquiry after this quotation was built. An offer
+        // keeps its own copy of every line, so nothing arrives on its own and a
+        // gap is otherwise invisible — you would have to hold both pages side by
+        // side to spot it. Reporting it here is what lets the page say so.
+        $data = $offer->toArray();
+        $data['enquiry_lines_missing'] = $this->enquiryLinesMissing($offer)
+            ->map(fn ($i) => ['rfq_item_id' => $i->id, 'description' => $i->description])
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /** Enquiry lines with no line of their own on this offer. */
+    private function enquiryLinesMissing(Offer $offer)
+    {
+        if (! $offer->rfq_id) {
+            return collect();
+        }
+
+        return RfqItem::where('rfq_id', $offer->rfq_id)
+            ->whereNotIn('id', $this->offerRfqItemIds($offer) ?: [0])
+            ->orderBy('sort')->orderBy('id')
+            ->get(['id', 'description']);
+    }
+
+    /**
+     * The enquiry lines this offer already carries, as integers.
+     *
+     * Cast deliberately: these are compared strictly, and a driver that hands
+     * back "12" instead of 12 would make every line look new and duplicate the
+     * whole offer on the next refresh.
+     */
+    private function offerRfqItemIds(Offer $offer): array
+    {
+        return $offer->items->pluck('rfq_item_id')->filter()->map(fn ($v) => (int) $v)->all();
     }
 
     /**
@@ -300,6 +334,56 @@ class OfferController extends Controller
             ], 422);
         }
 
+        return response()->json([
+            'success' => true,
+            'message' => $this->syncMessage($this->pullFromEnquiry($offer)),
+            'data' => $offer->fresh('items'),
+        ]);
+    }
+
+    /**
+     * Reopen a quotation that has already gone out and pull the enquiry's new
+     * lines in, in one step.
+     *
+     * The status guard on Refresh is there so a document the customer is
+     * holding cannot be rewritten behind their back — but doing it by hand
+     * means Status, Save, Refresh, three steps with nothing saying so. This
+     * keeps the decision explicit while making it one click. Sending the
+     * corrected quotation on to the customer stays a deliberate, separate act.
+     */
+    public function reopenAndSync(Offer $offer)
+    {
+        // An accepted quotation is the basis of the order and whatever has been
+        // invoiced against it. Reopening that is not a one-click decision.
+        if ($offer->status === 'accepted') {
+            return response()->json([
+                'success' => false,
+                'message' => 'The customer has already accepted this quotation — changing its lines now would put it out of step with the order. Change the status by hand if you really mean to.',
+            ], 422);
+        }
+
+        $reopened = $offer->status !== 'draft';
+
+        if ($reopened) {
+            $offer->update(['status' => 'draft']);
+        }
+
+        $message = $this->syncMessage($this->pullFromEnquiry($offer->fresh()));
+
+        return response()->json([
+            'success' => true,
+            'message' => $reopened ? 'Reopened as a draft. '.$message : $message,
+            'data' => $offer->fresh('items'),
+        ]);
+    }
+
+    /**
+     * Bring this offer back into step with its enquiry.
+     *
+     * Returns what moved, so the caller can word its own message.
+     */
+    private function pullFromEnquiry(Offer $offer): array
+    {
         $offer->load('items');
 
         // The WHOLE enquiry, not just the lines already on the offer: a line
@@ -370,7 +454,7 @@ class OfferController extends Controller
             // Lines added to the enquiry since this quotation was built. They
             // come on at cost with no markup, exactly as generate() would have
             // created them, so the pricing decision is still the user's.
-            $onOffer = $offer->items->pluck('rfq_item_id')->filter()->all();
+            $onOffer = $this->offerRfqItemIds($offer);
             $sort = (int) $offer->items->max('sort');
 
             foreach ($source as $item) {
@@ -407,22 +491,24 @@ class OfferController extends Controller
             $offer->recalcTotals();
         });
 
+        return ['added' => $added, 'prices' => $pricesChanged, 'text' => $textChanged];
+    }
+
+    /** Plain English for what a sync actually moved. */
+    private function syncMessage(array $counts): string
+    {
         $parts = [];
-        if ($added) {
-            $parts[] = "{$added} new line(s) brought in from the enquiry";
+        if ($counts['added']) {
+            $parts[] = "{$counts['added']} new line(s) brought in from the enquiry";
         }
-        if ($pricesChanged) {
-            $parts[] = "{$pricesChanged} price(s) re-read from the selected vendor";
+        if ($counts['prices']) {
+            $parts[] = "{$counts['prices']} price(s) re-read from the selected vendor";
         }
-        if ($textChanged) {
-            $parts[] = "{$textChanged} description(s) updated";
+        if ($counts['text']) {
+            $parts[] = "{$counts['text']} description(s) updated";
         }
 
-        return response()->json([
-            'success' => true,
-            'message' => $parts ? ucfirst(implode(' and ', $parts)).'.' : 'Already up to date with the enquiry.',
-            'data' => $offer->fresh('items'),
-        ]);
+        return $parts ? ucfirst(implode(' and ', $parts)).'.' : 'Already up to date with the enquiry.';
     }
 
     public function destroy(Offer $offer)

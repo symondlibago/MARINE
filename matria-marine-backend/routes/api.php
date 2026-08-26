@@ -114,7 +114,11 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::post('rfqs/{rfq}/reopen', [RfqController::class, 'reopen']);
         Route::patch('quotes/{quote}', [RfqController::class, 'updateQuoteRate']);
         Route::patch('quotes/{quote}/prices', [RfqController::class, 'saveVendorPrices']);
+        // A vendor's quotation file. Staff can file one themselves for the vendors
+        // who just email theirs back. Internal — never reaches the customer.
         Route::get('quotes/{quote}/attachments/{attachment}', [RfqController::class, 'attachmentUrl']);
+        Route::post('quotes/{quote}/attachments', [RfqController::class, 'uploadQuoteAttachments']);
+        Route::delete('quotes/{quote}/attachments/{attachment}', [RfqController::class, 'deleteQuoteAttachment']);
         // Customer files on an enquiry — staff-only (internal, never shown to vendors)
         Route::post('rfqs/{rfq}/attachments', [RfqController::class, 'uploadAttachments']);
         Route::get('rfqs/{rfq}/attachments/{attachment}', [RfqController::class, 'rfqAttachmentUrl']);
@@ -166,6 +170,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::post('offers/{offer}/email', [OfferController::class, 'email']);
         Route::get('offers/{offer}', [OfferController::class, 'show']);
         Route::post('offers/{offer}/sync-enquiry', [OfferController::class, 'syncFromEnquiry']);
+        // Same thing for a quotation already sent: back to draft and pulled in,
+        // one step. Sending the corrected quotation on stays a separate act.
+        Route::post('offers/{offer}/reopen-sync', [OfferController::class, 'reopenAndSync']);
         Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
         Route::delete('offers/{offer}', [OfferController::class, 'destroy']);
 
