@@ -17,7 +17,12 @@ class DeliveryOrderController extends Controller
 {
     public function index()
     {
-        $orders = DeliveryOrder::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name', 'purchaseOrder:id,po_number'])
+        $orders = DeliveryOrder::with([
+            'rfq:id,reference,ship_name',
+            'customer:id,name',
+            'creator:id,name',
+            'purchaseOrder:id,po_number',
+        ])
             ->orderByDesc('id')
             ->get();
 
@@ -225,7 +230,7 @@ class DeliveryOrderController extends Controller
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
         $pdf = Pdf::loadView('pdf.proforma-invoice', [
-            'do' => $deliveryOrder,
+            'pf' => \App\Support\ProformaDoc::fromDeliveryOrder($deliveryOrder),
             'company' => config('procurement.company'),
             'logo' => $logo,
         ]);

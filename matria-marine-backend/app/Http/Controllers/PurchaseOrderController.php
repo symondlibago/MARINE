@@ -22,7 +22,7 @@ class PurchaseOrderController extends Controller
     public function index(Request $request)
     {
         $query = PurchaseOrder::query()
-            ->with(['vendor:id,name', 'rfq:id,reference', 'creator:id,name'])
+            ->with(['vendor:id,name', 'rfq:id,reference,ship_name,customer_id,customer_reference', 'rfq.customer:id,name', 'creator:id,name'])
             ->withCount('items')
             ->orderByDesc('id');
 
@@ -48,11 +48,17 @@ class PurchaseOrderController extends Controller
             'is_direct' => $po->rfq_id === null,
             'vendor' => $po->vendor?->name,
             'prepared_by' => $po->creator?->name,
+            // Who the goods are ultimately for, and the reference they know it
+            // by — a PO is easier to place from the job than from its own number.
+            'customer' => $po->rfq?->customer?->name,
+            'customer_reference' => $po->rfq?->customer_reference,
+            'ship_name' => $po->ship_name ?: $po->rfq?->ship_name,
             'currency' => $po->currency,
             'status' => $po->status,
             'subtotal' => (float) $po->subtotal,
             'items_count' => $po->items_count,
             'issued_date' => $po->issued_date?->toDateString(),
+            'expected_date' => $po->expected_date?->toDateString(),
             'accepted_at' => $po->accepted_at?->toIso8601String(),
             'created_at' => $po->created_at?->toDateString(),
         ]);

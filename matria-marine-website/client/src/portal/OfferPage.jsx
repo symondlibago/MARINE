@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Save, TrendingUp, Lock, Unlock, Truck, Send, CheckCircle2, Receipt, RefreshCw, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Download, Save, TrendingUp, Lock, Unlock, Truck, Send, CheckCircle2, Receipt, RefreshCw, Plus, Trash2, AlertTriangle, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { offersAPI, customersAPI, invoicesAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -368,7 +368,36 @@ export default function OfferPage({ params }) {
     }
   };
 
+  // The document a customer paying in advance actually pays against. Saved
+  // first, because it prints the figures on screen and an unsaved markup would
+  // send them a total we have no record of.
+  const downloadProforma = async () => {
+    try {
+      await save.mutateAsync();
+    } catch {
+      return;
+    }
+    try {
+      const res = await offersAPI.proforma(id);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `proforma-${offer.offer_number}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      refetch();
+    } catch {
+      toast.error("Could not download the proforma invoice.");
+    }
+  };
+
   if (isLoading || !offer) return <PageLoader />;
+
+  // The offer's currency is only a label for base prices that are denominated in
+  // the enquiry's. If the enquiry's base currency moved, the totals below are
+  // the right numbers under the wrong currency code.
+  const currencyMismatch =
+    !!offer.enquiry_currency && String(offer.currency).toUpperCase() !== offer.enquiry_currency;
 
   const th = "px-1.5 py-2.5 font-semibold whitespace-nowrap";
   // Hide the number-input spinner arrows — they steal ~20px inside each field.
@@ -398,6 +427,20 @@ export default function OfferPage({ params }) {
         <div className="flex flex-wrap gap-2">
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Quotation PDF
+          </button>
+          {/* Not the tax invoice: this one can be reissued after an amendment,
+              which is the whole point for a customer paying in advance. */}
+          <button
+            onClick={downloadProforma}
+            disabled={save.isLoading}
+            title={
+              offer.proforma_number
+                ? `Re-download proforma ${offer.proforma_number} — saves your changes first`
+                : "Priced proforma invoice for payment in advance — not the final tax invoice"
+            }
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-70"
+          >
+            <FileText className="h-4 w-4" /> Proforma Invoice
           </button>
           <button onClick={sendToCustomer} disabled={save.isLoading || sendEmail.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-3 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70" title="Email the quotation + an online acceptance link to the customer">
             {sendEmail.isLoading ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />} Send to customer
@@ -493,18 +536,30 @@ export default function OfferPage({ params }) {
       {/* A quotation keeps its own copy of every line, so a line added to the
           enquiry afterwards never arrives on its own. Without this you would have
           to hold both pages side by side to notice one was missing. */}
-      {offer.enquiry_lines_missing?.length > 0 && (
+      {(offer.enquiry_lines_missing?.length > 0 || currencyMismatch) && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
           <div className="min-w-0 flex-1 text-sm text-amber-900">
-            <span className="font-semibold">
-              {offer.enquiry_lines_missing.length} line
-              {offer.enquiry_lines_missing.length === 1 ? " on the enquiry is" : "s on the enquiry are"} not on this
-              quotation:
-            </span>{" "}
-            <span className="text-amber-800">
-              {offer.enquiry_lines_missing.map((l) => l.description || "(no description)").join(", ")}
-            </span>
+            {offer.enquiry_lines_missing?.length > 0 && (
+              <>
+                <span className="font-semibold">
+                  {offer.enquiry_lines_missing.length} line
+                  {offer.enquiry_lines_missing.length === 1 ? " on the enquiry is" : "s on the enquiry are"} not on this
+                  quotation:
+                </span>{" "}
+                <span className="text-amber-800">
+                  {offer.enquiry_lines_missing.map((l) => l.description || "(no description)").join(", ")}
+                </span>
+              </>
+            )}
+            {/* The base prices ARE in the enquiry's currency, so a mismatch here
+                means the totals on screen carry the wrong currency code. */}
+            {currencyMismatch && (
+              <span className={offer.enquiry_lines_missing?.length > 0 ? "mt-0.5 block font-semibold" : "font-semibold"}>
+                This quotation is in {offer.currency}, but the enquiry now prices in {offer.enquiry_currency} — the
+                figures below are {offer.enquiry_currency} labelled {offer.currency}.
+              </span>
+            )}
             {offer.status === "sent" && (
               <span className="mt-0.5 block text-xs text-amber-700">
                 This quotation has already been sent — reopening puts it back to Draft, so re-send it to the customer
@@ -524,8 +579,8 @@ export default function OfferPage({ params }) {
               disabled={syncEnquiry.isLoading}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-amber-700 disabled:opacity-50"
             >
-              {syncEnquiry.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Bring
-              them in
+              {syncEnquiry.isLoading ? <Spinner className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              {offer.enquiry_lines_missing?.length > 0 ? "Bring them in" : "Put it back in step"}
             </button>
           ) : offer.status !== "accepted" ? (
             <button

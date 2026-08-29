@@ -62,6 +62,17 @@ class Rfq extends Model
         return $this->hasMany(PurchaseOrder::class);
     }
 
+    /**
+     * The customer quotation built from this enquiry. One per enquiry — see
+     * OfferController::generate(), which returns the existing one rather than
+     * making a second. Carries the money, so the enquiry list can show what a
+     * job is worth without opening it.
+     */
+    public function offer()
+    {
+        return $this->hasOne(Offer::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

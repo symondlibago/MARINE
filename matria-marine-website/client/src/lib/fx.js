@@ -1,15 +1,17 @@
-// Live foreign-exchange rates.
+// Foreign-exchange rates, from DBS's published board rates (see FxRates).
 //
 // The rate is fetched by OUR backend (see FxController), not the browser, so it
 // keeps working even when the machine intercepts outbound TLS. The response is
-// { base, rates, date } where rates[X] = units of X per 1 base. We also cache it
-// per base-currency per day in localStorage to avoid repeat calls.
+// { base, rates, date, source } where rates[X] = units of X per 1 base. We also
+// cache it per base-currency per day in localStorage to avoid repeat calls.
 
 import { fxAPI } from "@/pages/api";
 
 const memo = new Map(); // base -> { base, rates, date }
 
-const dayKey = (base) => `fx:${base}:${new Date().toISOString().slice(0, 10)}`;
+// The prefix is versioned: rates cached before the move to DBS board rates are a
+// different number entirely, and a browser holding one would quietly keep using it.
+const dayKey = (base) => `fx2:${base}:${new Date().toISOString().slice(0, 10)}`;
 
 /**
  * Fetch (or reuse cached) rates for a base currency.
@@ -36,7 +38,7 @@ export async function fetchRates(base) {
     throw new Error("FX lookup failed");
   }
 
-  const out = { base, rates: data.rates, date: data.date || "" };
+  const out = { base, rates: data.rates, date: data.date || "", source: data.source || "" };
   memo.set(base, out);
   try {
     localStorage.setItem(dayKey(base), JSON.stringify(out));

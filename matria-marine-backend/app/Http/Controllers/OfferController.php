@@ -8,6 +8,8 @@ use App\Models\Offer;
 use App\Models\Rfq;
 use App\Models\RfqItem;
 use App\Models\SentLog;
+use App\Support\DocNumber;
+use App\Support\ProformaDoc;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,13 @@ class OfferController extends Controller
 {
     public function index()
     {
-        $offers = Offer::with(['rfq:id,reference', 'customer:id,name', 'creator:id,name'])
+        // The enquiry's vessel and the customer's own reference come along: those
+        // are what staff recognise a job by, not our quotation number.
+        $offers = Offer::with([
+            'rfq:id,reference,ship_name,customer_reference',
+            'customer:id,name',
+            'creator:id,name',
+        ])
             ->orderByDesc('id')
             ->get();
 
@@ -37,6 +45,12 @@ class OfferController extends Controller
         $data['enquiry_lines_missing'] = $this->enquiryLinesMissing($offer)
             ->map(fn ($i) => ['rfq_item_id' => $i->id, 'description' => $i->description])
             ->values();
+
+        // The base prices are denominated in this, so a disagreement with the
+        // offer's own currency means the totals on screen are labelled wrong.
+        $data['enquiry_currency'] = $offer->rfq_id
+            ? strtoupper((string) Rfq::where('id', $offer->rfq_id)->value('base_currency'))
+            : null;
 
         return response()->json(['success' => true, 'data' => $data]);
     }
@@ -386,6 +400,13 @@ class OfferController extends Controller
     {
         $offer->load('items');
 
+        // Every base price on this offer is denominated in the enquiry's base
+        // currency, so the offer's own currency is a label for those numbers,
+        // not an independent choice. Re-reading the prices without re-reading
+        // the label leaves EUR figures headed USD — worse than being stale.
+        $enquiryCurrency = strtoupper((string) Rfq::where('id', $offer->rfq_id)->value('base_currency'));
+        $currencyChanged = false;
+
         // The WHOLE enquiry, not just the lines already on the offer: a line
         // added to the enquiry after this quotation was built has to be able to
         // find its way on, which is the point of pressing Refresh.
@@ -402,7 +423,12 @@ class OfferController extends Controller
         $pricesChanged = 0;
         $added = 0;
 
-        DB::transaction(function () use ($offer, $source, &$textChanged, &$pricesChanged, &$added) {
+        DB::transaction(function () use ($offer, $source, $enquiryCurrency, &$textChanged, &$pricesChanged, &$added, &$currencyChanged) {
+            if ($enquiryCurrency && strtoupper((string) $offer->currency) !== $enquiryCurrency) {
+                $offer->update(['currency' => $enquiryCurrency]);
+                $currencyChanged = true;
+            }
+
             foreach ($offer->items as $line) {
                 $item = $source->get($line->rfq_item_id);
 
@@ -491,7 +517,12 @@ class OfferController extends Controller
             $offer->recalcTotals();
         });
 
-        return ['added' => $added, 'prices' => $pricesChanged, 'text' => $textChanged];
+        return [
+            'added' => $added,
+            'prices' => $pricesChanged,
+            'text' => $textChanged,
+            'currency' => $currencyChanged ? $enquiryCurrency : null,
+        ];
     }
 
     /** Plain English for what a sync actually moved. */
@@ -506,6 +537,9 @@ class OfferController extends Controller
         }
         if ($counts['text']) {
             $parts[] = "{$counts['text']} description(s) updated";
+        }
+        if ($counts['currency'] ?? null) {
+            $parts[] = "the currency set to {$counts['currency']} to match the enquiry";
         }
 
         return $parts ? ucfirst(implode(' and ', $parts)).'.' : 'Already up to date with the enquiry.';
@@ -532,6 +566,37 @@ class OfferController extends Controller
         ]);
 
         return $pdf->download(($offer->offer_number ?: 'offer').'.pdf');
+    }
+
+    /**
+     * Pro-forma invoice straight off the quotation.
+     *
+     * For the customers who pay before anything ships: they never get a delivery
+     * order, and the final invoice is a tax invoice that must not be amended
+     * afterwards. This is the amendable document they pay against — change the
+     * quotation and download it again.
+     */
+    public function proforma(Offer $offer)
+    {
+        $offer->load(['items', 'rfq:id,customer_reference', 'creator:id,name,phone']);
+
+        // Numbered once and kept, so re-downloading gives the customer the same
+        // document instead of a new number each time.
+        if (! $offer->proforma_number) {
+            $offer->update(['proforma_number' => DocNumber::next('ProINV')]);
+            $offer->refresh();
+        }
+
+        $logoPath = public_path('logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
+
+        $pdf = Pdf::loadView('pdf.proforma-invoice', [
+            'pf' => ProformaDoc::fromOffer($offer),
+            'company' => config('procurement.company'),
+            'logo' => $logo,
+        ]);
+
+        return $pdf->download(($offer->proforma_number ?: 'proforma').'.pdf');
     }
 
     /** Email the quotation (with a customer acceptance magic link) to the customer. */

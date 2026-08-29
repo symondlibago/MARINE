@@ -123,7 +123,9 @@ export const vendorsAPI = {
 
 // --- Phase 2: enquiries (RFQ spine) ---
 export const rfqsAPI = {
-  list: () => api.get(apiUrl('/portal/rfqs')),
+  // status: 'open' or 'closed' to fetch one tab; omit it for every enquiry
+  // (the dashboard needs the whole set to count and chart them).
+  list: (params = {}) => api.get(apiUrl('/portal/rfqs'), { params }),
   get: (id) => api.get(apiUrl(`/portal/rfqs/${id}`)),
   create: (payload) => api.post(apiUrl('/portal/rfqs'), payload),
   update: (id, payload) => api.put(apiUrl(`/portal/rfqs/${id}`), payload),
@@ -234,6 +236,8 @@ export const offersAPI = {
   update: (id, payload) => api.patch(apiUrl(`/portal/offers/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/offers/${id}`)),
   pdf: (id) => api.get(apiUrl(`/portal/offers/${id}/pdf`), { responseType: 'blob' }),
+  // Pro-forma for payment in advance — amendable, unlike the final invoice.
+  proforma: (id) => api.get(apiUrl(`/portal/offers/${id}/proforma`), { responseType: 'blob' }),
   email: (id) => api.post(apiUrl(`/portal/offers/${id}/email`)),
   // Re-pull line descriptions from the enquiry (the offer holds its own copy).
   syncEnquiry: (id) => api.post(apiUrl(`/portal/offers/${id}/sync-enquiry`)),

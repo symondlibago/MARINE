@@ -56,7 +56,12 @@ class DocNumber
         'QTN' => [[\App\Models\Rfq::class, 'reference']],
         'PO' => [[\App\Models\PurchaseOrder::class, 'po_number']],
         'DO' => [[\App\Models\DeliveryOrder::class, 'do_number']],
-        'ProINV' => [[\App\Models\DeliveryOrder::class, 'proforma_number']],
+        // Two homes: a delivery order's proforma, and a quotation's own — raised
+        // for customers who pay up front and never see a delivery order.
+        'ProINV' => [
+            [\App\Models\DeliveryOrder::class, 'proforma_number'],
+            [\App\Models\Offer::class, 'proforma_number'],
+        ],
         // Two homes: the customer invoice itself, and the copy stamped onto a
         // purchase order when its final invoice is raised.
         'INV' => [

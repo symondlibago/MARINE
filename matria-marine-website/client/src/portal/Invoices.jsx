@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -6,12 +7,20 @@ import { toast } from "sonner";
 import { invoicesAPI } from "@/pages/api";
 import { TableSkeleton } from "./ui/Loading";
 import { Spinner } from "./ui/Loading";
+import ListToolbar from "./ui/ListToolbar";
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
   sent: "bg-blue-100 text-blue-700",
   paid: "bg-green-100 text-green-700",
 };
+
+const STATUS_OPTIONS = [
+  { value: "", label: "All statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "sent", label: "Sent" },
+  { value: "paid", label: "Paid" },
+];
 
 // The linked document numbers for a job (QTN / DO / ProINV / PO / INV).
 function RefTrail({ refs }) {
@@ -35,11 +44,30 @@ function RefTrail({ refs }) {
 
 export default function Invoices() {
   const [, setLocation] = useLocation();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["invoices"],
     queryFn: async () => (await invoicesAPI.list()).data.data,
   });
-  const rows = data ?? [];
+
+  // Searching the reference trail too — chasing an invoice usually starts from
+  // whichever number the customer or vendor quoted at you, not the invoice's.
+  const rows = useMemo(() => {
+    const all = data ?? [];
+    const q = search.trim().toLowerCase();
+
+    return all.filter((r) => {
+      if (status && r.status !== status) return false;
+      if (!q) return true;
+
+      const trail = [r.refs?.qtn, r.refs?.do, r.refs?.proforma, ...(r.refs?.po || [])];
+
+      return [r.invoice_number, r.customer?.name || r.customer_name, ...trail]
+        .some((v) => String(v || "").toLowerCase().includes(q));
+    });
+  }, [data, search, status]);
 
   const createDirect = useMutation({
     mutationFn: () => invoicesAPI.createDirect(),
@@ -72,6 +100,13 @@ export default function Invoices() {
         </button>
       </div>
 
+      <ListToolbar
+        search={search}
+        onSearch={setSearch}
+        placeholder="Search invoice no., customer, or any reference in the trail…"
+        filters={[{ value: status, onChange: setStatus, options: STATUS_OPTIONS, title: "Filter by status" }]}
+      />
+
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead>
@@ -92,7 +127,13 @@ export default function Invoices() {
                 <td colSpan={6} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center gap-2">
                     <Receipt className="h-8 w-8 text-slate-300" />
-                    No invoices yet — click <span className="font-medium">New Direct Invoice</span>, or create one from an accepted Offer.
+                    {search || status ? (
+                      "No invoices match that."
+                    ) : (
+                      <>
+                        No invoices yet — click <span className="font-medium">New Direct Invoice</span>, or create one from an accepted Offer.
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

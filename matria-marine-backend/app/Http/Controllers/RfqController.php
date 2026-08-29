@@ -8,6 +8,7 @@ use App\Models\Offer;
 use App\Models\PurchaseOrderItem;
 use App\Models\SentLog;
 use App\Support\DocNumber;
+use App\Support\FxRates;
 use App\Models\Quote;
 use App\Models\QuoteAttachment;
 use App\Models\QuoteItem;
@@ -25,15 +26,96 @@ use Illuminate\Support\Str;
 
 class RfqController extends Controller
 {
-    public function index()
+    /**
+     * The enquiry list, split into work in progress and the closed archive.
+     *
+     * Closed enquiries only ever accumulate, and mixed in they bury the handful
+     * anyone is actually working on. They are fetched separately rather than
+     * filtered in the browser so the archive costs nothing until it is opened.
+     */
+    public function index(Request $request)
     {
+        // Only an explicit open/closed filters. No parameter still means every
+        // enquiry, because the dashboard counts them all and charts them by
+        // status — narrowing the default would have quietly broken its totals.
+        $tab = $request->query('tab');
+        $tab = in_array($tab, ['open', 'closed'], true) ? $tab : null;
+
+        $status = $request->query('status') ?: null;
+        $term = trim((string) $request->query('q'));
+
+        // Searching and filtering happen in SQL, not in the browser: the closed
+        // archive only grows, and shipping all of it down to filter it there
+        // gets slower every month.
+        $narrow = function ($query) use ($status, $term) {
+            $query
+                ->when($status, fn ($q) => $q->where('status', $status))
+                ->when($term !== '', fn ($q) => $q->where(function ($w) use ($term) {
+                    $like = '%'.$term.'%';
+                    $w->where('reference', 'like', $like)
+                        ->orWhere('ship_name', 'like', $like)
+                        ->orWhere('customer_reference', 'like', $like)
+                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', $like));
+                }));
+        };
+
         $rfqs = Rfq::query()
-            ->with('customer:id,name')
-            ->withCount(['items', 'rfqVendors', 'quotes'])
+            ->tap($narrow)
+            // The quotation carries the value of the job. Eager-loaded so the
+            // list can show it on every row without a query per row.
+            ->with([
+                'customer:id,name',
+                'offer:id,rfq_id,offer_number,currency,subtotal,markup_total,grand_total,status',
+            ])
+            ->withCount([
+                'items',
+                'rfqVendors',
+                'quotes',
+                // Vendors who have actually put a price on something.
+                //
+                // quotes_count cannot answer this: opening Compare & Award
+                // back-fills an empty quote row for every vendor invited, so it
+                // reads "all of them" the moment anyone looks at the grid. A
+                // priced line is the real signal, and a cleared price deletes
+                // its line, so this never counts a vendor who has withdrawn.
+                'quotes as priced_quotes_count' => fn ($q) => $q->whereHas(
+                    'items',
+                    fn ($i) => $i->whereNotNull('unit_cost')
+                ),
+                // Vendors who sent a file back but have no price keyed in yet —
+                // their quotation is sitting on the column waiting to be read.
+                // Counted as one condition, not two totals compared: with one
+                // vendor priced and a different one holding a file, comparing
+                // the totals says nothing is outstanding when something is.
+                'quotes as unpriced_files_count' => fn ($q) => $q
+                    ->whereHas('attachments')
+                    ->whereDoesntHave('items', fn ($i) => $i->whereNotNull('unit_cost')),
+                // Lines with a vendor actually selected — closing an enquiry with
+                // lines still unawarded is usually a slip, so the list can say so
+                // before anything is locked.
+                'items as awarded_items_count' => fn ($q) => $q->whereHas('awards'),
+            ])
+            ->when($tab, fn ($q) => $q->where('status', $tab === 'closed' ? '=' : '!=', 'closed'))
             ->orderByDesc('id')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $rfqs]);
+        // Both tab totals in one grouped query, so switching tabs needs no
+        // second round trip and neither count is ever stale against the other.
+        // They carry the same search and status filter, so while you are
+        // searching the tabs say how many matches are on the other side rather
+        // than a total that has nothing to do with what is on screen.
+        $byStatus = Rfq::query()
+            ->tap($narrow)
+            ->selectRaw('status, COUNT(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+        $closed = (int) ($byStatus['closed'] ?? 0);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rfqs,
+            'meta' => ['open' => (int) $byStatus->sum() - $closed, 'closed' => $closed],
+        ]);
     }
 
     public function store(Request $request)
@@ -91,6 +173,13 @@ class RfqController extends Controller
     {
         $data = $this->validateRfq($request);
 
+        // Every vendor quote holds an exchange rate INTO the enquiry's base
+        // currency. Move the base and those rates are silently measuring the
+        // wrong thing — a EUR quote left on a USD-era rate reads 16% high and
+        // still says EUR. Remember the old base so they can be re-based below.
+        $previousBase = strtoupper((string) $rfq->base_currency);
+        $rateNotice = null;
+
         DB::transaction(function () use ($rfq, $data) {
             $rfq->update([
                 'customer_id' => $data['customer_id'] ?? null,
@@ -133,11 +222,65 @@ class RfqController extends Controller
             }
         });
 
+        $newBase = strtoupper((string) $rfq->fresh()->base_currency);
+
+        if ($newBase !== $previousBase) {
+            $rateNotice = $this->rebaseQuoteRates($rfq, $newBase);
+        }
+
         return response()->json([
             'success' => true,
-            'message' => 'Enquiry updated.',
+            'message' => 'Enquiry updated.'.($rateNotice ? ' '.$rateNotice : ''),
             'data' => $rfq->load('items'),
         ]);
+    }
+
+    /**
+     * Re-derive every vendor quote's exchange rate against a new base currency.
+     *
+     * A quote in the base currency is 1 by definition — no rate, no spread.
+     * Anything else is re-read from the bank's board rate. If that cannot be
+     * reached the old rate is left alone rather than replaced with a guess, and
+     * the vendors needing a manual look are named in the returned notice.
+     */
+    private function rebaseQuoteRates(Rfq $rfq, string $newBase): ?string
+    {
+        $quotes = Quote::with('vendor:id,name')->where('rfq_id', $rfq->id)->get();
+
+        if ($quotes->isEmpty()) {
+            return null;
+        }
+
+        $stale = [];
+
+        foreach ($quotes as $quote) {
+            $currency = strtoupper((string) $quote->currency);
+
+            if ($currency === $newBase) {
+                if ((float) $quote->exchange_rate !== 1.0) {
+                    $quote->update(['exchange_rate' => 1]);
+                }
+
+                continue;
+            }
+
+            $rate = FxRates::rateToBase($currency, $newBase);
+
+            if ($rate === null) {
+                $stale[] = $quote->vendor?->name ?: "vendor #{$quote->vendor_id}";
+
+                continue;
+            }
+
+            $quote->update(['exchange_rate' => round($rate, 6)]);
+        }
+
+        if ($stale) {
+            return 'Base currency changed to '.$newBase.', but no live rate was available for '
+                .implode(', ', $stale).' — check their rate on Compare & Award before quoting.';
+        }
+
+        return 'Base currency changed to '.$newBase.'; vendor exchange rates were re-read.';
     }
 
     /** Reopen a locked enquiry so awards / quantities can be adjusted again. */
@@ -305,6 +448,15 @@ class RfqController extends Controller
                 );
             }
         }
+
+        // A quote priced in the enquiry's own currency converts at 1, always.
+        // Anything else is a rate left over from a base currency this enquiry
+        // no longer uses, which reads as an inflated price still labelled with
+        // the new currency. Correct it in place rather than showing it wrong.
+        Quote::where('rfq_id', $rfq->id)
+            ->where('currency', $rfq->base_currency)
+            ->where('exchange_rate', '!=', 1)
+            ->update(['exchange_rate' => 1]);
 
         $rfq->load(['items.awards', 'quotes.vendor', 'quotes.items', 'quotes.attachments', 'rfqVendors.items:id']);
 

@@ -167,6 +167,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::post('rfqs/{rfq}/offer', [OfferController::class, 'generate']);
         Route::get('offers', [OfferController::class, 'index']);
         Route::get('offers/{offer}/pdf', [OfferController::class, 'pdf']);
+        // Pro-forma straight off the quotation, for customers who pay up front
+        // and never see a delivery order.
+        Route::get('offers/{offer}/proforma', [OfferController::class, 'proforma']);
         Route::post('offers/{offer}/email', [OfferController::class, 'email']);
         Route::get('offers/{offer}', [OfferController::class, 'show']);
         Route::post('offers/{offer}/sync-enquiry', [OfferController::class, 'syncFromEnquiry']);

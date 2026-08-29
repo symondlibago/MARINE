@@ -43,13 +43,15 @@
             <td style="width:55%; vertical-align:top; padding-right:18px;">
                 <div class="bar">CUSTOMER</div>
                 <div style="padding:6px 2px; line-height:1.5;">
-                    <strong>{{ $do->customer_name ?: '—' }}</strong><br>
-                    {!! $do->customer_address ? nl2br(e($do->customer_address)) : '' !!}
+                    <strong>{{ $pf['customer_name'] ?: '—' }}</strong><br>
+                    {!! $pf['customer_address'] ? nl2br(e($pf['customer_address'])) : '' !!}
                 </div>
+                @if($pf['deliver_to'])
                 <div class="bar" style="margin-top:6px;">DELIVER TO</div>
                 <div style="padding:6px 2px; line-height:1.5;">
-                    {!! $do->delivery_address ? nl2br(e($do->delivery_address)) : '—' !!}
+                    {!! nl2br(e($pf['deliver_to'])) !!}
                 </div>
+                @endif
             </td>
             <td style="width:45%; vertical-align:top;">
                 <table style="width:100%;">
@@ -59,32 +61,32 @@
                     </tr>
                     <tr>
                         <td class="val">
-                            <strong>{{ $do->proforma_number ?: $do->do_number }}</strong>
-                            <br><span style="font-size:9px; color:#777;">for DO {{ $do->do_number }}</span>
+                            <strong>{{ $pf['number'] }}</strong>
+                            <br><span style="font-size:9px; color:#777;">{{ $pf['source_line'] }}</span>
                         </td>
-                        <td class="val">{{ optional($do->order_date)->format('n/j/Y') ?: $do->created_at->format('n/j/Y') }}</td>
+                        <td class="val">{{ $pf['date'] }}</td>
                     </tr>
                 </table>
                 <table style="width:100%; margin-top:10px;">
                     <tr>
                         <td class="bar" style="width:55%;">Currency</td>
-                        <td class="bar">Readiness</td>
+                        <td class="bar">{{ $pf['second_label'] }}</td>
                     </tr>
                     <tr>
-                        <td class="val">{{ $do->currency }}</td>
-                        <td class="val">{{ optional($do->readiness_date)->format('n/j/Y') ?: '—' }}</td>
+                        <td class="val">{{ $pf['currency'] }}</td>
+                        <td class="val">{{ $pf['second_value'] }}</td>
                     </tr>
                 </table>
-                @if($do->customer_reference)
+                @if($pf['customer_reference'])
                 <table style="width:100%; margin-top:10px;">
                     <tr><td class="bar">Customer Reference</td></tr>
-                    <tr><td class="val">{{ $do->customer_reference }}</td></tr>
+                    <tr><td class="val">{{ $pf['customer_reference'] }}</td></tr>
                 </table>
                 @endif
-                @if(optional($do->creator)->name)
+                @if($pf['prepared_by'])
                 <table style="width:100%; margin-top:10px;">
                     <tr><td class="bar">Prepared By</td></tr>
-                    <tr><td class="val">{{ $do->creator->name }}@if($do->creator->phone) · {{ $do->creator->phone }}@endif</td></tr>
+                    <tr><td class="val">{{ $pf['prepared_by'] }}</td></tr>
                 </table>
                 @endif
             </td>
@@ -99,17 +101,17 @@
                 <th style="text-align:left; width:55px;">Unit</th>
                 <th class="num" style="width:50px;">Qty</th>
                 <th class="num" style="width:90px;">Unit Price</th>
-                <th class="num" style="width:105px;">Amount ({{ $do->currency }})</th>
+                <th class="num" style="width:105px;">Amount ({{ $pf['currency'] }})</th>
             </tr>
         </thead>
         <tbody>
-            @forelse($do->items as $line)
+            @forelse($pf['items'] as $line)
                 <tr>
-                    <td>{!! nl2br(e($line->description)) !!}@if($line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif</td>
-                    <td>{{ $line->unit }}</td>
-                    <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                    <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>
-                    <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
+                    <td>{!! nl2br(e($line['description'])) !!}@if($line['remarks'])<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line['remarks'])) !!}</span>@endif</td>
+                    <td>{{ $line['unit'] }}</td>
+                    <td class="num">{{ rtrim(rtrim(number_format($line['qty'], 3), '0'), '.') }}</td>
+                    <td class="num">{{ number_format($line['unit_price'], 2) }}</td>
+                    <td class="num">{{ number_format($line['line_total'], 2) }}</td>
                 </tr>
             @empty
                 <tr><td colspan="5">No line items.</td></tr>
@@ -121,22 +123,29 @@
     <table style="width:100%; margin-top:8px;">
         <tr>
             <td style="width:55%; vertical-align:top; padding-top:12px;">
-                <em class="navy">This is a proforma invoice for the above delivery order.</em>
+                <em class="navy">{{ $pf['standfirst'] }}</em>
             </td>
             <td style="width:45%; vertical-align:top;">
                 <table class="totals" style="width:100%;">
+                    @foreach($pf['extra_totals'] as $row)
+                        <tr>
+                            <td>{{ $row['label'] }}</td>
+                            <td class="num">{{ $pf['currency'] }}</td>
+                            <td class="num">{{ number_format((float) $row['amount'], 2) }}</td>
+                        </tr>
+                    @endforeach
                     <tr style="font-weight:bold; font-size:14px;">
                         <td class="navy">TOTAL</td>
-                        <td class="num navy">{{ $do->currency }}</td>
-                        <td class="num navy">{{ number_format((float) $do->subtotal, 2) }}</td>
+                        <td class="num navy">{{ $pf['currency'] }}</td>
+                        <td class="num navy">{{ number_format($pf['total'], 2) }}</td>
                     </tr>
                 </table>
             </td>
         </tr>
     </table>
 
-    @if($do->notes)
-        <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $do->notes }}</p>
+    @if($pf['notes'])
+        <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $pf['notes'] }}</p>
     @endif
 
     {{-- Footer --}}

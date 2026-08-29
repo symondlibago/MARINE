@@ -9,6 +9,8 @@ class Offer extends Model
 {
     protected $fillable = [
         'offer_number',
+        // Assigned the first time a pro-forma is downloaded, then kept.
+        'proforma_number',
         'token',
         'rfq_id',
         'customer_id',

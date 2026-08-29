@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw, Paperclip, UploadCloud, X } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, FileDown, Download, ShoppingCart, Percent, RefreshCw, Paperclip, UploadCloud, X, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, purchaseOrdersAPI, offersAPI } from "@/pages/api";
 import { fetchRates, rateToBase } from "@/lib/fx";
@@ -362,6 +362,92 @@ export default function CompareGrid({ params }) {
       [rfqItemId]: { ...a[rfqItemId], [vendorId]: { ...a[rfqItemId]?.[vendorId], qty_to_buy: qty } },
     }));
 
+  /** The lines this vendor actually priced — the only ones awardable to them. */
+  const quotedRows = (vendorId) =>
+    data.rows
+      .map((row) => ({ row, cell: row.cells.find((c) => c.vendor_id === vendorId && c.quoted) }))
+      .filter((x) => x.cell);
+
+  /** True when every line this vendor priced is already theirs, and theirs alone. */
+  const holdsEveryLine = (vendorId) => {
+    const rows = quotedRows(vendorId);
+    return (
+      rows.length > 0 &&
+      rows.every(({ row }) => {
+        const line = awards[row.rfq_item_id] || {};
+        const ids = Object.keys(line);
+        return ids.length === 1 && Number(ids[0]) === vendorId;
+      })
+    );
+  };
+
+  /**
+   * Take the whole column in one click. Clicking cell by cell is fine for three
+   * lines and unusable for a hundred — an agency enquiry is one vendor's price
+   * list, so the normal case is wanting all of it.
+   *
+   * Only lines this vendor priced are taken, each at its full quantity. Lines
+   * already going to someone else are asked about first: this replaces the
+   * selection on a line rather than adding to it, and a split set by hand is
+   * real work to lose.
+   */
+  const selectAllForVendor = async (vendor) => {
+    if (locked) return;
+
+    const rows = quotedRows(vendor.vendor_id);
+    if (!rows.length) {
+      toast.error(`${vendor.vendor_name} has not priced any line yet.`);
+      return;
+    }
+
+    const moving = rows.filter(({ row }) =>
+      Object.keys(awards[row.rfq_item_id] || {}).some((v) => Number(v) !== vendor.vendor_id)
+    );
+
+    if (moving.length) {
+      const ok = await confirm({
+        title: `Move ${moving.length} line${moving.length === 1 ? "" : "s"} to ${vendor.vendor_name}?`,
+        message:
+          `${moving.length} of these lines currently go to another vendor, and any split you set by hand on them will be replaced.\n\n` +
+          `All ${rows.length} line${rows.length === 1 ? "" : "s"} ${vendor.vendor_name} priced will be taken at full quantity.`,
+        confirmText: "Select all",
+      });
+      if (!ok) return;
+    }
+
+    setAwards((a) => {
+      const next = { ...a };
+      rows.forEach(({ row, cell }) => {
+        next[row.rfq_item_id] = {
+          [vendor.vendor_id]: {
+            quote_item_id: cell.quote_item_id,
+            unit_cost: cell.unit_cost,
+            qty_to_buy: row.qty,
+          },
+        };
+      });
+      return next;
+    });
+
+    toast.success(`${rows.length} line${rows.length === 1 ? "" : "s"} selected from ${vendor.vendor_name}. Save the selection to keep it.`);
+  };
+
+  /** Drop this vendor from every line, leaving any other vendor's share alone. */
+  const clearAllForVendor = (vendor) => {
+    if (locked) return;
+
+    setAwards((a) => {
+      const next = {};
+      Object.entries(a).forEach(([rfqItemId, byVendor]) => {
+        const { [vendor.vendor_id]: _dropped, ...rest } = byVendor;
+        if (Object.keys(rest).length) next[rfqItemId] = rest;
+      });
+      return next;
+    });
+
+    toast.success(`${vendor.vendor_name} cleared from every line.`);
+  };
+
   /** Total quantity assigned across every vendor on a line. */
   const assignedQty = (rfqItemId) =>
     Object.values(awards[rfqItemId] || {}).reduce((n, v) => n + (Number(v.qty_to_buy) || 0), 0);
@@ -452,7 +538,12 @@ export default function CompareGrid({ params }) {
       autoFilled.current.add(vendor.quote_id);
       // mutateAsync so the success toast only fires once the save actually persists.
       await rateMutation.mutateAsync({ quoteId: vendor.quote_id, rate: Number(rate.toFixed(6)) });
-      toast.success(`${vendor.currency}→${data.rfq.base_currency} rate saved: ${rate.toFixed(4)}.`);
+      // Name the source: the number has to be defensible against a bank
+      // statement, and a mid-market fallback is not the same figure.
+      toast.success(
+        `${vendor.currency}→${data.rfq.base_currency} rate saved: ${rate.toFixed(4)}` +
+          (rates.source ? ` (${rates.source})` : "") + "."
+      );
     } catch {
       /* onError on the mutation already shows the reason */
     }
@@ -483,7 +574,12 @@ export default function CompareGrid({ params }) {
     }
   };
 
-  const awardedVendorIds = [...new Set(Object.values(awards).map((a) => a.vendor_id))];
+  // awards is line -> vendor -> share, so the vendor ids are the inner KEYS.
+  // Reading .vendor_id off the inner map gave [undefined] and the per-vendor
+  // award PDFs below never appeared.
+  const awardedVendorIds = [
+    ...new Set(Object.values(awards).flatMap((byVendor) => Object.keys(byVendor).map(Number))),
+  ];
   const awardedVendors = data.vendors.filter((v) => awardedVendorIds.includes(v.vendor_id));
   const showPdfs = (data.rfq.status === "awarded" || locked) && awardedVendors.length > 0;
 
@@ -498,10 +594,11 @@ export default function CompareGrid({ params }) {
           <h1 className="text-2xl font-bold text-[#28364b]">Compare &amp; Award — {data.rfq.reference}</h1>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500">
             Base {data.rfq.base_currency} — type a price in any vendor's cell and it converts at today's FX rate.
-            Click a cell to select that vendor's price for the customer offer; click again to unselect. Select two on the
-            same line to split it, then set each Qty. You can change the selection any time until purchase orders are
-            generated — that is the point it becomes an actual order. Remarks print under the item on the quotation, PO
-            and invoices. Use <span className="font-medium text-slate-600">Attach quote</span> to keep a vendor's own
+            Click a cell to select that vendor's price for the customer offer; click again to unselect, or use
+            <span className="font-medium text-slate-600"> Select all</span> on a vendor to take their whole column at
+            once. Select two on the same line to split it, then set each Qty. You can change the selection any time
+            until purchase orders are generated — that is the point it becomes an actual order. Remarks print under the
+            item on the quotation, PO and invoices. Use <span className="font-medium text-slate-600">Attach quote</span> to keep a vendor's own
             PDF, Word or Excel quotation on their column — those files stay internal and never reach the customer.
             {locked && " (Locked)"}
           </p>
@@ -541,6 +638,40 @@ export default function CompareGrid({ params }) {
                         {v.complete ? "Complete" : `Incomplete ${v.quoted_count}/${v.item_count}`}
                       </span>
                     </div>
+
+                    {/* Cell by cell is fine for three lines and unusable for a
+                        hundred, which is exactly what an agency price list is.
+                        On its own full-width row: squeezed in beside the badge it
+                        read as a stray chip, and hidden entirely it looked missing. */}
+                    {!locked && (
+                      <div className="mt-2">
+                        {holdsEveryLine(v.vendor_id) ? (
+                          <button
+                            type="button"
+                            onClick={() => clearAllForVendor(v)}
+                            title={`Unselect every line from ${v.vendor_name}`}
+                            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-bold normal-case text-red-700 shadow-sm transition-colors hover:border-red-300 hover:bg-red-100"
+                          >
+                            <Square className="h-3.5 w-3.5" /> Clear all {quotedRows(v.vendor_id).length} lines
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => selectAllForVendor(v)}
+                            disabled={v.quoted_count === 0}
+                            title={
+                              v.quoted_count === 0
+                                ? `${v.vendor_name} has no prices yet — enter their prices first, then this takes the whole column.`
+                                : `Select all ${v.quoted_count} line(s) ${v.vendor_name} priced, each at full quantity`
+                            }
+                            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#28364b] px-3 py-1.5 text-[11px] font-bold normal-case text-white shadow-sm transition-colors hover:bg-[#3c4a63] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+                          >
+                            <CheckSquare className="h-3.5 w-3.5" />
+                            {v.quoted_count > 0 ? `Select all ${v.quoted_count} lines` : "Select all"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="mt-1">
                       <input
                         type="text"
