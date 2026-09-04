@@ -9,6 +9,7 @@ import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
 import { gridKeyDown } from "./ui/gridKeys";
+import AccountSelect from "./ui/AccountSelect";
 import { fetchRates, rateToBase } from "@/lib/fx";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
@@ -44,6 +45,11 @@ export default function PurchaseOrderDetail({ params }) {
   const [expenseRate, setExpenseRate] = useState(1);          // expense_currency -> base
   const [rateLoading, setRateLoading] = useState(false);
   const [paidAt, setPaidAt] = useState(""); // date we paid the vendor (A/P)
+  // Accounting: which expense account this purchase sits on, and the GST the
+  // vendor charged. The GST is what makes Box 5 and Box 7 of the return
+  // possible — without it no input tax can be claimed at all.
+  const [accountCode, setAccountCode] = useState("5000");
+  const [taxRate, setTaxRate] = useState("");
   const [returns, setReturns] = useState([]); // [{ po_item_id, description, unit, ordered, unit_cost, qty, reason }]
   const [returnDate, setReturnDate] = useState("");
   const [returnNotes, setReturnNotes] = useState("");
@@ -70,6 +76,8 @@ export default function PurchaseOrderDetail({ params }) {
     setExpenseCurrency(po.expense_currency || po.currency);
     setExpenseRate(po.expense_currency ? Number(po.expense_rate) || 1 : Number(po.exchange_rate) || 1);
     setPaidAt(po.paid_at ? String(po.paid_at).slice(0, 10) : "");
+    setAccountCode(po.account_code || "5000");
+    setTaxRate(po.tax_rate != null && Number(po.tax_rate) > 0 ? String(Number(po.tax_rate)) : "");
 
     // Returns: one row per PO line, pre-filled from any existing return note.
     const existing = new Map((po.return_note?.items || []).map((ri) => [ri.purchase_order_item_id, ri]));
@@ -155,6 +163,8 @@ export default function PurchaseOrderDetail({ params }) {
         delivery_address: deliverTo || null,
         receipt_amount: receiptAmount === "" ? null : Number(receiptAmount),
         paid_at: paidAt || null,
+        account_code: accountCode || null,
+        tax_rate: taxRate === "" ? 0 : Number(taxRate),
         expense_currency: expenseCurrency || po.currency,
         expense_rate: Number(expenseRate) || 1,
         expense_items: expenseItems
@@ -640,6 +650,36 @@ export default function PurchaseOrderDetail({ params }) {
             <div>
               <label className="text-xs font-medium text-slate-500">Receipt amount ({po.currency})</label>
               <input type="number" step="0.01" value={receiptAmount} onChange={(e) => setReceiptAmount(e.target.value)} placeholder="Actual vendor charge" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </div>
+          </div>
+
+          {/* Accounting classification — what the GST return is built from. */}
+          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+            <AccountSelect
+              side="purchase"
+              value={accountCode}
+              onChange={setAccountCode}
+              hint="Cost of sales for a job purchase; operating expenses for overheads."
+            />
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                GST charged by vendor (%)
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                max="100"
+                value={taxRate}
+                onChange={(e) => setTaxRate(e.target.value)}
+                placeholder="0 = no GST charged"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#28364b]"
+              />
+              <p className="mt-1.5 text-xs text-slate-400">
+                {Number(taxRate) > 0
+                  ? `GST ${(((Number(receiptAmount) || Number(po.subtotal) || 0) * Number(taxRate)) / 100).toFixed(2)} ${po.currency} — claimed as input tax in Box 7.`
+                  : "Take this from the vendor's invoice. Without it no input tax can be claimed."}
+              </p>
             </div>
           </div>
 

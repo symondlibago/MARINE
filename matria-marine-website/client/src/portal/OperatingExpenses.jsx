@@ -9,6 +9,7 @@ import { PageLoader, Spinner } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import Select from "./ui/Select";
 import DatePicker from "./ui/DatePicker";
+import AccountSelect from "./ui/AccountSelect";
 
 const BASE = "USD"; // company base currency (config procurement.base_currency)
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
@@ -21,7 +22,7 @@ const firstOfMonth = () => { const d = new Date(); return ymdOf(new Date(d.getFu
 const lastOfMonth = () => { const d = new Date(); return ymdOf(new Date(d.getFullYear(), d.getMonth() + 1, 0)); };
 
 const blankItem = () => ({ name: "", category: "", amount: "" });
-const blankForm = () => ({ id: null, label: "", period_start: firstOfMonth(), period_end: lastOfMonth(), currency: BASE, exchange_rate: 1, notes: "", items: [blankItem(), blankItem()] });
+const blankForm = () => ({ id: null, label: "", period_start: firstOfMonth(), period_end: lastOfMonth(), currency: BASE, exchange_rate: 1, account_code: "5100", tax_rate: "", notes: "", items: [blankItem(), blankItem()] });
 
 export default function OperatingExpenses() {
   const confirm = useConfirm();
@@ -66,6 +67,8 @@ export default function OperatingExpenses() {
         period_end: form.period_end,
         currency: form.currency,
         exchange_rate: Number(form.exchange_rate) || 1,
+        account_code: form.account_code || null,
+        tax_rate: form.tax_rate === "" ? 0 : Number(form.tax_rate),
         notes: form.notes || null,
         items: form.items
           .filter((it) => (it.name || "").trim() !== "" || it.amount !== "")
@@ -91,6 +94,8 @@ export default function OperatingExpenses() {
       period_end: g.period_end,
       currency: g.currency || BASE,
       exchange_rate: g.exchange_rate ?? 1,
+      account_code: g.account_code || "5100",
+      tax_rate: g.tax_rate != null && Number(g.tax_rate) > 0 ? String(Number(g.tax_rate)) : "",
       notes: g.notes || "",
       items: (g.items || []).map((it) => ({ name: it.name ?? "", category: it.category ?? "", amount: it.amount != null ? String(Number(it.amount)) : "" })),
     });
@@ -139,6 +144,28 @@ export default function OperatingExpenses() {
               <div className="mt-1 flex items-center gap-1 text-[10px] text-slate-400">
                 × <input type="number" step="0.0001" value={form.exchange_rate} onChange={(e) => set({ exchange_rate: e.target.value })} className="w-20 rounded border border-slate-200 px-1 py-0.5 text-xs" /> → {BASE}
                 {rateLoading && <Spinner className="h-3 w-3" />}
+              </div>
+            )}
+          </Field>
+          {/* Accounting: the account decides the GST treatment; the rate is the
+              GST actually paid, which is what Box 7 claims back. */}
+          <div className="w-64">
+            <AccountSelect side="purchase" value={form.account_code} onChange={(v) => set({ account_code: v })} />
+          </div>
+          <Field label="GST paid (%)" className="w-32">
+            <input
+              type="number"
+              step="0.001"
+              min="0"
+              max="100"
+              value={form.tax_rate}
+              onChange={(e) => set({ tax_rate: e.target.value })}
+              placeholder="0"
+              className={input}
+            />
+            {Number(form.tax_rate) > 0 && (
+              <div className="mt-1 text-[10px] text-slate-400">
+                GST {money((formTotal * Number(form.tax_rate)) / 100)} {form.currency}
               </div>
             )}
           </Field>

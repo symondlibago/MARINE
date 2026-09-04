@@ -3,6 +3,17 @@ import { vendorsAPI } from "@/pages/api";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
 
+/**
+ * The vendor number the accounting side identifies this vendor by. Issued by
+ * the system from 20001 and never editable — hence a column, not a field.
+ */
+const vendorNo = (r) =>
+  r.vendor_no ? (
+    <span className="font-semibold tabular-nums text-[#28364b]">{r.vendor_no}</span>
+  ) : (
+    <span className="text-slate-300">—</span>
+  );
+
 const statusPill = (r) => (
   <span
     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -31,6 +42,7 @@ export default function Vendors() {
         is_active: true,
       }}
       columns={[
+        { key: "vendor_no", label: "No.", render: vendorNo },
         { key: "name", label: "Name" },
         { key: "contact_name", label: "Contact" },
         { key: "email", label: "Email" },

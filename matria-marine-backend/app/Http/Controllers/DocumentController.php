@@ -79,7 +79,13 @@ class DocumentController extends Controller
         $document = DB::transaction(function () use ($request, $data) {
             $doc = Document::create([
                 'type' => $data['type'],
-                'number' => $data['number'] ?: $this->buildNumber($data['type'], $data['date'] ?? now()),
+                // `number` is nullable, so validate() leaves the key out
+                // entirely when the caller omits it — and in PHP 8 reading a
+                // missing key throws rather than returning null, which made
+                // every such request a 500. Guarded like every other optional
+                // field on this block. Blank or absent both mean "number it
+                // for me".
+                'number' => ($data['number'] ?? null) ?: $this->buildNumber($data['type'], $data['date'] ?? now()),
                 'party_kind' => $data['party_kind'] ?? null,
                 'customer_id' => $data['customer_id'] ?? null,
                 'vendor_id' => $data['vendor_id'] ?? null,

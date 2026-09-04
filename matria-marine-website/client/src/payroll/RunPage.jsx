@@ -20,6 +20,9 @@ import { toast } from "sonner";
 import { payrollAPI } from "./api";
 import { money, dim, dateOf, btn, inputCls, cellCls, StatCard, StatusPill, downloadBlob } from "./lib";
 import DatePicker from "./DatePicker";
+// The portal's picker, so the chart of accounts is defined in exactly one
+// place and payroll cannot drift from the rest of the books.
+import AccountSelect from "@/portal/ui/AccountSelect";
 import { PageLoader, Spinner } from "@/portal/ui/Loading";
 import { useConfirm } from "@/portal/ui/confirm";
 import Select from "@/portal/ui/Select";
@@ -385,6 +388,20 @@ export default function RunPage() {
                     if (value !== (run.payment_date || "")) saveHeader.mutate({ payment_date: value || null });
                   }}
                   placeholder="Pick a date"
+                />
+              </div>
+              {/* Which account the wage bill is booked to, so payroll reaches
+                  the income statement. Salaries are out of scope for GST
+                  whatever account is picked, so no rate is asked for. */}
+              <div className="flex flex-col gap-1">
+                <AccountSelect
+                  side="all"
+                  label="Accounting code"
+                  value={run.account_code || ""}
+                  onChange={(v) => {
+                    if (v !== (run.account_code || "")) saveHeader.mutate({ account_code: v || null });
+                  }}
+                  hint="Wages appear as an operating expense on the Accounting page. Not part of the GST return."
                 />
               </div>
               <label className="flex flex-col gap-1">

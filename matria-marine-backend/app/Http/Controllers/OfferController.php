@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\OfferMail;
 use App\Models\Customer;
 use App\Models\Offer;
+use App\Models\OfferItem;
 use App\Models\Rfq;
 use App\Models\RfqItem;
 use App\Models\SentLog;
@@ -14,6 +15,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class OfferController extends Controller
@@ -35,6 +37,19 @@ class OfferController extends Controller
 
     public function show(Offer $offer)
     {
+        return response()->json(['success' => true, 'data' => $this->present($offer)]);
+    }
+
+    /**
+     * The offer as the detail screen expects it.
+     *
+     * Defined once because more than one endpoint hands the page a fresh offer,
+     * and the page seeds its cache from whatever it is given. A leaner payload
+     * from one of them silently drops `enquiry_lines_missing` and
+     * `enquiry_currency`, and the two warnings that depend on them disappear.
+     */
+    private function present(Offer $offer): array
+    {
         $offer->load(['items', 'rfq:id,reference,ship_name', 'customer:id,name,address,email']);
 
         // Lines added to the enquiry after this quotation was built. An offer
@@ -52,7 +67,7 @@ class OfferController extends Controller
             ? strtoupper((string) Rfq::where('id', $offer->rfq_id)->value('base_currency'))
             : null;
 
-        return response()->json(['success' => true, 'data' => $data]);
+        return $data;
     }
 
     /** Enquiry lines with no line of their own on this offer. */
@@ -66,6 +81,69 @@ class OfferController extends Controller
             ->whereNotIn('id', $this->offerRfqItemIds($offer) ?: [0])
             ->orderBy('sort')->orderBy('id')
             ->get(['id', 'description']);
+    }
+
+    /**
+     * Delete one quotation line, and the enquiry line behind it, immediately.
+     *
+     * Separate from update() on purpose. Folding it into the form's save meant
+     * the line only vanished on screen until "Save changes" was pressed — so
+     * anyone who deleted a line and then went to look at the enquiry found it
+     * still there, and reasonably concluded the delete button did nothing.
+     *
+     * A delete button deletes. Nothing else on the form is touched, so unsaved
+     * markup and lead times survive.
+     */
+    public function destroyItem(Offer $offer, OfferItem $item)
+    {
+        if ((int) $item->offer_id !== (int) $offer->id) {
+            return response()->json(['success' => false, 'message' => 'That line is not on this quotation.'], 404);
+        }
+
+        $rfqItemId = $item->rfq_item_id;
+
+        DB::transaction(function () use ($offer, $item, $rfqItemId) {
+            $item->delete();
+            $this->deleteEnquiryLines(array_filter([$rfqItemId]));
+            $offer->recalcTotals();
+        });
+
+        // The same shape show() returns, so the page can seed its cache with
+        // this and re-sync on the spot instead of the user having to press
+        // "Refresh from enquiry" to see the line actually gone.
+        return response()->json([
+            'success' => true,
+            'message' => $rfqItemId
+                ? 'Line deleted from the quotation and the enquiry.'
+                : 'Line deleted.',
+            'data' => $this->present($offer->fresh()),
+        ]);
+    }
+
+    /**
+     * Delete enquiry lines outright, taking their quotes and awards with them.
+     *
+     * The database cascades the rows, but NOT the stored objects: a line's
+     * attachments live on R2, and dropping the row would leave the files
+     * behind, paid for and unreachable. So the bucket is cleared first, the
+     * same way RfqController does it when a line is removed on the enquiry.
+     *
+     * @param  list<int>  $rfqItemIds
+     */
+    private function deleteEnquiryLines(array $rfqItemIds): void
+    {
+        if (! $rfqItemIds) {
+            return;
+        }
+
+        RfqItem::with('attachments')->whereIn('id', $rfqItemIds)->get()
+            ->each(function (RfqItem $item) {
+                foreach ($item->attachments as $file) {
+                    Storage::disk($file->disk)->delete($file->path);
+                }
+
+                $item->delete();
+            });
     }
 
     /**
@@ -217,11 +295,34 @@ class OfferController extends Controller
             // Lines Matria added by hand can be taken away again. Lines that
             // came from the enquiry cannot — those belong to the enquiry, and
             // removing one here would leave the two documents disagreeing.
+            // Any line may be taken off a quotation, including one that came
+            // from the enquiry: the customer declines an item, so it comes off
+            // what we quote them. The enquiry, its awards and any purchase
+            // order already raised are untouched — an offer is a document in
+            // its own right, not a live view of the enquiry.
+            //
+            // Removing a line removes it from the ENQUIRY too, not just the
+            // quotation.
+            //
+            // Anything less is not a delete: "Refresh from enquiry" pulls in
+            // every enquiry line the offer does not have, so a line taken off
+            // the quotation alone comes straight back and the customer ends up
+            // quoted for something they declined.
+            //
+            // What that costs, checked against the live schema:
+            //   awards, quote_items, rfq_item_attachments  CASCADE — destroyed
+            //   purchase_order_items, offer_items          SET NULL — KEPT
+            //
+            // So a purchase order already sent to a vendor keeps its line, its
+            // quantity and its price; every figure it carries is its own
+            // snapshot. What is lost is the trail back to the enquiry: the
+            // vendor's quoted price and the award for that line.
             if (! empty($data['remove_item_ids'])) {
-                $offer->items()
-                    ->whereIn('id', $data['remove_item_ids'])
-                    ->whereNull('rfq_item_id')
-                    ->delete();
+                $removing = $offer->items()->whereIn('id', $data['remove_item_ids'])->get();
+
+                $offer->items()->whereIn('id', $removing->pluck('id'))->delete();
+
+                $this->deleteEnquiryLines($removing->pluck('rfq_item_id')->filter()->unique()->all());
             }
 
             if (array_key_exists('items', $data)) {

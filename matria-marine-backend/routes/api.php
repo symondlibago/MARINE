@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MmsUpdateController;
@@ -176,6 +177,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         // Same thing for a quotation already sent: back to draft and pulled in,
         // one step. Sending the corrected quotation on stays a separate act.
         Route::post('offers/{offer}/reopen-sync', [OfferController::class, 'reopenAndSync']);
+        // Deleting a quotation line takes the enquiry line with it, and happens
+        // straight away rather than waiting for the form to be saved.
+        Route::delete('offers/{offer}/items/{item}', [OfferController::class, 'destroyItem']);
         Route::match(['put', 'patch'], 'offers/{offer}', [OfferController::class, 'update']);
         Route::delete('offers/{offer}', [OfferController::class, 'destroy']);
 
@@ -226,6 +230,21 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
 
         // Sent log — record/proof of every document email sent (visible to all staff)
         Route::get('sent-logs', [SentLogController::class, 'index']);
+
+        // Accounting — the nine screens that replace the hand-kept workbook.
+        // Read-only: nothing here writes, so no report can damage a document.
+        Route::prefix('accounting')->group(function () {
+            Route::get('chart', [AccountingController::class, 'chart']);
+            Route::get('sales-invoices', [AccountingController::class, 'salesInvoices']);
+            Route::get('purchase-invoices', [AccountingController::class, 'purchaseInvoices']);
+            Route::get('gst-summary', [AccountingController::class, 'gstSummary']);
+            Route::get('trial-balance', [AccountingController::class, 'trialBalance']);
+            Route::get('balance-sheet', [AccountingController::class, 'balanceSheet']);
+            Route::get('income-statement', [AccountingController::class, 'incomeStatement']);
+            Route::get('ar-ageing', [AccountingController::class, 'arAgeing']);
+            Route::get('ap-ageing', [AccountingController::class, 'apAgeing']);
+            Route::get('parties', [AccountingController::class, 'parties']);
+        });
 
         // Reports / analytics
         Route::get('reports/spend', [ReportsController::class, 'spend']);

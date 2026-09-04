@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { ArrowLeft, Download, Save, TrendingUp, Lock, Unlock, Truck, Send, CheckCircle2, Receipt, RefreshCw, Plus, Trash2, AlertTriangle, FileText } from "lucide-react";
@@ -9,6 +9,7 @@ import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import { gridKeyDown } from "./ui/gridKeys";
+import { AccountCodeCell } from "./ui/AccountSelect";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
@@ -49,6 +50,8 @@ export default function OfferPage({ params }) {
   const [bulk, setBulk] = useState("");
   const [pickedCustomerName, setPickedCustomerName] = useState(null);
   const [bulkLead, setBulkLead] = useState("");
+  // One account from Matria's chart, stamped on every line at once.
+  const [bulkAcct, setBulkAcct] = useState("");
 
   useEffect(() => {
     if (!offer) return;
@@ -153,9 +156,7 @@ export default function OfferPage({ params }) {
     );
   const setItem = (idx, patch) => setItems((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
 
-  // Ids of saved manual lines the user has removed; sent on save so the server
-  // deletes them. Enquiry lines are never in here — the server refuses those.
-  const [removedIds, setRemovedIds] = useState([]);
+  const qc = useQueryClient();
 
   /** A charge of Matria's own — agency fee, handling, a service we perform. */
   const addManualLine = () =>
@@ -168,13 +169,69 @@ export default function OfferPage({ params }) {
       },
     ]);
 
-  const removeLine = (idx) =>
-    setItems((arr) => {
-      const row = arr[idx];
-      if (!row?.manual) return arr;           // enquiry lines belong to the enquiry
-      if (row.id) setRemovedIds((ids) => [...ids, row.id]);
-      return arr.filter((_, i) => i !== idx);
+  /**
+   * Delete a line — from the quotation AND from the enquiry behind it.
+   *
+   * It has to be both. Taking it off the quotation alone does not last:
+   * "Refresh from enquiry" pulls in every enquiry line the offer is missing, so
+   * the line reappears and the customer is quoted for something they declined.
+   *
+   * It also happens NOW, not on the next "Save changes". Deferring it meant the
+   * line only disappeared on screen — go and look at the enquiry and it was
+   * still there, which reads as the delete button being broken.
+   *
+   * A line never saved has no id and only exists on screen, so it just goes.
+   */
+  const removeLine = async (idx) => {
+    const row = items[idx];
+    if (!row) return;
+
+    const label = (row.description || "").trim() || "this line";
+
+    const ok = await confirm({
+      title: row.manual ? "Delete this line?" : "Delete this line everywhere?",
+      message: row.manual
+        ? `“${label}” will be deleted from this quotation. It is Matria's own line, so nothing else refers to it.`
+        : `“${label}” will be deleted from this quotation AND from the enquiry.\n\n`
+          + `The vendor's quoted price and the award for this line are deleted with it, and that cannot be undone.\n\n`
+          + `Any purchase order already raised keeps its own line, quantity and price.`,
+      confirmText: "Delete line",
+      tone: "danger",
     });
+
+    if (!ok) return;
+
+    if (!row.id) {
+      setItems((arr) => arr.filter((_, i) => i !== idx));
+      return;
+    }
+
+    deleteLine.mutate(row.id);
+  };
+
+  const deleteLine = useMutation({
+    mutationFn: (itemId) => offersAPI.removeItem(id, itemId),
+    onSuccess: (res) => {
+      // Re-seed this offer's cache from what the server just saved, so the grid
+      // re-syncs on the spot. No second request — the delete already returned
+      // the fresh offer — and no "Refresh from enquiry" needed to see the line
+      // actually gone.
+      //
+      // The key is ["offer", id], singular. Invalidating ["offers"] does not
+      // match it, which is why the deleted line stayed on screen.
+      if (res?.data?.data) qc.setQueryData(["offer", id], res.data.data);
+
+      toast.success(res?.data?.message || "Line deleted.");
+
+      // The enquiry lost a line too, so anything showing it is stale: the
+      // enquiry itself, Compare & Award, and the enquiry list's counts.
+      qc.invalidateQueries({ queryKey: ["rfq"] });
+      qc.invalidateQueries({ queryKey: ["rfqs"] });
+      qc.invalidateQueries({ queryKey: ["compare"] });
+      qc.invalidateQueries({ queryKey: ["offers"] });
+    },
+    onError: (e) => toast.error(e?.response?.data?.message || "Could not delete the line."),
+  });
 
 
   /**
@@ -196,6 +253,14 @@ export default function OfferPage({ params }) {
   const applyBulkLead = () => {
     if (bulkLead.trim() === "") return;
     setItems((arr) => arr.map((it) => ({ ...it, lead_time: bulkLead.trim() })));
+  };
+  /**
+   * The same account goes on every line of a job, so picking it once beats
+   * picking it a hundred times. Blank is allowed here, unlike markup and lead
+   * time — it is how you clear a code applied to everything by mistake.
+   */
+  const applyBulkAcct = () => {
+    setItems((arr) => arr.map((it) => ({ ...it, accounting_code: bulkAcct.trim() })));
   };
 
   // Live maths — must mirror OfferController::lineMaths() exactly.
@@ -306,7 +371,6 @@ export default function OfferPage({ params }) {
         tax_rate: Number(header.tax_rate) || 0,
         status: header.status,
         notes: header.notes || null,
-        remove_item_ids: removedIds,
         items: items.map((it, i) => ({
           id: it.id,
           description: it.description,
@@ -647,6 +711,9 @@ export default function OfferPage({ params }) {
             <span className="ml-2 text-xs text-slate-500">Set all lead time</span>
             <input value={bulkLead} onChange={(e) => setBulkLead(e.target.value)} placeholder="e.g. 2 days" className="w-28 rounded border border-slate-200 px-2 py-1 text-sm" />
             <button onClick={applyBulkLead} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
+            <span className="ml-2 text-xs text-slate-500">Set all acct code</span>
+            <AccountCodeCell value={bulkAcct} onChange={setBulkAcct} className="w-56" placeholder="Choose account…" />
+            <button onClick={applyBulkAcct} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
           </div>
         </div>
 
@@ -677,7 +744,7 @@ export default function OfferPage({ params }) {
                 <th className={th}>Lead time</th>
                 <th className={th}>Delivery</th>
                 <th className={th}>Remarks</th>
-                <th className={th}></th>
+                <th className={`${th} text-center`} title="Take a line off this quotation">Remove</th>
               </tr>
             </thead>
             <tbody onKeyDown={gridKeyDown} onWheel={gridWheel}>
@@ -689,7 +756,7 @@ export default function OfferPage({ params }) {
                   <td className="px-1.5 py-2 sticky left-0 z-10 bg-white"><textarea rows={2} className={ci + " resize-y leading-snug"} value={r.description} onChange={(e) => setItem(idx, { description: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-32`} value={r.code} onChange={(e) => setItem(idx, { code: e.target.value })} placeholder="Part no." /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-28`} value={r.customs_code} onChange={(e) => setItem(idx, { customs_code: e.target.value })} placeholder="HS code" /></td>
-                  <td className={`px-1.5 py-2 ${internal}`}><input className={`${ci} w-28`} value={r.accounting_code} onChange={(e) => setItem(idx, { accounting_code: e.target.value })} placeholder="Acct code" /></td>
+                  <td className={`px-1.5 py-2 ${internal}`}><AccountCodeCell className="w-28" value={r.accounting_code} onChange={(v) => setItem(idx, { accounting_code: v })} /></td>
                   <td className="px-1.5 py-2"><input className={`${ci} w-14`} value={r.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} /></td>
                   <td className="px-1.5 py-2"><input type="number" step="0.001" className={`${ci} ${num} min-w-[4.5rem] text-right`} value={r.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} /></td>
                   <td className={`px-1.5 py-2 ${internal}`}>
@@ -757,19 +824,18 @@ export default function OfferPage({ params }) {
                   {/* textarea, not input: a remark can now carry a second line
                       from Compare & Award, and a text input silently strips it. */}
                   <td className="px-1.5 py-2"><textarea rows={2} className={`${ci} w-24 resize-y leading-snug`} value={r.remarks} onChange={(e) => setItem(idx, { remarks: e.target.value })} /></td>
-                  {/* Only Matria's own lines can be removed here; an enquiry
-                      line is removed on the enquiry, not on the quotation. */}
+                  {/* Any line can come off a quotation — the customer declines
+                      an item and it stops being quoted. The enquiry keeps it. */}
                   <td className="px-1.5 py-2 text-center">
-                    {r.manual && (
-                      <button
-                        type="button"
-                        onClick={() => removeLine(idx)}
-                        title="Remove this line"
-                        className="rounded p-1 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeLine(idx)}
+                      title="Remove this line from the quotation"
+                      aria-label="Remove this line"
+                      className="rounded-lg border border-red-200 bg-red-50 p-1.5 text-red-600 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}

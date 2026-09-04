@@ -6,7 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class OperatingExpense extends Model
 {
+    use Concerns\HasAccountCode;
+
+    /** Our own overheads — not tied to any one customer job. */
+    protected string $defaultAccountCode = Account::DEFAULT_EXPENSE;
+
     protected $fillable = [
+        'account_code',
+        'tax_rate',
+        'tax_amount',
         'label',
         'period_start',
         'period_end',
@@ -20,6 +28,8 @@ class OperatingExpense extends Model
         'period_start' => 'date',
         'period_end' => 'date',
         'exchange_rate' => 'decimal:8',
+        'tax_rate' => 'decimal:3',
+        'tax_amount' => 'decimal:4',
     ];
 
     public function items()

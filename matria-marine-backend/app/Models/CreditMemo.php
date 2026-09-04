@@ -10,7 +10,13 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CreditMemo extends Model
 {
+    use Concerns\HasAccountCode;
+
+    /** A credit note reverses a sale, so it is booked to the same account. */
+    protected string $defaultAccountCode = Account::DEFAULT_SALES;
+
     protected $fillable = [
+        'account_code',
         'cm_number',
         'customer_invoice_id',
         'rfq_id',
@@ -46,6 +52,16 @@ class CreditMemo extends Model
     public function invoice()
     {
         return $this->belongsTo(CustomerInvoice::class, 'customer_invoice_id');
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function rfq()
+    {
+        return $this->belongsTo(Rfq::class);
     }
 
     public function creator()

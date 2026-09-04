@@ -8,6 +8,7 @@ import { reportsAPI } from "@/pages/api";
 import { PageLoader } from "./ui/Loading";
 import DatePicker from "./ui/DatePicker";
 import Select from "./ui/Select";
+import { downloadCsv } from "./ui/exportCsv";
 import { fetchRates } from "@/lib/fx";
 
 /* ----------------------------- helpers ----------------------------- */
@@ -45,20 +46,6 @@ function asParams(range) {
 function monthLabel(s) {
   const [y, m] = s.split("-");
   return `${new Date(y, m - 1, 1).toLocaleString(undefined, { month: "short" })} '${y.slice(2)}`;
-}
-
-function downloadCsv(filename, headers, rows) {
-  const esc = (v) => {
-    const s = v == null ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 const rateClass = (v) => (v == null ? "text-slate-300" : v >= 66 ? "text-green-600" : v >= 33 ? "text-amber-600" : "text-red-500");

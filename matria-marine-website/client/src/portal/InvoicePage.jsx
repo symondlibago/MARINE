@@ -10,6 +10,7 @@ import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import ProofOfDelivery from "./ProofOfDelivery";
 import { gridKeyDown } from "./ui/gridKeys";
+import AccountSelect from "./ui/AccountSelect";
 import { PageLoader, Spinner } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
@@ -65,6 +66,7 @@ export default function InvoicePage({ params }) {
       packing_cost: data.packing_cost ?? 0,
       transportation_cost: data.transportation_cost ?? 0,
       tax_rate: data.tax_rate != null && Number(data.tax_rate) > 0 ? String(Number(data.tax_rate)) : "",
+      account_code: data.account_code ?? "4100",
       notes: data.notes ?? "",
     });
     setLines((data.items || []).map((it) => ({
@@ -395,6 +397,15 @@ export default function InvoicePage({ params }) {
         <div className="flex items-center justify-between text-sm">
           <label className="text-slate-500">Transportation</label>
           <input type="number" step="0.01" value={form.transportation_cost} onChange={(e) => setField("transportation_cost", e.target.value)} className={cellInput + " w-28 text-right"} />
+        </div>
+        {/* The account decides the GST treatment and the F5 box this sale
+            lands in — 4100 zero-rated, 4000 standard-rated. */}
+        <div className="border-t border-slate-100 pt-3">
+          <AccountSelect
+            side="sales"
+            value={form.account_code}
+            onChange={(v) => setField("account_code", v)}
+          />
         </div>
         <div className="flex items-center justify-between text-sm">
           <label className="text-slate-500">GST %</label>

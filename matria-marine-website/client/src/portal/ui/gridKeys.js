@@ -15,9 +15,14 @@
  *
  * A textarea is left alone entirely: there Up/Down move the caret through a
  * long spec and Enter starts a new line, which is what the description needs.
+ *
+ * A <select> takes part in Left/Right and Enter so a dropdown column is not
+ * silently skipped on the way across a row — but keeps its native Up/Down,
+ * because on a dropdown those change the value, and stealing them would leave
+ * no keyboard way to pick an option.
  */
 
-const FIELDS = 'input:not([type="file"]):not([type="hidden"]):not([type="checkbox"]), textarea';
+const FIELDS = 'input:not([type="file"]):not([type="hidden"]):not([type="checkbox"]), textarea, select';
 
 const rowOf = (el) => el.closest("[data-grid-row]") || el.closest("tr");
 
@@ -39,7 +44,8 @@ function land(field) {
  * being at both edges — those values are short and are retyped, not edited.
  */
 function atEdge(el) {
-  if (el.type === "number") return { start: true, end: true };
+  // Neither has a caret to walk through, so Left/Right always step columns.
+  if (el.tagName === "SELECT" || el.type === "number") return { start: true, end: true };
   try {
     const { selectionStart: s, selectionEnd: e, value } = el;
     if (s === null) return { start: true, end: true };
@@ -98,6 +104,8 @@ export function gridKeyDown(e) {
   switch (e.key) {
     case "ArrowUp":
     case "ArrowDown": {
+      // On a dropdown these are how you choose an option — leave them alone.
+      if (el.tagName === "SELECT") return;
       // Stop the number spinner even on the first and last row, so Up/Down can
       // never quietly edit a figure — in this grid the key always means "move".
       e.preventDefault();

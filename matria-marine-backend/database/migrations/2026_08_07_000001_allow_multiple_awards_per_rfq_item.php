@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -28,11 +29,15 @@ return new class extends Migration
     public function up(): void
     {
         if (! $this->hasIndex('awards_rfq_item_vendor_unique')) {
-            DB::statement('ALTER TABLE `awards` ADD UNIQUE `awards_rfq_item_vendor_unique` (`rfq_item_id`, `vendor_id`)');
+            Schema::table('awards', function (Blueprint $table) {
+                $table->unique(['rfq_item_id', 'vendor_id'], 'awards_rfq_item_vendor_unique');
+            });
         }
 
         if ($this->hasIndex('awards_rfq_item_id_unique')) {
-            DB::statement('ALTER TABLE `awards` DROP INDEX `awards_rfq_item_id_unique`');
+            Schema::table('awards', function (Blueprint $table) {
+                $table->dropUnique('awards_rfq_item_id_unique');
+            });
         }
     }
 
@@ -54,16 +59,32 @@ return new class extends Migration
         }
 
         if (! $this->hasIndex('awards_rfq_item_id_unique')) {
-            DB::statement('ALTER TABLE `awards` ADD UNIQUE `awards_rfq_item_id_unique` (`rfq_item_id`)');
+            Schema::table('awards', function (Blueprint $table) {
+                $table->unique('rfq_item_id', 'awards_rfq_item_id_unique');
+            });
         }
 
         if ($this->hasIndex('awards_rfq_item_vendor_unique')) {
-            DB::statement('ALTER TABLE `awards` DROP INDEX `awards_rfq_item_vendor_unique`');
+            Schema::table('awards', function (Blueprint $table) {
+                $table->dropUnique('awards_rfq_item_vendor_unique');
+            });
         }
     }
 
+    /**
+     * Does the index exist?
+     *
+     * `information_schema` is MySQL's; sqlite answers the same question with
+     * PRAGMA. Asking the wrong one throws "no such table", which is what stopped
+     * the whole test suite from running on the test connection.
+     */
     private function hasIndex(string $name): bool
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return collect(DB::select('PRAGMA index_list(`awards`)'))
+                ->contains(fn ($i) => $i->name === $name);
+        }
+
         return count(DB::select(
             'SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1',
             ['awards', $name]

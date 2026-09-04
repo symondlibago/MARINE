@@ -179,8 +179,11 @@ class RfqController extends Controller
         // still says EUR. Remember the old base so they can be re-based below.
         $previousBase = strtoupper((string) $rfq->base_currency);
         $rateNotice = null;
+        // Lines the user asked to remove that had to be kept, so the reply can
+        // say so instead of letting them reappear unexplained.
+        $keptQuoted = [];
 
-        DB::transaction(function () use ($rfq, $data) {
+        DB::transaction(function () use ($rfq, $data, &$keptQuoted) {
             $rfq->update([
                 'customer_id' => $data['customer_id'] ?? null,
                 'customer_reference' => $data['customer_reference'] ?? null,
@@ -208,8 +211,16 @@ class RfqController extends Controller
                     }
                 }
 
-                $rfq->items()->whereNotIn('id', $keepIds)->with('attachments')->get()->each(function ($item) {
+                $rfq->items()->whereNotIn('id', $keepIds)->with('attachments')->get()->each(function ($item) use (&$keptQuoted) {
+                    // A line a vendor has already quoted on is kept: deleting it
+                    // would destroy their price and orphan any award behind it.
+                    //
+                    // It used to be skipped in silence, so the line simply
+                    // reappeared after saving with no reason given. Now it is
+                    // named in the response — see $keptQuoted below.
                     if ($item->quoteItems()->count() > 0) {
+                        $keptQuoted[] = $item->description;
+
                         return;
                     }
                     // The rows cascade, but the stored objects would not — clear
@@ -228,9 +239,19 @@ class RfqController extends Controller
             $rateNotice = $this->rebaseQuoteRates($rfq, $newBase);
         }
 
+        $keptNotice = $keptQuoted ? sprintf(
+            '%d line(s) could not be removed because a vendor has already quoted them: %s. '
+            .'Remove the vendor\'s price first, or take the line off the quotation instead.',
+            count($keptQuoted),
+            collect($keptQuoted)->map(fn ($d) => '“'.Str::limit((string) $d, 40).'”')->implode(', ')
+        ) : null;
+
         return response()->json([
             'success' => true,
-            'message' => 'Enquiry updated.'.($rateNotice ? ' '.$rateNotice : ''),
+            'message' => 'Enquiry updated.'
+                .($rateNotice ? ' '.$rateNotice : '')
+                .($keptNotice ? ' '.$keptNotice : ''),
+            'kept_quoted_lines' => $keptQuoted,
             'data' => $rfq->load('items'),
         ]);
     }

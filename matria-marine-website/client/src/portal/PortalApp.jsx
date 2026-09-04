@@ -23,6 +23,7 @@ import ManageStaff from "./ManageStaff";
 import DocumentSeries from "./DocumentSeries";
 import SentLog from "./SentLog";
 import Reports from "./Reports";
+import Accounting from "./Accounting";
 import Statements from "./Statements";
 import OperatingExpenses from "./OperatingExpenses";
 import Customers from "./Customers";
@@ -97,6 +98,7 @@ export default function PortalApp() {
               <Route path="/return-notes" component={ReturnNotes} />
               <Route path="/return-notes/:id" component={ReturnNoteDetail} />
               <Route path="/reports" component={Reports} />
+              <Route path="/accounting" component={Accounting} />
               <Route path="/statements" component={Statements} />
               <Route path="/operating-expenses" component={OperatingExpenses} />
               <Route path="/customers" component={Customers} />

@@ -80,6 +80,11 @@ class PurchaseOrderController extends Controller
             'vendor_id' => ['required', 'integer', 'exists:vendors,id'],
             'currency' => ['nullable', 'string', 'size:3'],
             'expected_date' => ['nullable', 'date'],
+            // Classified at the point it is raised, like every other purchase.
+            // A direct purchase has no enquiry behind it, so if it is not coded
+            // here it is coded nowhere.
+            'account_code' => \App\Models\Account::validationRule(),
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -95,6 +100,8 @@ class PurchaseOrderController extends Controller
             'exchange_rate' => 1,
             'status' => 'draft',
             'expected_date' => $data['expected_date'] ?? null,
+            'account_code' => ($data['account_code'] ?? null) ?: \App\Models\Account::DEFAULT_PURCHASE,
+            'tax_rate' => $data['tax_rate'] ?? 0,
             'notes' => $data['notes'] ?? null,
             'created_by' => $request->user()?->id,
         ]);
@@ -243,6 +250,11 @@ class PurchaseOrderController extends Controller
             'expense_currency' => ['sometimes', 'nullable', 'string', 'size:3'],
             'expense_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'paid_at' => ['sometimes', 'nullable', 'date'],
+            // Which expense account this purchase is booked to, and the GST the
+            // vendor charged. Without the tax figure there is no Box 5 and no
+            // Box 7 — input tax cannot be claimed on a return at all.
+            'account_code' => \App\Models\Account::validationRule(),
+            'tax_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
@@ -258,6 +270,13 @@ class PurchaseOrderController extends Controller
                 if (array_key_exists($key, $data)) {
                     $attrs[$key] = $data[$key];
                 }
+            }
+            // Blank clears back to cost of sales rather than storing "".
+            if (array_key_exists('account_code', $data)) {
+                $attrs['account_code'] = $data['account_code'] ?: \App\Models\Account::DEFAULT_PURCHASE;
+            }
+            if (array_key_exists('tax_rate', $data)) {
+                $attrs['tax_rate'] = $data['tax_rate'] ?? 0;
             }
             // expenses is non-nullable (defaults 0); a cleared field means zero.
             if (array_key_exists('expenses', $attrs) && $attrs['expenses'] === null) {
@@ -310,6 +329,7 @@ class PurchaseOrderController extends Controller
             }
 
             $purchaseOrder->recalcSubtotal();
+            $this->recalcTax($purchaseOrder);
         });
 
         return response()->json([
@@ -317,6 +337,24 @@ class PurchaseOrderController extends Controller
             'message' => 'Purchase order updated.',
             'data' => $purchaseOrder->fresh()->load(['items', 'vendor', 'rfq:id,reference']),
         ]);
+    }
+
+    /**
+     * Recompute the input tax on a purchase order.
+     *
+     * Charged on what the vendor actually billed — the receipt amount where one
+     * has been recorded, the awarded cost otherwise — which is the same figure
+     * the purchase register and the GST return read. Derived rather than typed,
+     * so the tax and the value it was charged on can never disagree.
+     */
+    private function recalcTax(PurchaseOrder $purchaseOrder): void
+    {
+        $net = (float) ($purchaseOrder->receipt_amount ?? $purchaseOrder->subtotal);
+        $rate = (float) $purchaseOrder->tax_rate;
+
+        $purchaseOrder->forceFill([
+            'tax_amount' => round($net * $rate / 100, 4),
+        ])->save();
     }
 
     public function destroy(PurchaseOrder $purchaseOrder)

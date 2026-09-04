@@ -10,6 +10,7 @@ import Select from "./ui/Select";
 import ListToolbar from "./ui/ListToolbar";
 import Modal from "./ui/Modal";
 import EntityPicker from "./ui/EntityPicker";
+import AccountSelect from "./ui/AccountSelect";
 
 const CURRENCIES = ["SGD", "USD", "EUR", "AED", "PHP", "INR", "GBP", "JPY"];
 
@@ -49,6 +50,8 @@ export default function PurchaseOrders() {
       purchaseOrdersAPI.createDirect({
         vendor_id: Number(form.vendor_id),
         currency: form.currency || undefined,
+        account_code: form.account_code || undefined,
+        tax_rate: form.tax_rate === "" ? 0 : Number(form.tax_rate),
       }),
     onSuccess: (res) => {
       toast.success(res?.data?.message || "Purchase order created.");
@@ -114,7 +117,7 @@ export default function PurchaseOrders() {
           </p>
         </div>
         <button
-          onClick={() => setForm({ vendor_id: "", currency: "" })}
+          onClick={() => setForm({ vendor_id: "", currency: "", account_code: "5000", tax_rate: "" })}
           className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70"
         >
           <Plus className="h-4 w-4" /> New Direct Purchase
@@ -281,6 +284,33 @@ export default function PurchaseOrders() {
                 onChange={(v) => setForm((f) => ({ ...f, currency: v }))}
                 options={[{ value: "", label: "Use the vendor's currency" }, ...CURRENCIES.map((c) => ({ value: c, label: c }))]}
               />
+            </label>
+
+            {/* A direct purchase has no enquiry behind it, so if it is not
+                coded here it is coded nowhere — and it drops out of the GST
+                return and the P&L. */}
+            <AccountSelect
+              side="purchase"
+              value={form.account_code}
+              onChange={(v) => setForm((f) => ({ ...f, account_code: v }))}
+              hint="Cost of sales for something bought for a job; operating expenses for overheads."
+            />
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">GST charged by vendor (%)</span>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                max="100"
+                value={form.tax_rate}
+                onChange={(e) => setForm((f) => ({ ...f, tax_rate: e.target.value }))}
+                placeholder="0 = no GST charged"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#28364b]"
+              />
+              <span className="text-xs text-slate-400">
+                The GST amount is worked out from the items once you have added them.
+              </span>
             </label>
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">

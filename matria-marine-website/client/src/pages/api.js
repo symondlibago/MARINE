@@ -235,6 +235,9 @@ export const offersAPI = {
   generate: (rfqId) => api.post(apiUrl(`/portal/rfqs/${rfqId}/offer`)),
   update: (id, payload) => api.patch(apiUrl(`/portal/offers/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/offers/${id}`)),
+  // Deletes the line from the quotation AND the enquiry line behind it, at
+  // once — not deferred until the form is saved.
+  removeItem: (id, itemId) => api.delete(apiUrl(`/portal/offers/${id}/items/${itemId}`)),
   pdf: (id) => api.get(apiUrl(`/portal/offers/${id}/pdf`), { responseType: 'blob' }),
   // Pro-forma for payment in advance — amendable, unlike the final invoice.
   proforma: (id) => api.get(apiUrl(`/portal/offers/${id}/proforma`), { responseType: 'blob' }),
@@ -311,6 +314,22 @@ export const reportsAPI = {
     api.get(apiUrl('/portal/reports/open-entries/pdf'), { params, responseType: 'blob' }),
   // Full history across every party — invoices, credit notes and payments.
   ledgerEntries: (params = {}) => api.get(apiUrl('/portal/reports/ledger-entries'), { params }),
+};
+
+// --- Accounting: the nine screens that replace the hand-kept workbook ---
+// Every one of these is read-only on the server; nothing here can alter a
+// document. Each takes { from, to } (and the registers also take q).
+export const accountingAPI = {
+  chart: () => api.get(apiUrl('/portal/accounting/chart')),
+  salesInvoices: (params = {}) => api.get(apiUrl('/portal/accounting/sales-invoices'), { params }),
+  purchaseInvoices: (params = {}) => api.get(apiUrl('/portal/accounting/purchase-invoices'), { params }),
+  gstSummary: (params = {}) => api.get(apiUrl('/portal/accounting/gst-summary'), { params }),
+  trialBalance: (params = {}) => api.get(apiUrl('/portal/accounting/trial-balance'), { params }),
+  balanceSheet: (params = {}) => api.get(apiUrl('/portal/accounting/balance-sheet'), { params }),
+  incomeStatement: (params = {}) => api.get(apiUrl('/portal/accounting/income-statement'), { params }),
+  arAgeing: (params = {}) => api.get(apiUrl('/portal/accounting/ar-ageing'), { params }),
+  apAgeing: (params = {}) => api.get(apiUrl('/portal/accounting/ap-ageing'), { params }),
+  parties: (params = {}) => api.get(apiUrl('/portal/accounting/parties'), { params }),
 };
 
 // --- Document numbering (super admin) ---

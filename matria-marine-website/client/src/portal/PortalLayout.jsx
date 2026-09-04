@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser, Hash, ArrowLeftRight } from "lucide-react";
+import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser, Hash, ArrowLeftRight, Calculator } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ const NAV = [
   { label: "Invoices", to: "/invoices", icon: Receipt },
   { label: "Purchase Orders", to: "/purchase-orders", icon: ShoppingCart },
   { label: "Return Notes", to: "/return-notes", icon: Undo2 },
+  { label: "Accounting", to: "/accounting", icon: Calculator },
   { label: "Reports", to: "/reports", icon: BarChart3 },
   { label: "Statements", to: "/statements", icon: BookUser },
   { label: "Operating Expenses", to: "/operating-expenses", icon: Wallet },

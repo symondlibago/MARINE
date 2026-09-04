@@ -104,6 +104,8 @@ class RunController extends PayrollController
 
         $run->update($request->validate([
             'payment_date' => ['nullable', 'date'],
+            // Which account the wage bill is booked to, chosen from the chart.
+            'account_code' => \App\Models\Account::validationRule(),
             'notes' => ['nullable', 'string', 'max:2000'],
         ]));
 
@@ -320,6 +322,11 @@ class RunController extends PayrollController
             'payment_date' => $run->payment_date?->toDateString(),
             'status' => $run->status,
             'currency' => $run->currency,
+            // Where this month's wages are booked. The GST treatment is NOT
+            // read from the account — salaries are out of scope whatever they
+            // sit on. See AccountingBooks::payroll().
+            'account_code' => $run->account_code,
+            'account_name' => $run->accountRecord()?->name,
             'notes' => $run->notes,
             'finalised_at' => $run->finalised_at?->toDateTimeString(),
             'locked' => $run->isLocked(),

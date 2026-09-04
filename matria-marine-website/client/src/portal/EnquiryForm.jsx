@@ -10,6 +10,7 @@ import EntityPicker from "./ui/EntityPicker";
 import Combobox from "./ui/Combobox";
 import DatePicker from "./ui/DatePicker";
 import { gridKeyDown } from "./ui/gridKeys";
+import { AccountCodeCell } from "./ui/AccountSelect";
 import { Spinner } from "./ui/Loading";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
@@ -117,6 +118,9 @@ export default function EnquiryForm({ params }) {
     notes: "",
   });
   const [items, setItems] = useState([blankItem()]);
+  // One account from Matria's chart, applied to every line at once — see
+  // applyBulkAcct().
+  const [bulkAcct, setBulkAcct] = useState("");
   const [colW, setColWState] = useState(loadColumnWidths);
   const persistColumns = (next) => {
     try { localStorage.setItem(COL_STORE, JSON.stringify(next)); } catch { /* private mode — widths just won't persist */ }
@@ -178,6 +182,18 @@ export default function EnquiryForm({ params }) {
   const setItem = (i, k, v) => setItems((its) => its.map((it, idx) => (idx === i ? { ...it, [k]: v } : it)));
   const addItem = () => setItems((its) => [...its, blankItem()]);
   const removeItem = (i) => setItems((its) => its.filter((_, idx) => idx !== i));
+
+  /**
+   * Stamp one accounting code onto every line.
+   *
+   * The whole job is nearly always coded the same way — 5000 Cost of Sales,
+   * say — so picking it once beats picking it on a hundred lines.
+   *
+   * Blank is allowed, unlike the other bulk fields: it is how you clear a code
+   * applied to everything by mistake.
+   */
+  const applyBulkAcct = () =>
+    setItems((its) => its.map((it) => ({ ...it, accounting_code: bulkAcct.trim() })));
 
   // --- Files on a single line (the photo/drawing/spec for that part) ---------
   // These are the ones vendors receive: they travel with their line, so only a
@@ -286,6 +302,17 @@ export default function EnquiryForm({ params }) {
         }
       }
 
+      // The server may have had to keep a line the user removed — one a vendor
+      // has already quoted on. Say so, and stay put rather than navigating
+      // away from a screen whose contents did not fully take, or the line just
+      // silently reappears with no explanation.
+      const kept = res.data?.kept_quoted_lines ?? [];
+
+      if (kept.length) {
+        toast.error(res.data.message, { duration: 9000 });
+        return;
+      }
+
       toast.success(editId ? "Enquiry updated." : "Enquiry created.");
       setLocation(`/enquiries/${rid}`);
     },
@@ -390,9 +417,25 @@ export default function EnquiryForm({ params }) {
               between the one-line boxes without reaching for the mouse.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* One code for the whole job — the same "apply to all" the offer
+                page uses for markup and lead time. */}
+            <span className="text-xs text-slate-500">Set all acct code</span>
+            <AccountCodeCell
+              value={bulkAcct}
+              onChange={setBulkAcct}
+              className="w-56"
+              placeholder="Choose account…"
+            />
+            <button
+              type="button"
+              onClick={applyBulkAcct}
+              className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50"
+            >
+              Apply to all
+            </button>
             {widthsChanged && (
-              <button type="button" onClick={resetColumns} className="text-xs font-medium text-slate-400 hover:text-[#28364b] hover:underline">
+              <button type="button" onClick={resetColumns} className="ml-2 text-xs font-medium text-slate-400 hover:text-[#28364b] hover:underline">
                 Reset widths
               </button>
             )}
@@ -440,7 +483,12 @@ export default function EnquiryForm({ params }) {
                       placeholder="Description — paste the full spec, extra lines are kept"
                     />
                     <input placeholder="e.g. 591234" className={cellInput + " shrink-0"} style={{ width: colW.impa }} value={it.impa_no} onChange={(e) => setItem(i, "impa_no", e.target.value)} />
-                    <input placeholder="Acct code" className={cellInput + " shrink-0"} style={{ width: colW.acct }} value={it.accounting_code} onChange={(e) => setItem(i, "accounting_code", e.target.value)} title="Internal — never printed on vendor or customer documents" />
+                    <AccountCodeCell
+                      value={it.accounting_code}
+                      onChange={(v) => setItem(i, "accounting_code", v)}
+                      className="shrink-0"
+                      style={{ width: colW.acct }}
+                    />
                     <input type="number" step="0.001" placeholder="Qty" className={cellInput + " shrink-0"} style={{ width: colW.qty }} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} />
                     <input placeholder="Unit" className={cellInput + " shrink-0"} style={{ width: colW.unit }} value={it.unit} onChange={(e) => setItem(i, "unit", e.target.value)} />
                     <div className="shrink-0" style={{ width: colW.files }}>

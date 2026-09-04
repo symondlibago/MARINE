@@ -30,10 +30,13 @@ class OperatingExpenseController extends Controller
                 'period_end' => $data['period_end'],
                 'currency' => $data['currency'],
                 'exchange_rate' => $data['exchange_rate'],
+                'account_code' => $data['account_code'],
+                'tax_rate' => $data['tax_rate'],
                 'notes' => $data['notes'] ?? null,
                 'created_by' => $request->user()?->id,
             ]);
             $this->syncItems($group, $data['items']);
+            $this->recalcTax($group);
 
             return $group;
         });
@@ -52,10 +55,13 @@ class OperatingExpenseController extends Controller
                 'period_end' => $data['period_end'],
                 'currency' => $data['currency'],
                 'exchange_rate' => $data['exchange_rate'],
+                'account_code' => $data['account_code'],
+                'tax_rate' => $data['tax_rate'],
                 'notes' => $data['notes'] ?? null,
             ]);
             $operatingExpense->items()->delete();
             $this->syncItems($operatingExpense, $data['items']);
+            $this->recalcTax($operatingExpense);
         });
 
         return response()->json(['success' => true, 'message' => 'Expenses updated.', 'data' => $this->present($operatingExpense->fresh('items'))]);
@@ -85,6 +91,19 @@ class OperatingExpenseController extends Controller
         }
     }
 
+    /**
+     * GST paid on a group of overheads, derived from its line total.
+     *
+     * Called after the items are synced, since the total those lines add up to
+     * is what the tax is charged on.
+     */
+    private function recalcTax(OperatingExpense $group): void
+    {
+        $group->forceFill([
+            'tax_amount' => round($group->fresh('items')->total() * (float) $group->tax_rate / 100, 4),
+        ])->save();
+    }
+
     private function validated(Request $request): array
     {
         $data = $request->validate([
@@ -93,6 +112,10 @@ class OperatingExpenseController extends Controller
             'period_end' => ['required', 'date', 'after_or_equal:period_start'],
             'currency' => ['required', 'string', 'size:3'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0'],
+            // Which expense account these overheads sit on, and the GST paid on
+            // them — the input tax side of the return.
+            'account_code' => \App\Models\Account::validationRule(),
+            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.name' => ['nullable', 'string', 'max:255'],
@@ -102,6 +125,8 @@ class OperatingExpenseController extends Controller
 
         $data['currency'] = strtoupper($data['currency']);
         $data['exchange_rate'] = (! empty($data['exchange_rate']) && $data['exchange_rate'] > 0) ? $data['exchange_rate'] : 1;
+        $data['account_code'] = $data['account_code'] ?? null ?: \App\Models\Account::DEFAULT_EXPENSE;
+        $data['tax_rate'] = (float) ($data['tax_rate'] ?? 0);
 
         return $data;
     }
@@ -115,6 +140,11 @@ class OperatingExpenseController extends Controller
             'period_end' => $g->period_end?->toDateString(),
             'currency' => $g->currency,
             'exchange_rate' => (float) $g->exchange_rate,
+            'account_code' => $g->account_code,
+            'account_name' => $g->accountRecord()?->name,
+            'gst_code' => $g->gstCode(),
+            'tax_rate' => (float) $g->tax_rate,
+            'tax_amount' => round((float) $g->tax_amount, 2),
             'notes' => $g->notes,
             'total' => round($g->total(), 2),
             'total_base' => round($g->totalBase(), 2),

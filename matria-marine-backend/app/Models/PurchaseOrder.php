@@ -2,12 +2,21 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccountCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class PurchaseOrder extends Model
 {
+    use HasAccountCode;
+
+    /** What we buy to fulfil a customer job is cost of sales. */
+    protected string $defaultAccountCode = Account::DEFAULT_PURCHASE;
+
     protected $fillable = [
+        'account_code',
+        'tax_rate',
+        'tax_amount',
         'po_number',
         'invoice_number',
         'token',
@@ -46,6 +55,8 @@ class PurchaseOrder extends Model
         'exchange_rate' => 'decimal:8',
         'expense_rate' => 'decimal:8',
         'subtotal' => 'decimal:4',
+        'tax_rate' => 'decimal:3',
+        'tax_amount' => 'decimal:4',
         'expense_items' => 'array',
     ];
 

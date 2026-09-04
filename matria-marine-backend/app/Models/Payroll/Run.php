@@ -9,7 +9,7 @@ class Run extends Model
     protected $table = 'payroll_runs';
 
     protected $fillable = [
-        'period', 'payment_date', 'status', 'currency', 'notes', 'finalised_at', 'finalised_by',
+        'period', 'payment_date', 'status', 'currency', 'account_code', 'notes', 'finalised_at', 'finalised_by',
     ];
 
     protected $casts = [
@@ -30,6 +30,25 @@ class Run extends Model
     public function isLocked(): bool
     {
         return $this->status === 'finalised';
+    }
+
+    /** The account this month's wages are booked to, if one has been chosen. */
+    public function accountRecord(): ?\App\Models\Account
+    {
+        return \App\Models\Account::find_by_code($this->account_code);
+    }
+
+    /**
+     * What this month actually cost the business.
+     *
+     * Gross pay plus employer CPF plus SDL. NOT gross plus every CPF figure:
+     * the employee's own CPF and their SHG contribution come out of the gross
+     * they were already paid, so counting them again would inflate the wage
+     * bill by roughly a fifth.
+     */
+    public function costToBusiness(): float
+    {
+        return round((float) ($this->totals()['total_employer_cost'] ?? 0), 2);
     }
 
     /** The month's totals, as the list and the summary PDF both show them. */

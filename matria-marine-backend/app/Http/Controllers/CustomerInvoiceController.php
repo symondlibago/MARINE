@@ -190,6 +190,10 @@ class CustomerInvoiceController extends Controller
             'packing_cost' => ['nullable', 'numeric', 'min:0'],
             'transportation_cost' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // Which sales account this invoice is booked to. The GST treatment
+            // follows from it — 4100 is zero-rated, 4000 is standard-rated —
+            // so this one field decides the F5 box the sale lands in.
+            'account_code' => \App\Models\Account::validationRule(),
             'notes' => ['nullable', 'string', 'max:5000'],
             'items' => ['sometimes', 'array'],
             'items.*.id' => ['nullable', 'integer'],
@@ -241,6 +245,11 @@ class CustomerInvoiceController extends Controller
                 if (array_key_exists($key, $data)) {
                     $invoice->{$key} = $data[$key] ?? 0;
                 }
+            }
+            // Blank clears back to the default rather than storing an empty
+            // string, so an invoice is never left with a code of "".
+            if (array_key_exists('account_code', $data)) {
+                $invoice->account_code = $data['account_code'] ?: \App\Models\Account::DEFAULT_SALES;
             }
             if (array_key_exists('status', $data)) {
                 $invoice->status = $data['status'];

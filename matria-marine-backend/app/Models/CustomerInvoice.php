@@ -2,12 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccountCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class CustomerInvoice extends Model
 {
+    use HasAccountCode;
+
+    /** Marine supply is a zero-rated export almost every time. */
+    protected string $defaultAccountCode = Account::DEFAULT_SALES;
+
     protected $fillable = [
+        'account_code',
         'invoice_number',
         'token',
         'rfq_id',
