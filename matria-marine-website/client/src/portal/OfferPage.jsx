@@ -45,7 +45,7 @@ export default function OfferPage({ params }) {
     queryFn: async () => (await offersAPI.get(id)).data.data,
   });
 
-  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "", tax_rate: "" });
+  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", customer_po_number: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "", tax_rate: "" });
   const [items, setItems] = useState([]);
   const [bulk, setBulk] = useState("");
   const [pickedCustomerName, setPickedCustomerName] = useState(null);
@@ -62,6 +62,7 @@ export default function OfferPage({ params }) {
       payment_terms: offer.payment_terms || "",
       delivery_terms: offer.delivery_terms || "",
       origin_type: offer.origin_type || "",
+      customer_po_number: offer.customer_po_number || "",
       status: offer.status || "draft",
       notes: offer.notes || "",
       packing_cost: offer.packing_cost != null ? String(offer.packing_cost) : "",
@@ -366,6 +367,7 @@ export default function OfferPage({ params }) {
         payment_terms: header.payment_terms || null,
         delivery_terms: header.delivery_terms || null,
         origin_type: header.origin_type || null,
+        customer_po_number: header.customer_po_number.trim() || null,
         packing_cost: Number(header.packing_cost) || 0,
         transportation_cost: Number(header.transportation_cost) || 0,
         tax_rate: Number(header.tax_rate) || 0,
@@ -392,7 +394,7 @@ export default function OfferPage({ params }) {
           sort: i,
         })),
       }),
-    onSuccess: () => { toast.success("Offer saved."); setRemovedIds([]); refetch(); },
+    onSuccess: () => { toast.success("Offer saved."); refetch(); },
     onError: (e) => toast.error(e?.response?.data?.message || "Could not save."),
   });
 
@@ -564,6 +566,12 @@ export default function OfferPage({ params }) {
           <Field label="Payment terms"><Select value={header.payment_terms} onChange={(v) => setH("payment_terms", v)} options={PAYMENT_TERMS} placeholder="—" /></Field>
           <Field label="Delivery terms (Incoterms)"><Select value={header.delivery_terms} onChange={(v) => setH("delivery_terms", v)} options={DELIVERY_TERMS} placeholder="—" /></Field>
           <Field label="Origin"><Select value={header.origin_type} onChange={(v) => setH("origin_type", v)} options={ORIGIN_TYPES} placeholder="—" /></Field>
+          <Field label="Customer ref">
+            <input value={offer.rfq?.customer_reference || ""} readOnly placeholder="Set on the enquiry" className={`${ci} cursor-not-allowed bg-slate-50 text-slate-500`} />
+          </Field>
+          <Field label="Customer PO number">
+            <input value={header.customer_po_number} onChange={(e) => setH("customer_po_number", e.target.value)} maxLength={255} placeholder="Enter the customer's PO reference" className={ci} />
+          </Field>
         </div>
 
         <div className="mt-4 border-t border-slate-100 pt-4">

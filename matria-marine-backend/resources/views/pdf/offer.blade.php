@@ -71,13 +71,17 @@
                 </table>
                 <table style="width:100%; margin-top:8px;">
                     <tr>
-                        <td class="bar" style="width:62%;">Order No.</td>
+                        <td class="bar" style="width:62%;">Customer Ref.</td>
                         <td class="bar">Validity</td>
                     </tr>
                     <tr>
                         <td class="val">{{ optional($offer->rfq)->customer_reference ?: '—' }}</td>
                         <td class="val">{{ optional($offer->valid_until)->format('j/n/Y') ?: '—' }}</td>
                     </tr>
+                </table>
+                <table style="width:100%; margin-top:8px;">
+                    <tr><td class="bar">Customer PO No.</td></tr>
+                    <tr><td class="val">{{ $offer->customer_po_number ?: '—' }}</td></tr>
                 </table>
                 @php
                     // Overall "Delivery" = the line-item lead time (usually one value

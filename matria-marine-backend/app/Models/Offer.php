@@ -22,6 +22,7 @@ class Offer extends Model
         'payment_terms',
         'delivery_terms',
         'origin_type',
+        'customer_po_number',
         'base_total',
         'subtotal',
         'markup_total',

@@ -80,6 +80,7 @@ class PublicOfferController extends Controller
             'customer_address' => $offer->customer_address,
             'vessel' => $offer->rfq?->ship_name,
             'customer_reference' => $offer->rfq?->customer_reference,
+            'customer_po_number' => $offer->customer_po_number,
             'currency' => $offer->currency,
             'valid_until' => optional($offer->valid_until)->toDateString(),
             'payment_terms' => $offer->payment_terms,

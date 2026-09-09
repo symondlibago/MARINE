@@ -39,7 +39,8 @@ function OfferCard({ data }) {
       <div className="grid gap-3 text-sm sm:grid-cols-2">
         <div><span className="text-slate-400">To:</span> <span className="font-medium text-[#28364b]">{data.customer_name || "—"}</span></div>
         {data.vessel && <div><span className="text-slate-400">Vessel:</span> <span className="font-medium text-[#28364b]">{data.vessel}</span></div>}
-        {data.customer_reference && <div><span className="text-slate-400">Your ref:</span> <span className="font-medium text-[#28364b]">{data.customer_reference}</span></div>}
+        {data.customer_reference && <div><span className="text-slate-400">Customer ref:</span> <span className="font-medium text-[#28364b]">{data.customer_reference}</span></div>}
+        {data.customer_po_number && <div><span className="text-slate-400">PO number:</span> <span className="font-medium text-[#28364b]">{data.customer_po_number}</span></div>}
         {data.payment_terms && <div><span className="text-slate-400">Payment:</span> <span className="font-medium text-[#28364b]">{data.payment_terms}</span></div>}
         {data.delivery_terms && <div><span className="text-slate-400">Delivery:</span> <span className="font-medium text-[#28364b]">{data.delivery_terms}</span></div>}
         {data.origin_type && <div><span className="text-slate-400">Origin:</span> <span className="font-medium text-[#28364b]">{data.origin_type}</span></div>}

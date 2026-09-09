@@ -70,7 +70,7 @@ class ProformaDoc
             'deliver_to' => null,
             'second_label' => 'Payment Terms',
             'second_value' => $offer->payment_terms ?: '—',
-            'customer_reference' => $offer->rfq?->customer_reference,
+            'customer_reference' => $offer->customer_po_number ?: $offer->rfq?->customer_reference,
             'prepared_by' => self::preparedBy($offer->creator),
             'items' => self::lines($offer->items->where('is_heading', false)),
             'extra_totals' => $extra,

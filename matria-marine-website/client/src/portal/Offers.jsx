@@ -60,7 +60,7 @@ export default function Offers() {
       if (status && r.status !== status) return false;
       if (!q) return true;
 
-      return [r.offer_number, r.customer?.name || r.customer_name, r.rfq?.reference, r.creator?.name]
+      return [r.offer_number, r.customer?.name || r.customer_name, r.customer_po_number, r.rfq?.customer_reference, r.rfq?.reference, r.creator?.name]
         .some((v) => String(v || "").toLowerCase().includes(q));
     });
   }, [data, search, status]);
@@ -75,7 +75,7 @@ export default function Offers() {
       <ListToolbar
         search={search}
         onSearch={setSearch}
-        placeholder="Search offer #, customer, enquiry or who quoted it…"
+        placeholder="Search offer #, customer ref, PO, enquiry or who quoted it…"
         filters={[{ value: status, onChange: setStatus, options: STATUS_OPTIONS, title: "Filter by status" }]}
       />
 
@@ -86,6 +86,7 @@ export default function Offers() {
               <th className="px-3 py-3 font-semibold">Offer</th>
               <th className="px-3 py-3 font-semibold">Customer</th>
               <th className="px-3 py-3 font-semibold">Customer ref.</th>
+              <th className="px-3 py-3 font-semibold">Customer PO</th>
               <th className="px-3 py-3 font-semibold">Vessel</th>
               <th className="px-3 py-3 font-semibold">Enquiry</th>
               <th className="px-3 py-3 font-semibold">Quoted by</th>
@@ -100,10 +101,10 @@ export default function Offers() {
           </thead>
           <tbody>
             {isLoading ? (
-              <TableSkeleton cols={13} />
+              <TableSkeleton cols={14} />
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={13} className="py-12 text-center text-slate-400">
+                <td colSpan={14} className="py-12 text-center text-slate-400">
                   <div className="flex flex-col items-center gap-2">
                     <Tag className="h-8 w-8 text-slate-300" />
                     {search || status ? (
@@ -129,6 +130,7 @@ export default function Offers() {
                   <td className="px-3 py-3 font-medium text-[#28364b] whitespace-nowrap">{r.offer_number}</td>
                   <td className="px-3 py-3 text-slate-700">{r.customer?.name || r.customer_name || "—"}</td>
                   <td className="px-3 py-3 text-slate-500">{r.rfq?.customer_reference || "—"}</td>
+                  <td className="px-3 py-3 text-slate-500">{r.customer_po_number || "—"}</td>
                   <td className="px-3 py-3 text-slate-700">{r.rfq?.ship_name || "—"}</td>
                   <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{r.rfq?.reference || "—"}</td>
                   <td className="px-3 py-3 text-slate-500">{r.creator?.name || "—"}</td>

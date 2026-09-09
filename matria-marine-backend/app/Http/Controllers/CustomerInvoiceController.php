@@ -98,7 +98,7 @@ class CustomerInvoiceController extends Controller
                 'customer_id' => $offer->customer_id,
                 'customer_name' => $offer->customer_name,
                 'customer_address' => $offer->customer_address,
-                'customer_reference' => $offer->rfq?->customer_reference,
+                'customer_reference' => $offer->customer_po_number ?: $offer->rfq?->customer_reference,
                 'currency' => $offer->currency,
                 'status' => 'draft',
                 'issue_date' => now()->toDateString(),

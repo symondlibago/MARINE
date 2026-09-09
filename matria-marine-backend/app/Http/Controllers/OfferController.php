@@ -50,7 +50,7 @@ class OfferController extends Controller
      */
     private function present(Offer $offer): array
     {
-        $offer->load(['items', 'rfq:id,reference,ship_name', 'customer:id,name,address,email']);
+        $offer->load(['items', 'rfq:id,reference,ship_name,customer_reference', 'customer:id,name,address,email']);
 
         // Lines added to the enquiry after this quotation was built. An offer
         // keeps its own copy of every line, so nothing arrives on its own and a
@@ -241,6 +241,7 @@ class OfferController extends Controller
             'payment_terms' => ['nullable', 'string', 'max:255'],
             'delivery_terms' => ['nullable', 'string', 'max:255'],
             'origin_type' => ['nullable', 'string', 'max:255'],
+            'customer_po_number' => ['nullable', 'string', 'max:255'],
             'packing_cost' => ['nullable', 'numeric', 'min:0'],
             'transportation_cost' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -285,6 +286,7 @@ class OfferController extends Controller
                 'payment_terms' => array_key_exists('payment_terms', $data) ? $data['payment_terms'] : $offer->payment_terms,
                 'delivery_terms' => array_key_exists('delivery_terms', $data) ? $data['delivery_terms'] : $offer->delivery_terms,
                 'origin_type' => array_key_exists('origin_type', $data) ? $data['origin_type'] : $offer->origin_type,
+                'customer_po_number' => array_key_exists('customer_po_number', $data) ? $data['customer_po_number'] : $offer->customer_po_number,
                 'packing_cost' => array_key_exists('packing_cost', $data) ? ($data['packing_cost'] ?? 0) : $offer->packing_cost,
                 'transportation_cost' => array_key_exists('transportation_cost', $data) ? ($data['transportation_cost'] ?? 0) : $offer->transportation_cost,
                 'tax_rate' => array_key_exists('tax_rate', $data) ? ($data['tax_rate'] ?? 0) : $offer->tax_rate,
@@ -427,7 +429,7 @@ class OfferController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Offer saved.',
-            'data' => $offer->fresh()->load('items'),
+            'data' => $this->present($offer->fresh()),
         ]);
     }
 
