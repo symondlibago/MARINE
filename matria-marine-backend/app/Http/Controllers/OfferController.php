@@ -265,7 +265,12 @@ class OfferController extends Controller
             'items.*.qty' => ['nullable', 'numeric', 'min:0'],
             'items.*.base_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.markup_pct' => ['nullable', 'numeric'],
+            // The VENDOR's discount: lowers what we pay, becomes our profit.
             'items.*.discount_pct' => ['nullable', 'numeric'],
+            // The CUSTOMER's discount: lowers what they are charged. Capped at
+            // 100 because it comes off this line alone, and a bigger number
+            // would quote a negative amount.
+            'items.*.cust_discount_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'items.*.lead_time' => ['nullable', 'string', 'max:100'],
             'items.*.delivery_location' => ['nullable', 'string', 'max:255'],
             'items.*.remarks' => ['nullable', 'string', 'max:1000'],
@@ -338,7 +343,8 @@ class OfferController extends Controller
 
                         $qty = (float) ($row['qty'] ?? 1);
                         $unit = (float) ($row['unit_price'] ?? 0);
-                        $m = $this->lineMaths(0, 0, 0, $qty, $unit);
+                        $custDiscount = (float) ($row['cust_discount_pct'] ?? 0);
+                        $m = $this->lineMaths(0, 0, 0, $qty, $unit, null, $custDiscount);
 
                         $offer->items()->create([
                             'rfq_item_id' => null,
@@ -355,6 +361,8 @@ class OfferController extends Controller
                             'unit_price' => $m['unit'],
                             'discount_pct' => 0,
                             'discount_amount' => 0,
+                            'cust_discount_pct' => $custDiscount,
+                            'cust_discount_amount' => $m['cust_discount_amount'],
                             'markup_amount' => $m['markup_amount'],
                             'line_total' => $m['line_total'],
                             'lead_time' => $row['lead_time'] ?? null,
@@ -372,6 +380,7 @@ class OfferController extends Controller
                     $base = array_key_exists('base_price', $row) ? (float) $row['base_price'] : (float) $item->base_price;
                     $markup = array_key_exists('markup_pct', $row) ? (float) $row['markup_pct'] : (float) $item->markup_pct;
                     $discount = array_key_exists('discount_pct', $row) ? (float) $row['discount_pct'] : (float) $item->discount_pct;
+                    $custDiscount = array_key_exists('cust_discount_pct', $row) ? (float) $row['cust_discount_pct'] : (float) $item->cust_discount_pct;
                     $qty = array_key_exists('qty', $row) ? (float) $row['qty'] : (float) $item->qty;
 
                     // A line with no enquiry behind it keeps its typed price:
@@ -388,7 +397,7 @@ class OfferController extends Controller
                         ? (float) ($row['unit_price'] ?? 0)
                         : null;
 
-                    $m = $this->lineMaths($base, $markup, $discount, $qty, $manualUnit, $pinnedUnit);
+                    $m = $this->lineMaths($base, $markup, $discount, $qty, $manualUnit, $pinnedUnit, $custDiscount);
                     $unit = $m['unit'];
                     $discAmt = $m['discount_amount'];
                     $amount = $m['line_total'];
@@ -414,6 +423,8 @@ class OfferController extends Controller
                         'unit_price' => $unit,
                         'discount_pct' => $discount,
                         'discount_amount' => $discAmt,
+                        'cust_discount_pct' => $custDiscount,
+                        'cust_discount_amount' => $m['cust_discount_amount'],
                         'markup_amount' => $markupAmt,
                         'line_total' => $amount,
                         'lead_time' => $row['lead_time'] ?? null,
@@ -558,14 +569,16 @@ class OfferController extends Controller
                     $markup = (float) $line->markup_pct;
                     $discount = (float) $line->discount_pct;
                     $qty = (float) $line->qty;
+                    $custDiscount = (float) $line->cust_discount_pct;
 
-                    $m = $this->lineMaths($base, $markup, $discount, $qty);
+                    $m = $this->lineMaths($base, $markup, $discount, $qty, null, null, $custDiscount);
 
                     $update += [
                         'base_price' => $base,
                         'base_source' => $baseSource,
                         'unit_price' => $m['unit'],
                         'discount_amount' => $m['discount_amount'],
+                        'cust_discount_amount' => $m['cust_discount_amount'],
                         'markup_amount' => $m['markup_amount'],
                         'line_total' => $m['line_total'],
                     ];
@@ -772,17 +785,22 @@ class OfferController extends Controller
         float $discount,
         float $qty,
         ?float $manualUnit = null,
-        ?float $pinnedUnit = null
+        ?float $pinnedUnit = null,
+        float $custDiscount = 0
     ): array {
         if ($manualUnit !== null) {
-            $amount = round($manualUnit * $qty, 2);
+            $gross = round($manualUnit * $qty, 2);
+            $custOff = round($gross * $custDiscount / 100, 2);
 
             return [
                 'unit' => round($manualUnit, 2),
                 'cost' => 0.0,
                 'discount_amount' => 0.0,
-                'line_total' => $amount,
-                'markup_amount' => $amount,   // no cost was incurred, so it is all margin
+                'cust_discount_amount' => $custOff,
+                'line_total' => round($gross - $custOff, 2),
+                // No cost was incurred, so everything left after the customer's
+                // discount is margin.
+                'markup_amount' => round($gross - $custOff, 2),
                 'markup_pct' => round($markup, 2),
             ];
         }
@@ -800,13 +818,20 @@ class OfferController extends Controller
             ? ($base > 0 ? round(($unit / $base - 1) * 100, 2) : 0.0)
             : round($markup, 2);
 
+        // What the customer's discount takes off this line. It comes out of our
+        // margin, not off the unit price, so the price the customer was quoted
+        // still reads as the price and the reduction is shown as its own figure.
+        $gross = round($unit * $qty, 2);
+        $custOff = round($gross * $custDiscount / 100, 2);
+
         return [
             'unit' => $unit,
             'cost' => $cost,
             // The vendor's discount per unit — money we keep, not money they save.
             'discount_amount' => round($base - $cost, 2),
-            'line_total' => round($unit * $qty, 2),
-            'markup_amount' => round(($unit - $cost) * $qty, 2),
+            'cust_discount_amount' => $custOff,
+            'line_total' => round($gross - $custOff, 2),
+            'markup_amount' => round(($unit - $cost) * $qty - $custOff, 2),
             'markup_pct' => $pct,
         ];
     }

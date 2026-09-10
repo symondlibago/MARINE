@@ -95,6 +95,7 @@ export default function OfferPage({ params }) {
               ? "unit"
               : "markup",
           discount_pct: Number(it.discount_pct || 0),
+          cust_discount_pct: Number(it.cust_discount_pct || 0),
           lead_time: it.lead_time || "",
           delivery_location: it.delivery_location || "",
           remarks: it.remarks || "",
@@ -166,7 +167,8 @@ export default function OfferPage({ params }) {
       {
         id: null, manual: true, description: "", code: "", customs_code: "", accounting_code: "", unit: "",
         qty: 1, base_price: 0, unit_price: 0, base_source: "Added by Matria",
-        markup_pct: 0, discount_pct: 0, lead_time: "", delivery_location: "", remarks: "",
+        markup_pct: 0, discount_pct: 0, cust_discount_pct: 0,
+        lead_time: "", delivery_location: "", remarks: "",
       },
     ]);
 
@@ -277,8 +279,13 @@ export default function OfferPage({ params }) {
     // price and every cent of it is profit.
     if (it.manual) {
       const unit = Number(it.unit_price) || 0;
-      const amount = unit * qty;
-      return { ...it, unit_price: unit, disc_amount: 0, cost_line: 0, line_total: amount, markup_amount: amount, base_line: 0 };
+      const gross = unit * qty;
+      const custOff = gross * ((Number(it.cust_discount_pct) || 0) / 100);
+      return {
+        ...it, unit_price: unit, disc_amount: 0, cost_line: 0,
+        cust_disc_amount: custOff,
+        line_total: gross - custOff, markup_amount: gross - custOff, base_line: 0,
+      };
     }
 
     // Priced by hand: the typed figure is the price, and the percentage above
@@ -286,7 +293,11 @@ export default function OfferPage({ params }) {
     const byUnit = it.priced_by === "unit";
     const unit = byUnit ? Number(it.unit_price) || 0 : base * (1 + (Number(it.markup_pct) || 0) / 100);
     const cost = base * (1 - (Number(it.discount_pct) || 0) / 100); // we pay
-    const amount = unit * qty;
+    const gross = unit * qty;
+    // The customer's discount comes off the line total, not off the unit price,
+    // so the price they were quoted still reads as the price.
+    const custOff = gross * ((Number(it.cust_discount_pct) || 0) / 100);
+    const amount = gross - custOff;
     return {
       ...it,
       unit_price: unit,
@@ -296,14 +307,17 @@ export default function OfferPage({ params }) {
       unit_display: byUnit ? it.unit_price : unit.toFixed(2),
       amount_display: it.amount_typed != null ? it.amount_typed : amount.toFixed(2),
       disc_amount: base - cost,          // the vendor's discount per unit — ours
+      cust_disc_amount: custOff,         // the customer's — money off their bill
       cost_line: cost * qty,
       line_total: amount,
-      markup_amount: (unit - cost) * qty,
+      markup_amount: (unit - cost) * qty - custOff,
       base_line: cost * qty,             // what the line actually costs us
     };
   });
   const baseTotal = rows.reduce((s, r) => s + r.base_line, 0);
   const custTotal = rows.reduce((s, r) => s + r.line_total, 0);
+  // What the customer's discounts took off, across the whole quotation.
+  const custDiscTotal = rows.reduce((s, r) => s + (Number(r.cust_disc_amount) || 0), 0);
   const profit = custTotal - baseTotal;
   const profitPct = baseTotal > 0 ? (profit / baseTotal) * 100 : 0;
   const packing = Number(header.packing_cost) || 0;
@@ -388,6 +402,7 @@ export default function OfferPage({ params }) {
           // still open in a browser, which falls back to the percentage.
           priced_by: it.manual ? undefined : it.priced_by === "unit" ? "unit" : "markup",
           discount_pct: Number(it.discount_pct) || 0,
+          cust_discount_pct: Number(it.cust_discount_pct) || 0,
           lead_time: it.lead_time || null,
           delivery_location: it.delivery_location || null,
           remarks: it.remarks || null,
@@ -748,6 +763,12 @@ export default function OfferPage({ params }) {
                 </th>
                 <th className={`${th} ${internal} text-right`} title="The vendor's discount per unit — money we keep">Disc Amt</th>
                 <th className={`${th} ${internal} text-right`}>Markup Amt</th>
+                {/* Not amber: this one IS shown to the customer — it is money
+                    off their bill, the opposite of the vendor discount above. */}
+                <th className={`${th} text-right`} title="Discount WE give the customer — comes off what they pay">
+                  Disc %
+                </th>
+                <th className={`${th} text-right`} title="What the customer's discount takes off this line">Disc Amount</th>
                 <th className={`${th} text-right`}>Amount</th>
                 <th className={th}>Lead time</th>
                 <th className={th}>Delivery</th>
@@ -814,6 +835,21 @@ export default function OfferPage({ params }) {
                   </td>
                   <td className={`px-1.5 py-2 text-right whitespace-nowrap ${internal} ${Number(r.disc_amount) > 0 ? "font-medium text-green-700" : "text-slate-500"}`}>{money(r.disc_amount)}</td>
                   <td className={`px-1.5 py-2 text-right font-medium text-green-700 whitespace-nowrap ${internal}`}>{money(r.markup_amount)}</td>
+                  <td className="px-1.5 py-2">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      className={`${ci} ${num} min-w-[3.5rem] text-right`}
+                      value={r.cust_discount_pct ?? 0}
+                      onChange={(e) => setItem(idx, { cust_discount_pct: e.target.value })}
+                      title="Discount for the customer, e.g. 10 — comes off this line"
+                    />
+                  </td>
+                  <td className={`px-1.5 py-2 text-right whitespace-nowrap ${Number(r.cust_disc_amount) > 0 ? "font-medium text-amber-700" : "text-slate-400"}`}>
+                    {Number(r.cust_disc_amount) > 0 ? `− ${money(r.cust_disc_amount)}` : money(0)}
+                  </td>
                   {/* Typeable too: set the line total and the unit price and
                       percentage are worked back from it. */}
                   <td className="px-1.5 py-2 text-right font-semibold text-[#28364b] whitespace-nowrap">
@@ -848,7 +884,7 @@ export default function OfferPage({ params }) {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={18} className="py-8 text-center text-slate-400">No line items on this offer.</td></tr>
+                <tr><td colSpan={20} className="py-8 text-center text-slate-400">No line items on this offer.</td></tr>
               )}
             </tbody>
             <tfoot>
@@ -863,6 +899,16 @@ export default function OfferPage({ params }) {
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total mark-up</div>
                   <div className="text-xs font-semibold text-green-700">{money(profit)} ({profitPct.toFixed(1)}%)</div>
                 </td>
+                {/* The two customer-discount columns. */}
+                <td></td>
+                <td className="px-1.5 py-2 text-right whitespace-nowrap">
+                  {custDiscTotal > 0 && (
+                    <>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Total discount</div>
+                      <div className="text-xs font-semibold text-amber-700">− {money(custDiscTotal)}</div>
+                    </>
+                  )}
+                </td>
                 <td className="px-1.5 py-2 text-right whitespace-nowrap">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">After mark-up</div>
                   <div className="text-sm font-semibold text-[#28364b]">{money(custTotal)}</div>
@@ -871,20 +917,20 @@ export default function OfferPage({ params }) {
               </tr>
               {packing > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={13} className="px-1.5 py-1 text-right text-xs text-slate-500">Packing cost</td>
+                  <td colSpan={15} className="px-1.5 py-1 text-right text-xs text-slate-500">Packing cost</td>
                   <td className="px-1.5 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(packing)}</td>
                   <td colSpan={4}></td>
                 </tr>
               )}
               {transportation > 0 && (
                 <tr className="bg-slate-50">
-                  <td colSpan={13} className="px-1.5 py-1 text-right text-xs text-slate-500">Transportation cost</td>
+                  <td colSpan={15} className="px-1.5 py-1 text-right text-xs text-slate-500">Transportation cost</td>
                   <td className="px-1.5 py-1 text-right text-sm text-slate-600 whitespace-nowrap">{money(transportation)}</td>
                   <td colSpan={4}></td>
                 </tr>
               )}
               <tr className="border-t border-slate-200 bg-slate-50">
-                <td colSpan={13} className="px-1.5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
+                <td colSpan={15} className="px-1.5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Grand total ({header.currency})</td>
                 <td className="px-1.5 py-3 text-right text-base font-bold text-[#28364b] whitespace-nowrap">{money(grandTotal)}</td>
                 <td colSpan={4}></td>
               </tr>

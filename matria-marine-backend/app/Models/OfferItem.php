@@ -22,8 +22,12 @@ class OfferItem extends Model
         'base_source',
         'markup_pct',
         'unit_price',
+        // The vendor's discount — lowers our cost, becomes profit.
         'discount_pct',
         'discount_amount',
+        // The customer's discount — lowers what they are charged.
+        'cust_discount_pct',
+        'cust_discount_amount',
         'markup_amount',
         'line_total',
         'lead_time',
@@ -40,6 +44,8 @@ class OfferItem extends Model
         'unit_price' => 'decimal:2',
         'discount_pct' => 'decimal:2',
         'discount_amount' => 'decimal:2',
+        'cust_discount_pct' => 'decimal:2',
+        'cust_discount_amount' => 'decimal:2',
         'markup_amount' => 'decimal:2',
         'line_total' => 'decimal:2',
     ];

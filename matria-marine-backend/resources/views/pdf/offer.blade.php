@@ -147,13 +147,24 @@
                 @else
                     @php
                         $qty = (float) $line->qty;
-                        $eff = $qty > 0 ? (float) $line->line_total / $qty : (float) $line->unit_price; // effective unit price (net of any discount)
+                        $custDisc = (float) ($line->cust_discount_amount ?? 0);
+                        // With a discount the quoted unit price is shown as it
+                        // was quoted and the reduction is spelled out below the
+                        // item, so the customer can see what they were given.
+                        // Without one, fall back to the effective price so that
+                        // qty x price always reconciles with the amount.
+                        $eff = $custDisc > 0
+                            ? (float) $line->unit_price
+                            : ($qty > 0 ? (float) $line->line_total / $qty : (float) $line->unit_price);
                     @endphp
                     <tr>
                         <td>
                             {!! nl2br(e($line->description)) !!}
                             @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
                             @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
+                            @if($custDisc > 0)
+                                <br><span class="sub">Less {{ rtrim(rtrim(number_format((float) $line->cust_discount_pct, 2), '0'), '.') }}% discount — {{ number_format($custDisc, 2) }}</span>
+                            @endif
                         </td>
                         <td class="num">{{ rtrim(rtrim(number_format($qty, 3), '0'), '.') }}</td>
                         <td>{{ $line->unit }}</td>

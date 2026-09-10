@@ -202,7 +202,10 @@ class CustomerInvoiceController extends Controller
             'items.*.code' => ['nullable', 'string', 'max:100'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.qty' => ['nullable', 'numeric', 'min:0'],
-            'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            // Negative is allowed: a discount is written as a line with a
+            // negative price ("Special Discount 10%", -4,065.80). The subtotal
+            // falls on its own, so GST is charged on what is actually payable.
+            'items.*.unit_price' => ['nullable', 'numeric'],
             'items.*.remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
