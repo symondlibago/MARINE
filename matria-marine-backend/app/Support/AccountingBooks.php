@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Account;
+use App\Models\CashToMasterRecord;
 use App\Models\CreditMemo;
 use App\Models\CustomerInvoice;
 use App\Models\OperatingExpense;
@@ -50,10 +51,11 @@ class AccountingBooks
     /* ------------------------------------------------------------------ */
 
     /**
-     * Every customer invoice and credit note whose date falls in the range.
+     * Every sales/income document whose date falls in the range.
      *
-     * Drafts are excluded: an unfinished invoice is not a supply and must not
-     * reach a tax return. An unissued credit note likewise.
+     * This includes vendor credit notes because they are posted to a sales or
+     * income account and must be visible in the Sales register. They are marked
+     * out of scope for GST because they are not customer supplies.
      */
     public static function sales(?Carbon $from, ?Carbon $to): Collection
     {
@@ -74,6 +76,8 @@ class AccountingBooks
             ->map(fn (CreditMemo $c) => self::creditRow($c));
 
         return $invoices->concat($credits)
+            ->concat(self::vendorCredits($from, $to))
+            ->concat(self::ctmFees($from, $to))
             ->sortBy([['date', 'desc'], ['number', 'desc']])
             ->values();
     }
@@ -149,6 +153,51 @@ class AccountingBooks
         ], $c->account_code, 'sales');
     }
 
+    /** The fee Matria earns as agent on each reconciled CTM record. */
+    public static function ctmFees(?Carbon $from, ?Carbon $to): Collection
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')) {
+            return collect();
+        }
+
+        return CashToMasterRecord::with('customer:id,name,customer_no')
+            ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
+            ->get()
+            ->filter(fn (CashToMasterRecord $record) => $record->feeAmount() > 0)
+            ->map(function (CashToMasterRecord $record) {
+                $fee = $record->feeAmount();
+
+                return self::classify([
+                    'id' => $record->id,
+                    'kind' => 'ctm_fee',
+                    'kind_label' => 'CTM fee income',
+                    'number' => $record->reference,
+                    'date' => $record->transaction_date?->toDateString(),
+                    'due_date' => null,
+                    'party_id' => $record->customer_id,
+                    'party_no' => $record->customer?->customer_no,
+                    'party_name' => $record->customer?->name,
+                    'party_reference' => null,
+                    'reference' => $record->reference,
+                    'vessel' => $record->vessel,
+                    'currency' => $record->currency,
+                    'exchange_rate' => (float) ($record->exchange_rate ?: 1),
+                    'subtotal' => round($fee, 2),
+                    'delivery' => 0.0,
+                    'net' => round($fee, 2),
+                    'tax_rate' => 0.0,
+                    'tax_amount' => 0.0,
+                    'gross' => round($fee, 2),
+                    'status' => 'recorded',
+                    'paid' => true,
+                    'settled' => round($fee, 2),
+                    'outstanding' => 0.0,
+                    'sign' => self::INVOICE,
+                ], $record->fee_account_code ?: '4200', 'sales');
+            });
+    }
+
     /* ------------------------------------------------------------------ */
     /*  Purchases                                                         */
     /* ------------------------------------------------------------------ */
@@ -177,6 +226,123 @@ class AccountingBooks
 
         return $orders->concat(self::expenses($from, $to))
             ->concat(self::payroll($from, $to))
+            ->concat(self::ctmFxAdjustments($from, $to))
+            ->sortBy([['date', 'desc'], ['number', 'desc']])
+            ->values();
+    }
+
+    /** CTM FX loss or transfer cost entered directly for the transaction. */
+    public static function ctmFxAdjustments(?Carbon $from, ?Carbon $to): Collection
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')) {
+            return collect();
+        }
+
+        return CashToMasterRecord::with('customer:id,name,customer_no')
+            ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
+            ->get()
+            ->filter(fn (CashToMasterRecord $record) => $record->fxExpense() > 0.005)
+            ->map(function (CashToMasterRecord $record) {
+                $expense = $record->fxExpense();
+
+                $row = self::classify([
+                    'id' => $record->id,
+                    'kind' => 'ctm_fx',
+                    'kind_label' => 'CTM FX / transfer expense',
+                    'number' => $record->reference,
+                    'vendor_invoice_number' => null,
+                    'date' => $record->transaction_date?->toDateString(),
+                    'due_date' => null,
+                    'party_id' => $record->customer_id,
+                    'party_no' => $record->customer?->customer_no,
+                    'party_name' => $record->customer?->name,
+                    'party_reference' => null,
+                    'reference' => $record->reference,
+                    'vessel' => $record->vessel,
+                    'currency' => $record->currency,
+                    'exchange_rate' => (float) ($record->exchange_rate ?: 1),
+                    'subtotal' => round($expense, 2),
+                    'expenses' => 0.0,
+                    'net' => round($expense, 2),
+                    'tax_rate' => 0.0,
+                    'tax_amount' => 0.0,
+                    'gross' => round($expense, 2),
+                    'status' => 'recorded',
+                    'paid' => true,
+                    'settled' => 0.0,
+                    'outstanding' => 0.0,
+                    'sign' => self::INVOICE,
+                ], $record->fx_account_code ?: '5200', 'purchase');
+
+                return array_replace($row, [
+                    'gst_code' => GstCodes::OS,
+                    'gst_label' => GstCodes::label(GstCodes::OS),
+                    'f5_box' => null,
+                    'taxable' => false,
+                ]);
+            });
+    }
+
+    /**
+     * Vendor credits posted to the chosen income account.
+     *
+     * These are income-statement rows, not customer supplies, so they are not
+     * included in sales() or the GST sales boxes. The purchase register still
+     * carries the net vendor charge for input-tax and payable reporting.
+     */
+    public static function vendorCredits(?Carbon $from, ?Carbon $to): Collection
+    {
+        return PurchaseOrder::live()
+            ->where('has_credit_note', true)
+            ->where('credit_note_amount', '>', 0)
+            ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name'])
+            ->when($from, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '>=', $from)
+                ->orWhere(fn ($n) => $n->whereNull('issued_date')->whereDate('created_at', '>=', $from))))
+            ->when($to, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '<=', $to)
+                ->orWhere(fn ($n) => $n->whereNull('issued_date')->whereDate('created_at', '<=', $to))))
+            ->get()
+            ->map(function (PurchaseOrder $p) {
+                $amount = $p->vendorCreditAmount();
+                $date = $p->issued_date ?: $p->created_at;
+
+                $row = self::classify([
+                    'id' => $p->id,
+                    'kind' => 'vendor_credit_note',
+                    'kind_label' => 'Vendor credit note',
+                    'number' => $p->credit_note_number,
+                    'date' => optional($date)->toDateString(),
+                    'due_date' => null,
+                    'party_id' => $p->vendor_id,
+                    'party_no' => $p->vendor?->vendor_no,
+                    'party_name' => $p->vendor?->name,
+                    'party_reference' => null,
+                    'reference' => $p->rfq?->reference,
+                    'vessel' => $p->rfq?->ship_name ?: $p->ship_name,
+                    'currency' => $p->currency,
+                    'exchange_rate' => (float) ($p->exchange_rate ?: 1),
+                    'subtotal' => round($amount, 2),
+                    'delivery' => 0.0,
+                    'net' => round($amount, 2),
+                    'tax_rate' => 0.0,
+                    'tax_amount' => 0.0,
+                    'gross' => round($amount, 2),
+                    'status' => $p->status,
+                    'paid' => true,
+                    'settled' => 0.0,
+                    'outstanding' => 0.0,
+                    'sign' => self::INVOICE,
+                ], $p->credit_note_account_code ?: Account::DEFAULT_SALES, 'sales');
+
+                // It is income, but not a supply made to a customer. Keep it
+                // visible in Sales while excluding it from every GST box.
+                return array_replace($row, [
+                    'gst_code' => GstCodes::OS,
+                    'gst_label' => GstCodes::label(GstCodes::OS),
+                    'f5_box' => null,
+                    'taxable' => false,
+                ]);
+            })
             ->sortBy([['date', 'desc'], ['number', 'desc']])
             ->values();
     }
@@ -274,7 +440,8 @@ class AccountingBooks
     {
         // What the vendor actually billed, where a receipt has been recorded;
         // otherwise the awarded cost is the best figure we have.
-        $net = (float) ($p->receipt_amount ?? $p->subtotal);
+        $grossPurchase = $p->vendorGrossAmount();
+        $net = $p->vendorNetAmount();
         $tax = (float) $p->tax_amount;
         $settlement = Settlement::of($p);
         $date = $p->issued_date ?: $p->created_at;
@@ -285,6 +452,10 @@ class AccountingBooks
             'kind_label' => 'Purchase order',
             'number' => $p->po_number,
             'vendor_invoice_number' => $p->invoice_number,
+            'credit_note_number' => $p->has_credit_note ? $p->credit_note_number : null,
+            'credit_note_amount' => round($p->vendorCreditAmount(), 2),
+            'credit_note_account_code' => $p->has_credit_note ? ($p->credit_note_account_code ?: Account::DEFAULT_SALES) : null,
+            'vendor_gross_amount' => round($grossPurchase, 2),
             'date' => optional($date)->toDateString(),
             'due_date' => optional($p->expected_date)->toDateString(),
             'party_id' => $p->vendor_id,

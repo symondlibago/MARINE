@@ -14,11 +14,14 @@ class AccountSeeder extends Seeder
         ['1020', 'Cash - EUR', Account::ASSET, GstCodes::OS, 'Bank and cash held in euros.'],
         ['1100', 'Trade Receivables', Account::ASSET, GstCodes::SR, 'Invoiced to customers and not yet collected.'],
         ['2000', 'Trade Payables', Account::LIABILITY, GstCodes::SR, 'Owed to vendors and not yet paid.'],
+        ['2100', 'CTM Client Funds Held', Account::LIABILITY, GstCodes::OS, 'Client cash held temporarily for delivery to a vessel master.'],
         ['3000', "Owner's Equity", Account::EQUITY, GstCodes::OS, 'Capital introduced and retained earnings.'],
         ['4000', 'Sales - Local', Account::INCOME, GstCodes::SR, 'Standard-rated sales made within Singapore.'],
         ['4100', 'Sales - Export/International Services', Account::INCOME, GstCodes::ZI, 'Zero-rated sales — exports and international services. Most marine supply falls here.'],
+        ['4200', 'CTM Service Fee Income', Account::INCOME, GstCodes::ZI, 'Fee earned for arranging Cash to Master services.'],
         ['5000', 'Cost of Sales', Account::EXPENSE, GstCodes::SR, 'Goods and services bought to fulfil a customer job.'],
         ['5100', 'Operating Expenses', Account::EXPENSE, GstCodes::SR, 'Running the business — overheads not tied to one job.'],
+        ['5200', 'CTM FX Loss & Transfer Costs', Account::EXPENSE, GstCodes::OS, 'Foreign-exchange variance and transfer costs on CTM transactions.'],
     ];
 
     public function run(): void

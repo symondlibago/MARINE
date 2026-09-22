@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Award;
+use App\Models\CashToMasterRecord;
 use App\Models\CustomerInvoice;
 use App\Models\Offer;
 use App\Models\OperatingExpense;
@@ -138,7 +139,7 @@ class ReportsController extends Controller
 
             $vendors = $pos->map(function (PurchaseOrder $po) use (&$vendorCost, &$expenses, &$costPaid, &$received, &$posPaid) {
                 $rate = (float) ($po->exchange_rate ?: 1);
-                $cost = ($po->receipt_amount !== null ? (float) $po->receipt_amount : (float) $po->subtotal) * $rate;
+                $cost = $po->vendorNetAmount() * $rate;
                 $expRate = $po->expense_currency ? (float) ($po->expense_rate ?: 1) : $rate;
                 $exp = (float) $po->expenses * $expRate;
                 $hasReceipt = $po->receipt_amount !== null || $po->attachments_count > 0;
@@ -199,8 +200,33 @@ class ReportsController extends Controller
 
         [$overhead, $overheadItems] = $this->overheadForRange($from, $to);
 
+        // CTM is an agent service: only the fee is revenue, and only the
+        // entered FX/transfer cost is overhead. The cash principal is neither.
+        $ctm = \Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')
+            ? CashToMasterRecord::with('customer:id,name')
+                ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
+                ->get()
+            : collect();
+        $ctmRevenue = round($ctm->sum(fn ($record) => $record->feeAmount() * (float) ($record->exchange_rate ?: 1)), 2);
+        $ctmFx = round($ctm->sum(fn ($record) => $record->fxExpense() * (float) ($record->exchange_rate ?: 1)), 2);
+        foreach ($ctm as $record) {
+            if ($record->fxExpense() <= 0.005) {
+                continue;
+            }
+            $overheadItems[] = [
+                'id' => 'ctm-'.$record->id,
+                'name' => 'CTM FX — '.$record->reference,
+                'period_start' => $record->transaction_date?->toDateString(),
+                'period_end' => $record->transaction_date?->toDateString(),
+                'amount' => round($record->fxExpense() * (float) ($record->exchange_rate ?: 1), 2),
+            ];
+        }
+        $overhead += $ctmFx;
+
         $sum = fn ($k) => round($rows->sum($k), 2);
-        $revenue = $sum('gross');
+        $invoiceRevenue = $sum('gross');
+        $revenue = round($invoiceRevenue + $ctmRevenue, 2);
         $cogs = $sum('vendor_cost');
         $jobExpenses = $sum('expenses');
         $grossProfit = round($revenue - $cogs - $jobExpenses, 2);
@@ -213,6 +239,11 @@ class ReportsController extends Controller
             'totals' => [
                 'jobs' => $rows->count(),
                 'revenue' => $revenue,
+                'invoice_revenue' => $invoiceRevenue,
+                'ctm_fee_income' => $ctmRevenue,
+                'ctm_fx_expense' => $ctmFx,
+                'ctm_net_cash' => round($ctmRevenue - $ctmFx, 2),
+                'ctm_count' => $ctm->count(),
                 'cogs' => $cogs,
                 'job_expenses' => $jobExpenses,
                 'gross_profit' => $grossProfit,
@@ -536,7 +567,7 @@ class ReportsController extends Controller
                 ->groupBy('customer_id');
         } else {
             $docs = PurchaseOrder::live()->whereIn('vendor_id', $ids)
-                ->get(['id', 'vendor_id', 'currency', 'subtotal', 'receipt_amount', 'status', 'paid_at'])
+                ->get(['id', 'vendor_id', 'currency', 'subtotal', 'receipt_amount', 'has_credit_note', 'credit_note_amount', 'status', 'paid_at'])
                 ->groupBy('vendor_id');
         }
 
@@ -553,7 +584,7 @@ class ReportsController extends Controller
             $flat = $mine->map(function ($d) use ($isCustomer, $index) {
                 $amount = $isCustomer
                     ? (float) $d->grand_total
-                    : (float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal);
+                    : $d->vendorNetAmount();
 
                 $s = $this->settlementOf(
                     round($amount, 2),
@@ -691,7 +722,7 @@ class ReportsController extends Controller
                 // What we owe this vendor is the goods figure — the receipted
                 // amount once known, otherwise what was ordered. Third-party
                 // expenses are reported separately, not added to their balance.
-                $amount = round((float) ($po->receipt_amount !== null ? $po->receipt_amount : $po->subtotal), 2);
+                $amount = round($po->vendorNetAmount(), 2);
                 $s = $this->settlementOf($amount, $po->id, $index, $po->paid_at !== null);
 
                 return [
@@ -705,7 +736,8 @@ class ReportsController extends Controller
                     'currency' => $po->currency,
                     'ordered' => round((float) $po->subtotal, 2),
                     'amount' => $amount,
-                    'credited' => 0.0,
+                    'credited' => round($po->vendorCreditAmount(), 2),
+                    'credit_note_number' => $po->has_credit_note ? $po->credit_note_number : null,
                     'allocated' => $s['allocated'],
                     'settled' => $s['settled'],
                     'outstanding' => $s['outstanding'],
@@ -907,8 +939,8 @@ class ReportsController extends Controller
             $manual = fn ($d) => $this->invoicePaid($d);
         } else {
             $all = PurchaseOrder::live()->where('vendor_id', $id)
-                ->get(['id', 'currency', 'subtotal', 'receipt_amount', 'status', 'paid_at', 'expected_date']);
-            $amountOf = fn ($d) => round((float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal), 2);
+                ->get(['id', 'currency', 'subtotal', 'receipt_amount', 'has_credit_note', 'credit_note_amount', 'status', 'paid_at', 'expected_date']);
+            $amountOf = fn ($d) => round($d->vendorNetAmount(), 2);
             $manual = fn ($d) => $d->paid_at !== null;
         }
 

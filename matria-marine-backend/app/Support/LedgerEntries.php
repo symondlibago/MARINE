@@ -131,7 +131,8 @@ class LedgerEntries
             ->when($to, fn ($q) => $inRange($q, '<=', $to))
             ->with('rfq:id,reference,ship_name')
             ->get(['id', 'vendor_id', 'po_number', 'rfq_id', 'ship_name', 'currency',
-                'subtotal', 'receipt_amount', 'status', 'paid_at', 'issued_date', 'expected_date', 'created_at']);
+                'subtotal', 'receipt_amount', 'has_credit_note', 'credit_note_number', 'credit_note_amount',
+                'status', 'paid_at', 'issued_date', 'expected_date', 'created_at']);
     }
 
     private static function credits(?Carbon $from, ?Carbon $to): Collection
@@ -188,7 +189,7 @@ class LedgerEntries
     {
         $billed = $isCustomer
             ? round((float) $d->grand_total, 2)
-            : round((float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal), 2);
+            : round($d->vendorNetAmount(), 2);
 
         $manuallyPaid = $isCustomer
             ? ($d->status === 'paid' || $d->paid_at !== null)

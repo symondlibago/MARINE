@@ -28,6 +28,7 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\FxController;
+use App\Http\Controllers\CashToMasterController;
 
 /*
 |--------------------------------------------------------------------------
@@ -283,6 +284,12 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
         Route::post('operating-expenses', [OperatingExpenseController::class, 'store']);
         Route::match(['put', 'patch'], 'operating-expenses/{operatingExpense}', [OperatingExpenseController::class, 'update']);
         Route::delete('operating-expenses/{operatingExpense}', [OperatingExpenseController::class, 'destroy']);
+
+        // Cash to Master — direct, already-completed agent transactions.
+        Route::get('cash-to-master', [CashToMasterController::class, 'index']);
+        Route::post('cash-to-master', [CashToMasterController::class, 'store']);
+        Route::match(['put', 'patch'], 'cash-to-master/{cashToMasterRecord}', [CashToMasterController::class, 'update']);
+        Route::delete('cash-to-master/{cashToMasterRecord}', [CashToMasterController::class, 'destroy']);
 
         // Documents — customer/vendor invoices, quotations, enquiries, delivery notes
         Route::apiResource('customers', CustomerController::class);

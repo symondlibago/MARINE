@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Search } from "lucide-react";
 
 /**
  * Animated dropdown replacing native <select>.
@@ -33,8 +33,11 @@ export default function Select({
   triggerClassName = "px-3 py-2",
   portal = false,
   menuWidth,
+  searchable = false,
+  searchPlaceholder = "Search...",
 }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [coords, setCoords] = useState(null);
   const ref = useRef(null);
   const btnRef = useRef(null);
@@ -84,8 +87,11 @@ export default function Select({
 
   const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
   const selected = opts.find((o) => o.value === value);
+  const visibleOpts = searchable && search.trim()
+    ? opts.filter((o) => String(o.label).toLowerCase().includes(search.trim().toLowerCase()))
+    : opts;
 
-  const items = opts.map((o) => (
+  const items = visibleOpts.map((o) => (
     <li key={o.value}>
       <button
         type="button"
@@ -103,6 +109,27 @@ export default function Select({
     </li>
   ));
 
+  const menuContents = (
+    <>
+      {searchable && (
+        <li className="sticky top-0 z-10 border-b border-slate-100 bg-white p-2">
+          <div className="flex items-center gap-2 rounded-md border border-slate-200 px-2.5 py-1.5 focus-within:border-[#28364b] focus-within:ring-1 focus-within:ring-[#28364b]">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+            <input
+              autoFocus
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+              placeholder={searchPlaceholder}
+              className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+            />
+          </div>
+        </li>
+      )}
+      {items.length > 0 ? items : <li className="px-3 py-3 text-center text-sm text-slate-400">No matches found.</li>}
+    </>
+  );
+
   const MENU_CLASS = "max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg";
   const MOTION = {
     initial: { opacity: 0, y: -4, scale: 0.98 },
@@ -116,7 +143,10 @@ export default function Select({
       <button
         ref={btnRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setSearch("");
+          setOpen((o) => !o);
+        }}
         className={`flex w-full items-center justify-between gap-1 rounded-lg border border-slate-200 bg-white text-sm transition-colors hover:border-slate-300 focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b] ${triggerClassName}`}
       >
         <span className={`truncate ${selected ? "text-[#28364b]" : "text-slate-400"}`}>
@@ -136,7 +166,7 @@ export default function Select({
                 style={{ position: "fixed", top: coords.top, bottom: coords.bottom, left: coords.left, width: coords.width, zIndex: 60 }}
                 className={MENU_CLASS}
               >
-                {items}
+                {menuContents}
               </motion.ul>
             )}
           </AnimatePresence>,
@@ -151,7 +181,7 @@ export default function Select({
               style={menuWidth ? { width: menuWidth } : undefined}
               className={`absolute z-50 mt-1 ${menuWidth ? "" : "w-full"} ${MENU_CLASS}`}
             >
-              {items}
+              {menuContents}
             </motion.ul>
           )}
         </AnimatePresence>

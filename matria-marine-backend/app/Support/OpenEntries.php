@@ -162,7 +162,8 @@ class OpenEntries
                 ->orWhere(fn ($w) => $w->whereNull('issued_date')->whereDate('created_at', '<=', $asOf)))
             ->with('rfq:id,reference,ship_name')
             ->get(['id', 'vendor_id', 'po_number', 'rfq_id', 'ship_name', 'currency',
-                'subtotal', 'receipt_amount', 'status', 'paid_at', 'issued_date', 'expected_date', 'created_at']);
+                'subtotal', 'receipt_amount', 'has_credit_note', 'credit_note_number', 'credit_note_amount',
+                'status', 'paid_at', 'issued_date', 'expected_date', 'created_at']);
     }
 
     /** Payments applied on or before the date, summed per document. */
@@ -254,7 +255,7 @@ class OpenEntries
     {
         $billed = $isCustomer
             ? round((float) $d->grand_total, 2)
-            : round((float) ($d->receipt_amount !== null ? $d->receipt_amount : $d->subtotal), 2);
+            : round($d->vendorNetAmount(), 2);
 
         $s = Settlement::resolve(
             $billed,

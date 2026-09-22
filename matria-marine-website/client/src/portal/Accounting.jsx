@@ -317,14 +317,14 @@ function SalesRegister({ range }) {
           <UnclassifiedWarning count={d.unclassified} what="sales document(s)" />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Documents" value={`${d.totals.invoices} inv · ${d.totals.credit_notes} CN`} />
+            <Stat label="Documents" value={`${d.totals.invoices} inv · ${d.totals.credit_notes} CN · ${d.totals.ctm_fees || 0} CTM`} />
             <Stat label="Net of GST" value={money(d.totals.net)} />
             <Stat label="GST charged" value={money(d.totals.tax)} />
             <Stat label="Outstanding" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
           </div>
 
           <Card
-            title="Sales invoices"
+            title="Sales invoices & income credits"
             subtitle={`${d.totals.count} document(s) · gross ${money(d.totals.gross)}`}
             action={
               <div className="flex items-center gap-2">
@@ -334,7 +334,7 @@ function SalesRegister({ range }) {
                   onClick={() =>
                     downloadCsv(
                       rangedFilename("sales-invoices", range),
-                      ["Date", "Type", "Number", "Customer no", "Customer", "Customer ref", "Enquiry", "Vessel",
+                      ["Date", "Type", "Number", "Party no", "Customer / Vendor", "Customer ref", "Enquiry", "Vessel",
                         "Currency", "Account", "Account name", "GST code", "F5 box", "Subtotal", "Delivery",
                         "Net", "GST %", "GST amount", "Gross", "Status", "Settled", "Outstanding"],
                       d.rows.map((r) => [r.date, r.kind_label, r.number, r.party_no, r.party_name, r.party_reference,
@@ -353,7 +353,7 @@ function SalesRegister({ range }) {
                 <table className="w-full text-sm">
                   <thead className="border-b border-slate-100 bg-slate-50/60">
                     <tr>
-                      <TH>Date</TH><TH>Type</TH><TH>Number</TH><TH>Cust #</TH><TH>Customer</TH>
+                      <TH>Date</TH><TH>Type</TH><TH>Number</TH><TH>Party #</TH><TH>Customer / Vendor</TH>
                       <TH>Cust. ref</TH><TH>Enquiry</TH><TH>Vessel</TH><TH>Cur</TH>
                       <TH>Account</TH><TH>GST</TH><TH>Box</TH>
                       <TH right>Subtotal</TH><TH right>Delivery</TH><TH right>Net</TH>
@@ -365,7 +365,15 @@ function SalesRegister({ range }) {
                     {d.rows.map((r) => (
                       <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/60">
                         <TD className="text-slate-500">{r.date || "—"}</TD>
-                        <TD>{r.kind === "credit_memo" ? <Badge tone="red">Credit note</Badge> : <Badge tone="blue">Invoice</Badge>}</TD>
+                        <TD>
+                          {r.kind === "ctm_fee"
+                            ? <Badge tone="green">CTM fee</Badge>
+                            : r.kind === "vendor_credit_note"
+                            ? <Badge tone="green">Vendor credit</Badge>
+                            : r.kind === "credit_memo"
+                              ? <Badge tone="red">Credit note</Badge>
+                              : <Badge tone="blue">Invoice</Badge>}
+                        </TD>
                         <TD mono className="font-medium text-[#28364b]">{r.number}</TD>
                         <TD mono className="text-slate-500">{r.party_no || "—"}</TD>
                         <TD className="max-w-[16rem] truncate" title={r.party_name}>{r.party_name || "—"}</TD>
@@ -431,7 +439,7 @@ function PurchaseRegister({ range }) {
           <UnclassifiedWarning count={d.unclassified} what="purchase document(s)" />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Documents" value={`${d.totals.orders} PO · ${d.totals.expenses} overhead`} />
+            <Stat label="Documents" value={`${d.totals.orders} PO · ${d.totals.expenses} overhead · ${d.totals.ctm_fx || 0} CTM FX`} />
             <Stat label="Net of GST" value={money(d.totals.net)} />
             <Stat label="GST paid" value={money(d.totals.tax)} />
             <Stat label="Unpaid" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
@@ -480,8 +488,8 @@ function PurchaseRegister({ range }) {
                       <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/60">
                         <TD className="text-slate-500">{r.date || "—"}</TD>
                         <TD>
-                          <Badge tone={r.kind === "operating_expense" ? "amber" : "slate"}>
-                            {r.kind === "operating_expense" ? "Overhead" : "PO"}
+                          <Badge tone={r.kind === "operating_expense" || r.kind === "ctm_fx" ? "amber" : "slate"}>
+                            {r.kind === "ctm_fx" ? "CTM FX" : r.kind === "operating_expense" ? "Overhead" : r.kind === "payroll" ? "Payroll" : "PO"}
                           </Badge>
                         </TD>
                         <TD mono className="font-medium text-[#28364b]">{r.number}</TD>

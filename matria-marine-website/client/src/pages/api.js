@@ -365,6 +365,14 @@ export const operatingExpensesAPI = {
   remove: (id) => api.delete(apiUrl(`/portal/operating-expenses/${id}`)),
 };
 
+// --- Cash to Master: direct records of completed agent transactions ---
+export const cashToMasterAPI = {
+  list: (params = {}) => api.get(apiUrl('/portal/cash-to-master'), { params }),
+  create: (payload) => api.post(apiUrl('/portal/cash-to-master'), payload),
+  update: (id, payload) => api.patch(apiUrl(`/portal/cash-to-master/${id}`), payload),
+  remove: (id) => api.delete(apiUrl(`/portal/cash-to-master/${id}`)),
+};
+
 // --- Customers master (for outgoing documents) ---
 export const customersAPI = {
   list: (params = {}) => api.get(apiUrl('/portal/customers'), { params }),

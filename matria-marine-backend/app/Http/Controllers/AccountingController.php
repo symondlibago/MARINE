@@ -136,7 +136,9 @@ class AccountingController extends Controller
             'rows' => $rows->all(),
             'totals' => $this->registerTotals($rows) + [
                 'invoices' => $rows->where('kind', 'invoice')->count(),
-                'credit_notes' => $rows->where('kind', 'credit_memo')->count(),
+                'credit_notes' => $rows->whereIn('kind', ['credit_memo', 'vendor_credit_note'])->count(),
+                'vendor_credit_notes' => $rows->where('kind', 'vendor_credit_note')->count(),
+                'ctm_fees' => $rows->where('kind', 'ctm_fee')->count(),
                 'outstanding' => round($rows->sum('outstanding'), 2),
                 'settled' => round($rows->sum('settled'), 2),
             ],
@@ -164,6 +166,7 @@ class AccountingController extends Controller
                 'orders' => $rows->where('kind', 'purchase_order')->count(),
                 'expenses' => $rows->where('kind', 'operating_expense')->count(),
                 'payroll' => $rows->where('kind', 'payroll')->count(),
+                'ctm_fx' => $rows->where('kind', 'ctm_fx')->count(),
                 'outstanding' => round($rows->sum('outstanding'), 2),
                 'settled' => round($rows->sum('settled'), 2),
                 'job_expenses' => round($rows->sum(fn ($r) => (float) ($r['expenses'] ?? 0)), 2),
@@ -226,7 +229,12 @@ class AccountingController extends Controller
         $sales = AccountingBooks::sales($from, $to);
         $purchases = AccountingBooks::purchases($from, $to);
 
-        $outputSide = $this->gstSide($sales, 'sales');
+        // Vendor credits are income, but are not supplies made to customers.
+        // They belong in the Sales register and income statement, never F5.
+        $outputSide = $this->gstSide(
+            $sales->where('kind', '!=', 'vendor_credit_note')->values(),
+            'sales'
+        );
         $inputSide = $this->gstSide($purchases, 'purchase');
 
         $box = fn (array $side, int $n) => round(
@@ -353,7 +361,22 @@ class AccountingController extends Controller
         $sales = AccountingBooks::sales($from, $to);
         $purchases = AccountingBooks::purchases($from, $to);
 
-        $costOfSales = $purchases->where('kind', 'purchase_order');
+        // The purchase register is net of vendor credits. For the income
+        // statement, show the original purchase on its expense account and the
+        // credit separately on the selected income account. This preserves the
+        // same profit without hiding which account received the credit.
+        $costOfSales = $purchases->where('kind', 'purchase_order')
+            ->map(function (array $row) {
+                $net = (float) ($row['vendor_gross_amount'] ?? $row['net']);
+                $rate = (float) ($row['exchange_rate'] ?? 1);
+
+                return array_replace($row, [
+                    'net' => round($net, 2),
+                    'gross' => round($net + (float) ($row['tax_amount'] ?? 0), 2),
+                    'base_net' => round($net * $rate, 2),
+                    'base_gross' => round(($net + (float) ($row['tax_amount'] ?? 0)) * $rate, 2),
+                ]);
+            });
         // Wages are an overhead like any other. Matching on "not a purchase
         // order" rather than naming each kind, so a cost added later cannot
         // quietly appear in the register but be missed by the profit.
@@ -601,6 +624,23 @@ class AccountingController extends Controller
                 $cash[$code] += $signed;
             } else {
                 $otherCurrency += $signed;
+            }
+        }
+
+        // CTM records are entered only after the transaction is complete. The
+        // pass-through principal cancels, leaving fee less the entered FX or
+        // transfer expense in cash and retained profit.
+        if (\Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')) {
+            $ctm = \App\Models\CashToMasterRecord::whereDate('transaction_date', '<=', $asOf)->get();
+            foreach ($ctm as $record) {
+                $signed = $record->netProfit();
+                $code = self::CASH_ACCOUNTS[strtoupper((string) $record->currency)] ?? null;
+
+                if ($code) {
+                    $cash[$code] += $signed;
+                } else {
+                    $otherCurrency += $signed;
+                }
             }
         }
 

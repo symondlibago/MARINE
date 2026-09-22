@@ -35,10 +35,10 @@ class Settlement
         // What we owe a vendor is the receipted figure once known, otherwise
         // what was ordered. Third-party expenses are reported separately and
         // are deliberately not part of the vendor balance.
-        return round((float) ($doc->receipt_amount !== null ? $doc->receipt_amount : $doc->subtotal), 2);
+        return round($doc->vendorNetAmount(), 2);
     }
 
-    /** Issued credit notes against this invoice (vendors have none). */
+    /** Issued customer credits; vendor credits are already netted into billed(). */
     public static function credited($doc): float
     {
         if (! $doc instanceof CustomerInvoice) {

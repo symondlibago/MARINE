@@ -37,6 +37,10 @@ class PurchaseOrder extends Model
         'acceptance_note',
         'subtotal',
         'receipt_amount',
+        'has_credit_note',
+        'credit_note_number',
+        'credit_note_amount',
+        'credit_note_account_code',
         'expenses',
         'expense_items',
         'expense_currency',
@@ -55,6 +59,8 @@ class PurchaseOrder extends Model
         'exchange_rate' => 'decimal:8',
         'expense_rate' => 'decimal:8',
         'subtotal' => 'decimal:4',
+        'has_credit_note' => 'boolean',
+        'credit_note_amount' => 'decimal:4',
         'tax_rate' => 'decimal:3',
         'tax_amount' => 'decimal:4',
         'expense_items' => 'array',
@@ -116,5 +122,23 @@ class PurchaseOrder extends Model
     public function recalcSubtotal(): void
     {
         $this->update(['subtotal' => $this->items()->sum('line_total')]);
+    }
+
+    /** Vendor charge before a credit note is applied, in PO currency. */
+    public function vendorGrossAmount(): float
+    {
+        return round((float) ($this->receipt_amount ?? $this->subtotal), 4);
+    }
+
+    /** Positive credit granted by the vendor, in PO currency. */
+    public function vendorCreditAmount(): float
+    {
+        return $this->has_credit_note ? round(max((float) $this->credit_note_amount, 0), 4) : 0.0;
+    }
+
+    /** Actual cost and payable after the vendor credit note. */
+    public function vendorNetAmount(): float
+    {
+        return round(max($this->vendorGrossAmount() - $this->vendorCreditAmount(), 0), 4);
     }
 }

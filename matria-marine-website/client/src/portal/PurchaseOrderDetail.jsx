@@ -40,6 +40,10 @@ export default function PurchaseOrderDetail({ params }) {
   const [expected, setExpected] = useState("");
   const [deliverTo, setDeliverTo] = useState("");
   const [receiptAmount, setReceiptAmount] = useState("");
+  const [hasCreditNote, setHasCreditNote] = useState(false);
+  const [creditNoteNumber, setCreditNoteNumber] = useState("");
+  const [creditNoteAmount, setCreditNoteAmount] = useState("");
+  const [creditNoteAccountCode, setCreditNoteAccountCode] = useState("4100");
   const [expenseItems, setExpenseItems] = useState([]); // [{ name, amount }]
   const [expenseCurrency, setExpenseCurrency] = useState(""); // currency of the expense lines
   const [expenseRate, setExpenseRate] = useState(1);          // expense_currency -> base
@@ -72,6 +76,10 @@ export default function PurchaseOrderDetail({ params }) {
     setExpected(po.expected_date ? String(po.expected_date).slice(0, 10) : "");
     setDeliverTo(po.delivery_address || "");
     setReceiptAmount(po.receipt_amount != null ? String(Number(po.receipt_amount)) : "");
+    setHasCreditNote(!!po.has_credit_note);
+    setCreditNoteNumber(po.credit_note_number || "");
+    setCreditNoteAmount(po.has_credit_note && po.credit_note_amount != null ? String(Number(po.credit_note_amount)) : "");
+    setCreditNoteAccountCode(po.credit_note_account_code || "4100");
     setExpenseItems((po.expense_items || []).map((e) => ({ name: e.name ?? "", amount: e.amount != null ? String(Number(e.amount)) : "" })));
     setExpenseCurrency(po.expense_currency || po.currency);
     setExpenseRate(po.expense_currency ? Number(po.expense_rate) || 1 : Number(po.exchange_rate) || 1);
@@ -154,6 +162,9 @@ export default function PurchaseOrderDetail({ params }) {
 
   const isDraft = po?.status === "draft";
   const isClosed = po?.status === "received" || po?.status === "cancelled";
+  const vendorCharge = receiptAmount === "" ? Number(po?.subtotal) || 0 : Number(receiptAmount) || 0;
+  const vendorCredit = hasCreditNote ? Number(creditNoteAmount) || 0 : 0;
+  const netVendorCost = Math.max(vendorCharge - vendorCredit, 0);
 
   const save = useMutation({
     mutationFn: () =>
@@ -162,6 +173,10 @@ export default function PurchaseOrderDetail({ params }) {
         expected_date: expected || null,
         delivery_address: deliverTo || null,
         receipt_amount: receiptAmount === "" ? null : Number(receiptAmount),
+        has_credit_note: hasCreditNote,
+        credit_note_number: hasCreditNote ? creditNoteNumber.trim() : null,
+        credit_note_amount: hasCreditNote ? Number(creditNoteAmount) || 0 : 0,
+        credit_note_account_code: hasCreditNote ? creditNoteAccountCode || "4100" : null,
         paid_at: paidAt || null,
         account_code: accountCode || null,
         tax_rate: taxRate === "" ? 0 : Number(taxRate),
@@ -653,13 +668,75 @@ export default function PurchaseOrderDetail({ params }) {
             </div>
           </div>
 
+          {/* Vendor credit note — a positive contra-cost, never a negative expense. */}
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-[#28364b]">
+              <input
+                type="checkbox"
+                checked={hasCreditNote}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setHasCreditNote(checked);
+                  if (!checked) {
+                    setCreditNoteNumber("");
+                    setCreditNoteAmount("");
+                    setCreditNoteAccountCode("4100");
+                  }
+                }}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Vendor issued a credit note
+            </label>
+            <p className="mt-1 text-xs text-slate-500">
+              Enter the credit as a positive amount. It reduces what is owed to the vendor and is posted to the selected sales/income account.
+            </p>
+            {hasCreditNote && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Credit note number</label>
+                  <input
+                    value={creditNoteNumber}
+                    onChange={(e) => setCreditNoteNumber(e.target.value)}
+                    placeholder="e.g. CN7161"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500">Credit amount ({po.currency})</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={creditNoteAmount}
+                    onChange={(e) => setCreditNoteAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-right text-sm"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <AccountSelect
+                    side="sales"
+                    label="Credit note account code"
+                    value={creditNoteAccountCode}
+                    onChange={setCreditNoteAccountCode}
+                    hint="Determines where this vendor credit appears as income. It is not treated as a customer sale for GST."
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm sm:col-span-2">
+                  <span className="text-slate-500">Net vendor cost after credit</span>
+                  <span className="font-semibold text-emerald-700">{netVendorCost.toFixed(2)} {po.currency}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Accounting classification — what the GST return is built from. */}
           <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
             <AccountSelect
               side="purchase"
               value={accountCode}
               onChange={setAccountCode}
-              hint="Cost of sales for a job purchase; operating expenses for overheads."
+              hint="The account for the original vendor purchase. The credit note uses its own income account above."
             />
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -677,7 +754,7 @@ export default function PurchaseOrderDetail({ params }) {
               />
               <p className="mt-1.5 text-xs text-slate-400">
                 {Number(taxRate) > 0
-                  ? `GST ${(((Number(receiptAmount) || Number(po.subtotal) || 0) * Number(taxRate)) / 100).toFixed(2)} ${po.currency} — claimed as input tax in Box 7.`
+                  ? `GST ${((netVendorCost * Number(taxRate)) / 100).toFixed(2)} ${po.currency} — claimed as input tax in Box 7.`
                   : "Take this from the vendor's invoice. Without it no input tax can be claimed."}
               </p>
             </div>
@@ -776,13 +853,13 @@ export default function PurchaseOrderDetail({ params }) {
           </div>
 
           <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
-            <span className="text-xs text-slate-400">Saves the receipt amount &amp; expenses for the Accounting report.</span>
+            <span className="text-xs text-slate-400">Saves the receipt, vendor credit note &amp; expenses for the Accounting report.</span>
             <button
               onClick={() => save.mutate()}
               disabled={save.isLoading}
               className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70"
             >
-              {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save receipt &amp; expenses
+              {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save reconciliation
             </button>
           </div>
         </div>

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderController extends Controller
 {
@@ -243,6 +244,12 @@ class PurchaseOrderController extends Controller
             'delivery_address' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
             'receipt_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'has_credit_note' => ['sometimes', 'boolean'],
+            'credit_note_number' => ['nullable', 'string', 'max:100', 'required_if:has_credit_note,true'],
+            'credit_note_amount' => ['nullable', 'numeric', 'min:0', 'required_if:has_credit_note,true'],
+            // Optional during rolling deploys; an enabled credit defaults to
+            // the standard sales account below when an older client omits it.
+            'credit_note_account_code' => \App\Models\Account::validationRule(),
             'expenses' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'expense_items' => ['sometimes', 'nullable', 'array'],
             'expense_items.*.name' => ['nullable', 'string', 'max:255'],
@@ -264,11 +271,59 @@ class PurchaseOrderController extends Controller
             'items.*.unit_cost' => ['required_with:items', 'numeric', 'min:0'],
         ]);
 
+        $hasCreditNote = array_key_exists('has_credit_note', $data)
+            ? (bool) $data['has_credit_note']
+            : (bool) $purchaseOrder->has_credit_note;
+        $projectedSubtotal = array_key_exists('items', $data)
+            ? collect($data['items'])->sum(fn ($item) => (float) $item['qty'] * (float) $item['unit_cost'])
+            : (float) $purchaseOrder->subtotal;
+        $receiptAmount = array_key_exists('receipt_amount', $data)
+            ? $data['receipt_amount']
+            : $purchaseOrder->receipt_amount;
+        $gross = (float) ($receiptAmount ?? $projectedSubtotal);
+        $credit = array_key_exists('credit_note_amount', $data)
+            ? (float) ($data['credit_note_amount'] ?? 0)
+            : $purchaseOrder->vendorCreditAmount();
+        if ($hasCreditNote && $credit <= 0) {
+            throw ValidationException::withMessages([
+                'credit_note_amount' => 'Enter a credit note amount greater than 0.',
+            ]);
+        }
+        // A direct purchase can be used to record a standalone vendor credit
+        // before any vendor invoice is entered. Once there is a charge, keep
+        // the credit from turning the payable into a negative amount.
+        if ($hasCreditNote && $gross > 0 && $credit > $gross) {
+            throw ValidationException::withMessages([
+                'credit_note_amount' => 'The credit note amount cannot exceed the vendor charge.',
+            ]);
+        }
+        $creditAccountCode = ($data['credit_note_account_code'] ?? $purchaseOrder->credit_note_account_code)
+            ?: \App\Models\Account::DEFAULT_SALES;
+        $creditAccount = \App\Models\Account::find_by_code($creditAccountCode);
+        if ($hasCreditNote && $creditAccount && $creditAccount->type !== \App\Models\Account::INCOME) {
+            throw ValidationException::withMessages([
+                'credit_note_account_code' => 'Choose a sales or income account for the vendor credit note.',
+            ]);
+        }
+
         DB::transaction(function () use ($purchaseOrder, $data) {
             $attrs = [];
-            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'delivery_address', 'receipt_amount', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
+            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'delivery_address', 'receipt_amount', 'has_credit_note', 'credit_note_number', 'credit_note_amount', 'credit_note_account_code', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
                 if (array_key_exists($key, $data)) {
                     $attrs[$key] = $data[$key];
+                }
+            }
+            if (array_key_exists('has_credit_note', $attrs)) {
+                $attrs['has_credit_note'] = (bool) $attrs['has_credit_note'];
+                if (! $attrs['has_credit_note']) {
+                    $attrs['credit_note_number'] = null;
+                    $attrs['credit_note_amount'] = 0;
+                    $attrs['credit_note_account_code'] = null;
+                } else {
+                    $attrs['credit_note_number'] = trim((string) ($attrs['credit_note_number'] ?? $purchaseOrder->credit_note_number));
+                    $attrs['credit_note_amount'] = round((float) ($attrs['credit_note_amount'] ?? $purchaseOrder->credit_note_amount), 4);
+                    $attrs['credit_note_account_code'] = ($attrs['credit_note_account_code'] ?? $purchaseOrder->credit_note_account_code)
+                        ?: \App\Models\Account::DEFAULT_SALES;
                 }
             }
             // Blank clears back to cost of sales rather than storing "".
@@ -349,7 +404,7 @@ class PurchaseOrderController extends Controller
      */
     private function recalcTax(PurchaseOrder $purchaseOrder): void
     {
-        $net = (float) ($purchaseOrder->receipt_amount ?? $purchaseOrder->subtotal);
+        $net = $purchaseOrder->vendorNetAmount();
         $rate = (float) $purchaseOrder->tax_rate;
 
         $purchaseOrder->forceFill([
