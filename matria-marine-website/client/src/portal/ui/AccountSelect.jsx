@@ -51,23 +51,31 @@ export function useChart() {
  * typo `31530`. Both stay selectable and visible, marked as old, so opening an
  * old enquiry never quietly rewrites what it was coded to. Picking a real
  * account replaces it.
+ *
+ * `full` spells the account out on the closed box instead of showing the bare
+ * number. The offer grid is too narrow for it, but on an invoice or a purchase
+ * order there is room — and "5200" alone reads as plausible on a line it has no
+ * business being on, where "5200 — CTM FX Loss & Transfer Costs" does not.
  */
-export function AccountCodeCell({ value, onChange, className = "", style, placeholder = "Acct code" }) {
+export function AccountCodeCell({ value, onChange, className = "", style, placeholder = "Acct code", full = false }) {
   const { data } = useChart();
 
   const all = data?.accounts ?? [];
   const selected = all.find((a) => a.code === value);
   const legacy = value && !selected;
 
+  // Omitting `short` leaves the trigger showing the whole label.
+  const brief = (text) => (full ? {} : { short: text });
+
   const options = [
-    { value: "", label: placeholder, short: placeholder },
+    { value: "", label: placeholder, ...brief(placeholder) },
     // A code the chart does not know stays selectable so opening an old
     // enquiry never quietly rewrites what it was coded to.
-    ...(legacy ? [{ value, label: `${value} — not on the chart`, short: value }] : []),
+    ...(legacy ? [{ value, label: `${value} — not on the chart`, ...brief(value) }] : []),
     ...all
       .filter((a) => a.is_active)
       // The cell shows the bare code; the menu spells out what it means.
-      .map((a) => ({ value: a.code, label: `${a.code} — ${a.name}`, short: a.code })),
+      .map((a) => ({ value: a.code, label: `${a.code} — ${a.name}`, ...brief(a.code) })),
   ];
 
   return (

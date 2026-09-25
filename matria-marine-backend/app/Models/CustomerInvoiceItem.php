@@ -14,6 +14,9 @@ class CustomerInvoiceItem extends Model
         'unit',
         'qty',
         'unit_price',
+        // Which account this line lands in. Per line, not per invoice: one
+        // document can carry income lines and pass-through lines together.
+        'account_code',
         'line_total',
         'remarks',
         'sort',

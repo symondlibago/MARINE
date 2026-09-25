@@ -389,12 +389,14 @@ function AccountingReport() {
               <h3 className="mb-3 text-sm font-bold text-[#28364b]">Income statement ({cur})</h3>
               <dl className="space-y-1.5 text-sm">
                 <PLine label="Revenue (ex-GST)" value={m(t.revenue)} />
-                {t.ctm_count > 0 && <PLine label="Included CTM fee income" value={m(t.ctm_fee_income)} />}
+                {/* Money billed on behalf of someone else — a Cash to Master
+                    principal — passes through without ever being revenue. */}
+                {t.pass_through > 0 && <PLine label="Billed to clients" value={m(t.billed)} />}
+                {t.pass_through > 0 && <PLine label="Of which passed through (not income)" value={m(t.pass_through)} neg />}
                 <PLine label="Cost of goods (vendors)" value={m(t.cogs)} neg />
                 <PLine label="Job expenses" value={m(t.job_expenses)} neg />
                 <PLine label="Gross profit" value={m(t.gross_profit)} strong divider />
                 <PLine label="Overhead" value={m(t.overhead)} neg />
-                {t.ctm_count > 0 && <PLine label="Included CTM FX loss / (gain)" value={m(t.ctm_fx_expense)} neg />}
                 <PLine label="Net profit" value={m(t.net_profit)} strong divider accent={t.net_profit >= 0 ? "text-green-700" : "text-red-600"} />
               </dl>
             </div>
@@ -404,7 +406,6 @@ function AccountingReport() {
                 <PLine label="Collected from customers" value={m(t.collected)} />
                 <PLine label="Receivables outstanding (A/R)" value={m(t.receivables)} accent="text-amber-600" />
                 <PLine label="Paid to vendors" value={m(t.cost_paid)} />
-                {t.ctm_count > 0 && <PLine label="Net cash from CTM" value={m(t.ctm_net_cash)} />}
                 <PLine label="Payables outstanding (A/P)" value={m(t.payables)} accent="text-amber-600" />
                 <PLine label="Net cash (collected − paid)" value={m(t.collected - t.cost_paid)} strong divider />
               </dl>

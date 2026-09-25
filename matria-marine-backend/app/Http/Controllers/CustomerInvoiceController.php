@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Mail\CustomerInvoiceMail;
+use App\Models\Account;
 use App\Models\Customer;
 use App\Models\CustomerInvoice;
 use App\Models\DeliveryOrder;
@@ -121,6 +122,8 @@ class CustomerInvoiceController extends Controller
                     'unit' => $it->unit,
                     'qty' => $it->qty,
                     'unit_price' => $it->unit_price,
+                    // The quotation line already decided where this belongs.
+                    'account_code' => $it->accounting_code,
                     'line_total' => $it->line_total,
                     'remarks' => $it->remarks,
                     'sort' => $sort++,
@@ -206,6 +209,10 @@ class CustomerInvoiceController extends Controller
             // negative price ("Special Discount 10%", -4,065.80). The subtotal
             // falls on its own, so GST is charged on what is actually payable.
             'items.*.unit_price' => ['nullable', 'numeric'],
+            // Per line, because one invoice can mix income with pass-through:
+            // a CTM principal sits on a liability account while the handling
+            // fee beside it is income.
+            'items.*.account_code' => Account::validationRule(),
             'items.*.remarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -277,6 +284,12 @@ class CustomerInvoiceController extends Controller
                         'unit' => $row['unit'] ?? null,
                         'qty' => $heading ? 0 : $qty,
                         'unit_price' => $heading ? 0 : $price,
+                        // A heading is a label, not a posting — it never carries
+                        // an account. Otherwise fall back to the invoice's own
+                        // code so a line is never left unclassified.
+                        'account_code' => $heading
+                            ? null
+                            : (($row['account_code'] ?? null) ?: $invoice->account_code),
                         'line_total' => $heading ? 0 : round($qty * $price, 2),
                         'remarks' => $row['remarks'] ?? null,
                         'sort' => $i,

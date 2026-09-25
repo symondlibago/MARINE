@@ -9,7 +9,7 @@ import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
 import { gridKeyDown } from "./ui/gridKeys";
-import AccountSelect from "./ui/AccountSelect";
+import AccountSelect, { AccountCodeCell } from "./ui/AccountSelect";
 import { fetchRates, rateToBase } from "@/lib/fx";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
@@ -71,6 +71,7 @@ export default function PurchaseOrderDetail({ params }) {
       unit: it.unit || "",
       qty: String(Number(it.qty)),
       unit_cost: String(Number(it.unit_cost)),
+      account_code: it.account_code || "",
     })));
     setNotes(po.notes || "");
     setExpected(po.expected_date ? String(po.expected_date).slice(0, 10) : "");
@@ -97,6 +98,7 @@ export default function PurchaseOrderDetail({ params }) {
         unit: it.unit || "",
         ordered: Number(it.qty),
         unit_cost: Number(it.unit_cost),
+        account_code: it.account_code || "",
         qty: ri ? String(Number(ri.qty)) : "",
         reason: ri?.reason || "",
       };
@@ -193,6 +195,7 @@ export default function PurchaseOrderDetail({ params }) {
                 unit: it.unit || null,
                 qty: Number(it.qty) || 0,
                 unit_cost: Number(it.unit_cost) || 0,
+                account_code: it.account_code || null,
               })),
             }
           : {}),
@@ -315,7 +318,7 @@ export default function PurchaseOrderDetail({ params }) {
   const returnsTotal = returns.reduce((s, r) => s + Math.min(Number(r.qty) || 0, r.ordered) * (r.unit_cost || 0), 0);
   const netPayable = grandTotal - returnsTotal;
   const setItem = (idx, patch) => setItems((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
-  const addItem = () => setItems((arr) => [...arr, { description: "", unit: "", qty: "1", unit_cost: "0" }]);
+  const addItem = () => setItems((arr) => [...arr, { description: "", unit: "", qty: "1", unit_cost: "0", account_code: "" }]);
   const removeItem = (idx) => setItems((arr) => arr.filter((_, i) => i !== idx));
 
   return (
@@ -433,6 +436,8 @@ export default function PurchaseOrderDetail({ params }) {
               <th className="w-24 px-3 py-3 font-semibold">Unit</th>
               <th className="w-28 px-3 py-3 text-right font-semibold">Qty</th>
               <th className="w-32 px-3 py-3 text-right font-semibold">Unit cost</th>
+              {/* Per line, so one order can split across accounts. */}
+              <th className="w-64 px-3 py-3 font-semibold" title="Which account this line is costed to">Account</th>
               <th className="w-32 px-3 py-3 text-right font-semibold">Line total</th>
               {isDraft && <th className="w-10 px-2 py-3"></th>}
             </tr>
@@ -470,6 +475,19 @@ export default function PurchaseOrderDetail({ params }) {
                     <span className="text-slate-600">{Number(it.unit_cost).toFixed(2)}</span>
                   )}
                 </td>
+                <td className="px-3 py-2">
+                  {isDraft ? (
+                    <AccountCodeCell
+                      full
+                      className={`w-full ${it.account_code ? "" : "ring-1 ring-amber-300"}`}
+                      value={it.account_code}
+                      onChange={(v) => setItem(idx, { account_code: v })}
+                      placeholder="Account…"
+                    />
+                  ) : (
+                    <span className="text-slate-600">{it.account_code || "—"}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-medium text-[#28364b]">
                   {((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)).toFixed(2)}
                 </td>
@@ -483,12 +501,14 @@ export default function PurchaseOrderDetail({ params }) {
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={isDraft ? 6 : 5} className="py-8 text-center text-slate-400">No line items.</td></tr>
+              <tr><td colSpan={isDraft ? 7 : 6} className="py-8 text-center text-slate-400">No line items.</td></tr>
             )}
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-200">
-              <td colSpan={isDraft ? 4 : 4} className="px-4 py-3 text-right text-sm font-semibold text-slate-500">Total ({po.currency})</td>
+              {/* Description, Unit, Qty, Unit cost, Account — the label runs up
+                  to the Line total column, which holds the figure. */}
+              <td colSpan={5} className="px-4 py-3 text-right text-sm font-semibold text-slate-500">Total ({po.currency})</td>
               <td className="px-3 py-3 text-right text-base font-bold text-[#28364b]">{grandTotal.toFixed(2)}</td>
               {isDraft && <td></td>}
             </tr>

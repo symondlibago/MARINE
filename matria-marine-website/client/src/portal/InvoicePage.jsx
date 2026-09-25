@@ -10,7 +10,7 @@ import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import ProofOfDelivery from "./ProofOfDelivery";
 import { gridKeyDown } from "./ui/gridKeys";
-import AccountSelect from "./ui/AccountSelect";
+import AccountSelect, { AccountCodeCell } from "./ui/AccountSelect";
 import { PageLoader, Spinner } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 
@@ -31,7 +31,7 @@ const input =
 const cellInput =
   "rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
 
-const blankLine = () => ({ is_heading: false, description: "", code: "", unit: "", qty: "", unit_price: "", remarks: "" });
+const blankLine = () => ({ is_heading: false, description: "", code: "", unit: "", qty: "", unit_price: "", account_code: "", remarks: "" });
 
 export default function InvoicePage({ params }) {
   const id = params.id;
@@ -45,6 +45,9 @@ export default function InvoicePage({ params }) {
 
   const [form, setForm] = useState(null);
   const [lines, setLines] = useState([]);
+  // One account stamped across every line at once, for the common case where
+  // the whole invoice belongs to the same place.
+  const [bulkAcct, setBulkAcct] = useState("");
   // Credit memo editor: one row per SAVED invoice line (credit qty defaults to 0).
   const [cmLines, setCmLines] = useState([]);
   const [cmReason, setCmReason] = useState("");
@@ -77,6 +80,7 @@ export default function InvoicePage({ params }) {
       unit: it.unit ?? "",
       qty: it.is_heading ? "" : it.qty ?? "",
       unit_price: it.is_heading ? "" : it.unit_price ?? "",
+      account_code: it.account_code ?? "",
       remarks: it.remarks ?? "",
     })));
     const existingCm = (data.credit_memos || [])[0];
@@ -137,6 +141,21 @@ export default function InvoicePage({ params }) {
    * question, and only asked when it actually applies.
    */
   const saveWithDateCheck = async () => {
+    // Every billable line has to say which account it lands in, or the books
+    // cannot tell earnings from money collected for someone else. Naming the
+    // lines beats a generic "something is missing".
+    const uncoded = lines
+      .map((l, i) => ({ l, n: i + 1 }))
+      .filter(({ l }) => !l.is_heading && !l.account_code);
+
+    if (uncoded.length) {
+      toast.error(
+        `Set an account code on line${uncoded.length === 1 ? "" : "s"} ` +
+        uncoded.map(({ l, n }) => `${n}${l.description ? ` (${l.description.slice(0, 28)})` : ""}`).join(", ")
+      );
+      return;
+    }
+
     const moved = form.issue_date !== ymd(data?.issue_date);
     const issued = (data?.status ?? "draft") !== "draft";
 
@@ -331,6 +350,26 @@ export default function InvoicePage({ params }) {
           </div>
         </div>
 
+        {/* Each line is coded on its own, because one invoice can hold things
+            of different kinds — a Cash to Master principal is money held for
+            the vessel, the handling fee beside it is income. When they all
+            belong to the same account, set it once here. */}
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+          <span className="text-xs text-slate-500">Set all account codes</span>
+          <AccountCodeCell value={bulkAcct} onChange={setBulkAcct} className="w-64" placeholder="Choose account…" />
+          <button
+            type="button"
+            disabled={!bulkAcct}
+            onClick={() => {
+              setLines((ls) => ls.map((l) => (l.is_heading ? l : { ...l, account_code: bulkAcct })));
+              toast.success("Account code applied to every line.");
+            }}
+            className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+          >
+            Apply to all
+          </button>
+        </div>
+
         {lines.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">No lines yet — add an item or a section heading above.</p>
         ) : (
@@ -372,7 +411,16 @@ export default function InvoicePage({ params }) {
                 </div>
                 {!l.is_heading && (
                   <div className="mt-1 flex gap-2 pl-1">
-                    <input value={l.code} onChange={(e) => setLine(i, "code", e.target.value)} placeholder="Part-No. (optional)" className={cellInput + " w-1/3 !py-1 text-[11px]"} />
+                    {/* Required. An uncoded line cannot be told apart from
+                        revenue, so the save is blocked until it is set. */}
+                    <AccountCodeCell
+                      full
+                      className={`w-72 shrink-0 ${l.account_code ? "" : "ring-1 ring-amber-300"}`}
+                      value={l.account_code}
+                      onChange={(v) => setLine(i, "account_code", v)}
+                      placeholder="Account…"
+                    />
+                    <input value={l.code} onChange={(e) => setLine(i, "code", e.target.value)} placeholder="Part-No. (optional)" className={cellInput + " w-1/5 !py-1 text-[11px]"} />
                     {/* textarea, not input: a multi-line remark carried over from
                         the enquiry would be silently flattened by a text input. */}
                     <textarea rows={1} value={l.remarks} onChange={(e) => setLine(i, "remarks", e.target.value)} placeholder="Remark — prints below the item (optional)" className={cellInput + " flex-1 resize-y !py-1 text-[11px] leading-snug"} />

@@ -205,6 +205,8 @@ class PurchaseOrderController extends Controller
                         'unit' => $item->unit,
                         'qty' => $qty,
                         'unit_cost' => $cost,
+                        // The enquiry line already decided where this belongs.
+                        'account_code' => $item->accounting_code ?: $po->account_code,
                         'line_total' => $lineTotal,
                         'remarks' => $award->quoteItem?->remarks, // carry the awarded vendor's remark
                         'sort' => $sort,
@@ -269,6 +271,9 @@ class PurchaseOrderController extends Controller
             'items.*.qty' => ['required_with:items', 'numeric', 'min:0'],
             'items.*.unit' => ['nullable', 'string', 'max:50'],
             'items.*.unit_cost' => ['required_with:items', 'numeric', 'min:0'],
+            // Per line, so one order can split across accounts the way an
+            // invoice does. Falls back to the order's own code when omitted.
+            'items.*.account_code' => \App\Models\Account::validationRule(),
         ]);
 
         $hasCreditNote = array_key_exists('has_credit_note', $data)
@@ -370,6 +375,7 @@ class PurchaseOrderController extends Controller
                         'unit' => $row['unit'] ?? null,
                         'qty' => $row['qty'],
                         'unit_cost' => $row['unit_cost'],
+                        'account_code' => ($row['account_code'] ?? null) ?: $purchaseOrder->account_code,
                         'line_total' => round((float) $row['qty'] * (float) $row['unit_cost'], 4),
                         'sort' => $i,
                     ];

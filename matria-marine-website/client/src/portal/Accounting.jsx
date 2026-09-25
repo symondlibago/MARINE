@@ -317,7 +317,7 @@ function SalesRegister({ range }) {
           <UnclassifiedWarning count={d.unclassified} what="sales document(s)" />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Documents" value={`${d.totals.invoices} inv · ${d.totals.credit_notes} CN · ${d.totals.ctm_fees || 0} CTM`} />
+            <Stat label="Documents" value={`${d.totals.invoices} inv · ${d.totals.credit_notes} CN`} />
             <Stat label="Net of GST" value={money(d.totals.net)} />
             <Stat label="GST charged" value={money(d.totals.tax)} />
             <Stat label="Outstanding" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
@@ -358,6 +358,11 @@ function SalesRegister({ range }) {
                       <TH>Account</TH><TH>GST</TH><TH>Box</TH>
                       <TH right>Subtotal</TH><TH right>Delivery</TH><TH right>Net</TH>
                       <TH right>GST %</TH><TH right>GST</TH><TH right>Gross</TH>
+                      {/* Net/Gross above are the SALE. These two say what the
+                          customer was actually invoiced and how much of that
+                          was never ours — a CTM principal, for instance. */}
+                      <TH right title="What the customer was invoiced, including anything only passing through">Billed</TH>
+                      <TH right title="Collected on someone else's behalf — not a sale, not in any GST box">Pass-thru</TH>
                       <TH>Status</TH><TH right>Settled</TH><TH right>Outstanding</TH>
                     </tr>
                   </thead>
@@ -366,9 +371,7 @@ function SalesRegister({ range }) {
                       <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/60">
                         <TD className="text-slate-500">{r.date || "—"}</TD>
                         <TD>
-                          {r.kind === "ctm_fee"
-                            ? <Badge tone="green">CTM fee</Badge>
-                            : r.kind === "vendor_credit_note"
+                          {r.kind === "vendor_credit_note"
                             ? <Badge tone="green">Vendor credit</Badge>
                             : r.kind === "credit_memo"
                               ? <Badge tone="red">Credit note</Badge>
@@ -393,6 +396,14 @@ function SalesRegister({ range }) {
                         <TD right className="text-slate-500">{Number(r.tax_rate || 0)}%</TD>
                         <TD right><Amount value={r.tax_amount} zeroDash /></TD>
                         <TD right><Amount value={r.gross} /></TD>
+                        <TD right className={Number(r.pass_through_net) ? "" : "text-slate-400"}>
+                          <Amount value={r.billed_gross ?? r.gross} />
+                        </TD>
+                        <TD right>
+                          {Number(r.pass_through_net)
+                            ? <span className="font-medium text-amber-700"><Amount value={r.pass_through_net} /></span>
+                            : <span className="text-slate-300">—</span>}
+                        </TD>
                         <TD>
                           <Badge tone={r.paid ? "green" : r.status === "draft" ? "slate" : "amber"}>{r.status}</Badge>
                         </TD>
@@ -409,6 +420,12 @@ function SalesRegister({ range }) {
                       <TD right />
                       <TD right><Amount value={d.totals.tax} bold /></TD>
                       <TD right><Amount value={d.totals.gross} bold /></TD>
+                      <TD right><Amount value={d.totals.billed} bold /></TD>
+                      <TD right>
+                        {Number(d.totals.pass_through)
+                          ? <span className="font-bold text-amber-700"><Amount value={d.totals.pass_through} /></span>
+                          : <span className="text-slate-300">—</span>}
+                      </TD>
                       <TD />
                       <TD right><Amount value={d.totals.settled} bold /></TD>
                       <TD right><Amount value={d.totals.outstanding} bold /></TD>
@@ -439,7 +456,7 @@ function PurchaseRegister({ range }) {
           <UnclassifiedWarning count={d.unclassified} what="purchase document(s)" />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Documents" value={`${d.totals.orders} PO · ${d.totals.expenses} overhead · ${d.totals.ctm_fx || 0} CTM FX`} />
+            <Stat label="Documents" value={`${d.totals.orders} PO · ${d.totals.expenses} overhead`} />
             <Stat label="Net of GST" value={money(d.totals.net)} />
             <Stat label="GST paid" value={money(d.totals.tax)} />
             <Stat label="Unpaid" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
@@ -488,8 +505,8 @@ function PurchaseRegister({ range }) {
                       <tr key={`${r.kind}-${r.id}`} className="hover:bg-slate-50/60">
                         <TD className="text-slate-500">{r.date || "—"}</TD>
                         <TD>
-                          <Badge tone={r.kind === "operating_expense" || r.kind === "ctm_fx" ? "amber" : "slate"}>
-                            {r.kind === "ctm_fx" ? "CTM FX" : r.kind === "operating_expense" ? "Overhead" : r.kind === "payroll" ? "Payroll" : "PO"}
+                          <Badge tone={r.kind === "operating_expense" ? "amber" : "slate"}>
+                            {r.kind === "operating_expense" ? "Overhead" : r.kind === "payroll" ? "Payroll" : "PO"}
                           </Badge>
                         </TD>
                         <TD mono className="font-medium text-[#28364b]">{r.number}</TD>

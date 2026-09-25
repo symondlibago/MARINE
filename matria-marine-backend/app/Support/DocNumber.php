@@ -30,7 +30,6 @@ class DocNumber
         'CM' => ['MMS-CM', 6],
         'RCPT' => ['MMS-RCPT', 6],   // money received from a customer
         'PMT' => ['MMS-PMT', 6],     // money paid out to a vendor
-        'CTM' => ['MMS-CTM', 6],     // reconciled Cash to Master record
     ];
 
     /** type => human label, in the order an admin would expect to see them. */
@@ -43,7 +42,6 @@ class DocNumber
         'CM' => 'Credit note',
         'RCPT' => 'Payment received',
         'PMT' => 'Payment made',
-        'CTM' => 'Cash to Master',
     ];
 
     /**
@@ -74,7 +72,6 @@ class DocNumber
         // Receipts and payments share a column and are told apart by prefix.
         'RCPT' => [[\App\Models\Payment::class, 'payment_number']],
         'PMT' => [[\App\Models\Payment::class, 'payment_number']],
-        'CTM' => [[\App\Models\CashToMasterRecord::class, 'reference']],
     ];
 
     /** @return list<string> every numbering key, in display order */

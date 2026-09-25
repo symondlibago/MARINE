@@ -16,6 +16,8 @@ class PurchaseOrderItem extends Model
         'unit',
         'qty',
         'unit_cost',
+        // Which account this line lands in, per line rather than per order.
+        'account_code',
         'line_total',
         'remarks',
         'sort',

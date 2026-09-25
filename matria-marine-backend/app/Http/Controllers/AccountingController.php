@@ -138,7 +138,6 @@ class AccountingController extends Controller
                 'invoices' => $rows->where('kind', 'invoice')->count(),
                 'credit_notes' => $rows->whereIn('kind', ['credit_memo', 'vendor_credit_note'])->count(),
                 'vendor_credit_notes' => $rows->where('kind', 'vendor_credit_note')->count(),
-                'ctm_fees' => $rows->where('kind', 'ctm_fee')->count(),
                 'outstanding' => round($rows->sum('outstanding'), 2),
                 'settled' => round($rows->sum('settled'), 2),
             ],
@@ -166,7 +165,6 @@ class AccountingController extends Controller
                 'orders' => $rows->where('kind', 'purchase_order')->count(),
                 'expenses' => $rows->where('kind', 'operating_expense')->count(),
                 'payroll' => $rows->where('kind', 'payroll')->count(),
-                'ctm_fx' => $rows->where('kind', 'ctm_fx')->count(),
                 'outstanding' => round($rows->sum('outstanding'), 2),
                 'settled' => round($rows->sum('settled'), 2),
                 'job_expenses' => round($rows->sum(fn ($r) => (float) ($r['expenses'] ?? 0)), 2),
@@ -183,6 +181,11 @@ class AccountingController extends Controller
             'net' => round($rows->sum('net'), 2),
             'tax' => round($rows->sum('tax_amount'), 2),
             'gross' => round($rows->sum('gross'), 2),
+            // What was invoiced, against the part of it that was never a sale.
+            // Equal to gross unless something passed through — a Cash to Master
+            // principal collected for a vessel master, say.
+            'billed' => round($rows->sum('billed_gross'), 2),
+            'pass_through' => round($rows->sum('pass_through_net'), 2),
             'base_net' => round($rows->sum('base_net'), 2),
             'base_tax' => round($rows->sum('base_tax'), 2),
             'base_gross' => round($rows->sum('base_gross'), 2),
@@ -624,23 +627,6 @@ class AccountingController extends Controller
                 $cash[$code] += $signed;
             } else {
                 $otherCurrency += $signed;
-            }
-        }
-
-        // CTM records are entered only after the transaction is complete. The
-        // pass-through principal cancels, leaving fee less the entered FX or
-        // transfer expense in cash and retained profit.
-        if (\Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')) {
-            $ctm = \App\Models\CashToMasterRecord::whereDate('transaction_date', '<=', $asOf)->get();
-            foreach ($ctm as $record) {
-                $signed = $record->netProfit();
-                $code = self::CASH_ACCOUNTS[strtoupper((string) $record->currency)] ?? null;
-
-                if ($code) {
-                    $cash[$code] += $signed;
-                } else {
-                    $otherCurrency += $signed;
-                }
             }
         }
 

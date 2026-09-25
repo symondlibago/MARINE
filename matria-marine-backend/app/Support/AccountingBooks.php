@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use App\Models\Account;
-use App\Models\CashToMasterRecord;
 use App\Models\CreditMemo;
 use App\Models\CustomerInvoice;
 use App\Models\OperatingExpense;
@@ -61,7 +60,7 @@ class AccountingBooks
     {
         $invoices = CustomerInvoice::query()
             ->where('status', '!=', 'draft')
-            ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name'])
+            ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->whereDate('issue_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('issue_date', '<=', $to))
             ->get()
@@ -77,19 +76,78 @@ class AccountingBooks
 
         return $invoices->concat($credits)
             ->concat(self::vendorCredits($from, $to))
-            ->concat(self::ctmFees($from, $to))
             ->sortBy([['date', 'desc'], ['number', 'desc']])
             ->values();
+    }
+
+    /**
+     * Split a document's lines into what we earned and what is only passing
+     * through us.
+     *
+     * A line coded to an income account is revenue. One coded to a liability —
+     * the Cash to Master principal, collected from the client to hand to a
+     * vessel master — is money we are holding, never money we made. The client
+     * still owes the whole invoice; only this split decides what counts as
+     * profit. The purchase side works the same way against expense accounts.
+     *
+     * A line with no code at all stays on the document's own side: a missing
+     * code is an oversight, and quietly dropping the amount from the totals
+     * would be worse than counting it.
+     *
+     * @return array{kept: float, pass_through: float, by_account: array<string, float>}
+     */
+    private static function lineSplit(iterable $lines, string $amountField, ?string $fallbackCode, string $wantType): array
+    {
+        $kept = 0.0;
+        $passed = 0.0;
+        $byAccount = [];
+
+        foreach ($lines as $line) {
+            if (! empty($line->is_heading)) {
+                continue;   // a label, not a posting
+            }
+
+            $amount = (float) $line->{$amountField};
+            $code = $line->account_code ?: $fallbackCode;
+            $account = Account::find_by_code($code);
+
+            if ($account === null || $account->type === $wantType) {
+                $kept += $amount;
+            } else {
+                $passed += $amount;
+            }
+
+            $key = $code ?: '—';
+            $byAccount[$key] = round(($byAccount[$key] ?? 0) + $amount, 2);
+        }
+
+        return [
+            'kept' => round($kept, 2),
+            'pass_through' => round($passed, 2),
+            'by_account' => $byAccount,
+        ];
     }
 
     private static function salesRow(CustomerInvoice $i): array
     {
         $delivery = (float) $i->packing_cost + (float) $i->transportation_cost;
-        $net = (float) $i->subtotal + $delivery;
+        $billedNet = (float) $i->subtotal + $delivery;
         $tax = (float) $i->tax_amount;
         $settlement = Settlement::of($i);
 
+        // Packing and transportation are charges we make, so they are always
+        // ours; only the line items can be pass-through.
+        $split = self::lineSplit($i->items, 'line_total', $i->account_code, Account::INCOME);
+        $saleLines = $split['kept'];
+        $saleNet = $saleLines + $delivery;
+
+        // Tax follows the part that is actually a supply. With nothing passing
+        // through, the ratio is 1 and the invoice's own tax is used unchanged.
+        $saleTax = $billedNet > 0 ? round($tax * ($saleNet / $billedNet), 2) : $tax;
+
         return self::classify([
+            'revenue_net' => round($saleNet, 2),
+            'account_breakdown' => $split['by_account'],
             'id' => $i->id,
             'kind' => 'invoice',
             'kind_label' => 'Invoice',
@@ -104,12 +162,22 @@ class AccountingBooks
             'vessel' => $i->rfq?->ship_name,
             'currency' => $i->currency,
             'exchange_rate' => 1.0,
-            'subtotal' => round((float) $i->subtotal, 2),
+            // The SALE, not the invoice. A Cash to Master principal is billed
+            // to the client and collected from them, but it was never a supply
+            // Matria made — it belongs to the vessel master. Leaving it in
+            // these columns puts 10,000 of somebody else's money into the sales
+            // register and into GST Box 2. The full invoice is still carried
+            // below as billed_*, and settled/outstanding stay whole, because
+            // the customer does owe and pay the lot.
+            'subtotal' => round($saleLines, 2),
             'delivery' => round($delivery, 2),
-            'net' => round($net, 2),
+            'net' => round($saleNet, 2),
             'tax_rate' => (float) $i->tax_rate,
-            'tax_amount' => round($tax, 2),
-            'gross' => round($net + $tax, 2),
+            'tax_amount' => round($saleTax, 2),
+            'gross' => round($saleNet + $saleTax, 2),
+            'billed_net' => round($billedNet, 2),
+            'billed_gross' => round($billedNet + $tax, 2),
+            'pass_through_net' => $split['pass_through'],
             'status' => $i->status,
             'paid' => $i->status === 'paid' || $i->paid_at !== null,
             'settled' => $settlement['settled'],
@@ -153,50 +221,6 @@ class AccountingBooks
         ], $c->account_code, 'sales');
     }
 
-    /** The fee Matria earns as agent on each reconciled CTM record. */
-    public static function ctmFees(?Carbon $from, ?Carbon $to): Collection
-    {
-        if (! \Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')) {
-            return collect();
-        }
-
-        return CashToMasterRecord::with('customer:id,name,customer_no')
-            ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
-            ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
-            ->get()
-            ->filter(fn (CashToMasterRecord $record) => $record->feeAmount() > 0)
-            ->map(function (CashToMasterRecord $record) {
-                $fee = $record->feeAmount();
-
-                return self::classify([
-                    'id' => $record->id,
-                    'kind' => 'ctm_fee',
-                    'kind_label' => 'CTM fee income',
-                    'number' => $record->reference,
-                    'date' => $record->transaction_date?->toDateString(),
-                    'due_date' => null,
-                    'party_id' => $record->customer_id,
-                    'party_no' => $record->customer?->customer_no,
-                    'party_name' => $record->customer?->name,
-                    'party_reference' => null,
-                    'reference' => $record->reference,
-                    'vessel' => $record->vessel,
-                    'currency' => $record->currency,
-                    'exchange_rate' => (float) ($record->exchange_rate ?: 1),
-                    'subtotal' => round($fee, 2),
-                    'delivery' => 0.0,
-                    'net' => round($fee, 2),
-                    'tax_rate' => 0.0,
-                    'tax_amount' => 0.0,
-                    'gross' => round($fee, 2),
-                    'status' => 'recorded',
-                    'paid' => true,
-                    'settled' => round($fee, 2),
-                    'outstanding' => 0.0,
-                    'sign' => self::INVOICE,
-                ], $record->fee_account_code ?: '4200', 'sales');
-            });
-    }
 
     /* ------------------------------------------------------------------ */
     /*  Purchases                                                         */
@@ -216,7 +240,7 @@ class AccountingBooks
     public static function purchases(?Carbon $from, ?Carbon $to): Collection
     {
         $orders = PurchaseOrder::live()
-            ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name'])
+            ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '>=', $from)
                 ->orWhere(fn ($n) => $n->whereNull('issued_date')->whereDate('created_at', '>=', $from))))
             ->when($to, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '<=', $to)
@@ -226,63 +250,10 @@ class AccountingBooks
 
         return $orders->concat(self::expenses($from, $to))
             ->concat(self::payroll($from, $to))
-            ->concat(self::ctmFxAdjustments($from, $to))
             ->sortBy([['date', 'desc'], ['number', 'desc']])
             ->values();
     }
 
-    /** CTM FX loss or transfer cost entered directly for the transaction. */
-    public static function ctmFxAdjustments(?Carbon $from, ?Carbon $to): Collection
-    {
-        if (! \Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')) {
-            return collect();
-        }
-
-        return CashToMasterRecord::with('customer:id,name,customer_no')
-            ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
-            ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
-            ->get()
-            ->filter(fn (CashToMasterRecord $record) => $record->fxExpense() > 0.005)
-            ->map(function (CashToMasterRecord $record) {
-                $expense = $record->fxExpense();
-
-                $row = self::classify([
-                    'id' => $record->id,
-                    'kind' => 'ctm_fx',
-                    'kind_label' => 'CTM FX / transfer expense',
-                    'number' => $record->reference,
-                    'vendor_invoice_number' => null,
-                    'date' => $record->transaction_date?->toDateString(),
-                    'due_date' => null,
-                    'party_id' => $record->customer_id,
-                    'party_no' => $record->customer?->customer_no,
-                    'party_name' => $record->customer?->name,
-                    'party_reference' => null,
-                    'reference' => $record->reference,
-                    'vessel' => $record->vessel,
-                    'currency' => $record->currency,
-                    'exchange_rate' => (float) ($record->exchange_rate ?: 1),
-                    'subtotal' => round($expense, 2),
-                    'expenses' => 0.0,
-                    'net' => round($expense, 2),
-                    'tax_rate' => 0.0,
-                    'tax_amount' => 0.0,
-                    'gross' => round($expense, 2),
-                    'status' => 'recorded',
-                    'paid' => true,
-                    'settled' => 0.0,
-                    'outstanding' => 0.0,
-                    'sign' => self::INVOICE,
-                ], $record->fx_account_code ?: '5200', 'purchase');
-
-                return array_replace($row, [
-                    'gst_code' => GstCodes::OS,
-                    'gst_label' => GstCodes::label(GstCodes::OS),
-                    'f5_box' => null,
-                    'taxable' => false,
-                ]);
-            });
-    }
 
     /**
      * Vendor credits posted to the chosen income account.
@@ -296,7 +267,7 @@ class AccountingBooks
         return PurchaseOrder::live()
             ->where('has_credit_note', true)
             ->where('credit_note_amount', '>', 0)
-            ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name'])
+            ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '>=', $from)
                 ->orWhere(fn ($n) => $n->whereNull('issued_date')->whereDate('created_at', '>=', $from))))
             ->when($to, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '<=', $to)
@@ -446,7 +417,16 @@ class AccountingBooks
         $settlement = Settlement::of($p);
         $date = $p->issued_date ?: $p->created_at;
 
+        // Lines coded somewhere other than an expense account are money moving
+        // through us, not cost. Taken off the net rather than recomputed from
+        // the lines, because a recorded vendor receipt overrides the line sum.
+        $split = self::lineSplit($p->items, 'line_total', $p->account_code, Account::EXPENSE);
+        $cost = round($net - $split['pass_through'], 2);
+
         return self::classify([
+            'cost_net' => $cost,
+            'pass_through_net' => $split['pass_through'],
+            'account_breakdown' => $split['by_account'],
             'id' => $p->id,
             'kind' => 'purchase_order',
             'kind_label' => 'Purchase order',
@@ -564,7 +544,18 @@ class AccountingBooks
             'f5_box' => $box,
             'taxable' => $taxable,
             'unclassified' => $account === null,
+            // Rows built without a line split — credit notes, vendor credits —
+            // are earned in full, so they default to their own net.
+            'revenue_net' => $row['net'],
+            'cost_net' => $row['net'],
+            'pass_through_net' => 0.0,
+            // Documents with nothing passing through were billed exactly what
+            // they sold, so these default to the same figures.
+            'billed_net' => $row['net'],
+            'billed_gross' => $row['gross'],
+            'account_breakdown' => [],
             'base_currency' => self::baseCurrency(),
+            'base_revenue' => round(($row['revenue_net'] ?? $row['net']) * $row['exchange_rate'], 2),
             'base_net' => round($row['net'] * $row['exchange_rate'], 2),
             'base_tax' => round($row['tax_amount'] * $row['exchange_rate'], 2),
             'base_gross' => round($row['gross'] * $row['exchange_rate'], 2),

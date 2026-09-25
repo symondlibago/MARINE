@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Award;
-use App\Models\CashToMasterRecord;
 use App\Models\CustomerInvoice;
 use App\Models\Offer;
 use App\Models\OperatingExpense;
@@ -92,13 +91,39 @@ class ReportsController extends Controller
      * NOTE: revenue is taken at the invoice's face value (assumed base currency, like
      * the prior report); only vendor costs carry a per-PO exchange rate.
      */
+    /**
+     * The part of an invoice that was never ours to earn.
+     *
+     * Cash to Master is the case this exists for: the client is billed 10,000
+     * of principal plus 500 of handling, and hands over 10,500. Only the 500 is
+     * income — the principal goes straight to the vessel master. Coding that
+     * line to 2100 (a liability) is what marks it, so the rule is simply "a
+     * line that is not on an income account is not revenue".
+     *
+     * A line with no code counts as revenue: a missing code is an oversight,
+     * and silently dropping the amount would understate the books.
+     */
+    private function passThroughOn(CustomerInvoice $invoice): float
+    {
+        $fallback = $invoice->account_code;
+
+        return $invoice->items->reject(fn ($line) => (bool) $line->is_heading)
+            ->sum(function ($line) use ($fallback) {
+                $account = \App\Models\Account::find_by_code($line->account_code ?: $fallback);
+
+                return ($account && $account->type !== \App\Models\Account::INCOME)
+                    ? (float) $line->line_total
+                    : 0.0;
+            });
+    }
+
     public function accounting(Request $request)
     {
         [$from, $to] = $this->range($request);
         $base = $this->baseCurrency();
 
         // Revenue side: customer invoices whose issue date falls in the range.
-        $invoices = CustomerInvoice::with(['rfq:id,reference,ship_name', 'creditMemos:id,customer_invoice_id,cm_number,status,subtotal'])
+        $invoices = CustomerInvoice::with(['rfq:id,reference,ship_name', 'items', 'creditMemos:id,customer_invoice_id,cm_number,status,subtotal'])
             ->when($from, fn ($q) => $q->where('issue_date', '>=', $from))
             ->when($to, fn ($q) => $q->where('issue_date', '<=', $to))
             ->orderByDesc('issue_date')
@@ -118,10 +143,17 @@ class ReportsController extends Controller
         $costedRfq = [];
 
         $rows = $invoices->map(function (CustomerInvoice $inv) use ($posByRfq, &$costedRfq) {
-            $gross = (float) $inv->grand_total - (float) $inv->tax_amount; // ex-GST: tax isn't income
+            $billed = (float) $inv->grand_total - (float) $inv->tax_amount; // ex-GST: tax isn't income
             // Issued credit memos reduce the sale (their subtotal is ex-GST too).
             $credits = (float) $inv->creditMemos->where('status', 'issued')->sum('subtotal');
-            $gross = round($gross - $credits, 2);
+            $billed = round($billed - $credits, 2);
+
+            // Lines coded outside an income account are collected on someone
+            // else's behalf — a Cash to Master principal handed to a vessel
+            // master. The customer owes the whole invoice, so A/R stays on
+            // $billed, but only the rest of it is ours to call revenue.
+            $passThrough = round($this->passThroughOn($inv), 2);
+            $gross = round($billed - $passThrough, 2);
             $invoicePaid = $inv->status === 'paid' || $inv->paid_at !== null;
 
             $pos = ($inv->rfq_id && ! isset($costedRfq[$inv->rfq_id]))
@@ -168,7 +200,8 @@ class ReportsController extends Controller
 
             $poCount = $pos->count();
             $costIncurred = $vendorCost + $expenses;
-            $collected = $invoicePaid ? $gross : 0.0;
+            // Cash moves on the full invoice, not on the revenue portion.
+            $collected = $invoicePaid ? $billed : 0.0;
 
             return [
                 'invoice_id' => $inv->id,
@@ -180,6 +213,11 @@ class ReportsController extends Controller
                 'date' => optional($inv->issue_date)->toDateString(),
                 'currency' => $inv->currency,
                 'gross' => round($gross, 2),
+                // What the customer was actually billed, and the part of it
+                // that was never ours. Equal unless the invoice carries a
+                // pass-through line such as a CTM principal.
+                'billed' => round($billed, 2),
+                'pass_through' => $passThrough,
                 'credits' => round($credits, 2),
                 'credit_memo' => $inv->creditMemos->where('status', 'issued')->pluck('cm_number')->implode(', ') ?: null,
                 'vendor_cost' => round($vendorCost, 2),
@@ -188,7 +226,7 @@ class ReportsController extends Controller
                 'net' => round($gross - $costIncurred, 2),
                 'invoice_paid' => $invoicePaid,
                 'collected' => round($collected, 2),
-                'receivable' => round($gross - $collected, 2),
+                'receivable' => round($billed - $collected, 2),
                 'cost_paid' => round($costPaid, 2),
                 'payable' => round($costIncurred - $costPaid, 2),
                 'received' => $received,
@@ -200,33 +238,11 @@ class ReportsController extends Controller
 
         [$overhead, $overheadItems] = $this->overheadForRange($from, $to);
 
-        // CTM is an agent service: only the fee is revenue, and only the
-        // entered FX/transfer cost is overhead. The cash principal is neither.
-        $ctm = \Illuminate\Support\Facades\Schema::hasTable('cash_to_master_records')
-            ? CashToMasterRecord::with('customer:id,name')
-                ->when($from, fn ($q) => $q->whereDate('transaction_date', '>=', $from))
-                ->when($to, fn ($q) => $q->whereDate('transaction_date', '<=', $to))
-                ->get()
-            : collect();
-        $ctmRevenue = round($ctm->sum(fn ($record) => $record->feeAmount() * (float) ($record->exchange_rate ?: 1)), 2);
-        $ctmFx = round($ctm->sum(fn ($record) => $record->fxExpense() * (float) ($record->exchange_rate ?: 1)), 2);
-        foreach ($ctm as $record) {
-            if ($record->fxExpense() <= 0.005) {
-                continue;
-            }
-            $overheadItems[] = [
-                'id' => 'ctm-'.$record->id,
-                'name' => 'CTM FX — '.$record->reference,
-                'period_start' => $record->transaction_date?->toDateString(),
-                'period_end' => $record->transaction_date?->toDateString(),
-                'amount' => round($record->fxExpense() * (float) ($record->exchange_rate ?: 1), 2),
-            ];
-        }
-        $overhead += $ctmFx;
-
+        // Cash to Master is raised as an ordinary invoice now, so its fee is
+        // already in the rows below: the handling line sits on an income
+        // account, the principal on a liability one and never counts.
         $sum = fn ($k) => round($rows->sum($k), 2);
-        $invoiceRevenue = $sum('gross');
-        $revenue = round($invoiceRevenue + $ctmRevenue, 2);
+        $revenue = $sum('gross');
         $cogs = $sum('vendor_cost');
         $jobExpenses = $sum('expenses');
         $grossProfit = round($revenue - $cogs - $jobExpenses, 2);
@@ -239,11 +255,11 @@ class ReportsController extends Controller
             'totals' => [
                 'jobs' => $rows->count(),
                 'revenue' => $revenue,
-                'invoice_revenue' => $invoiceRevenue,
-                'ctm_fee_income' => $ctmRevenue,
-                'ctm_fx_expense' => $ctmFx,
-                'ctm_net_cash' => round($ctmRevenue - $ctmFx, 2),
-                'ctm_count' => $ctm->count(),
+                // What clients were billed in total, against the part of it
+                // that is ours. They differ when an invoice carries a
+                // pass-through line such as a Cash to Master principal.
+                'billed' => round($rows->sum('billed'), 2),
+                'pass_through' => round($rows->sum('pass_through'), 2),
                 'cogs' => $cogs,
                 'job_expenses' => $jobExpenses,
                 'gross_profit' => $grossProfit,

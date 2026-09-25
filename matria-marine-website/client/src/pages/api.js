@@ -1,21 +1,21 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: 'https://marine-production.up.railway.app',
-  headers: {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  }
-});
-
-// Local development — swap the two blocks over, and swap them BACK before pushing.
 // const api = axios.create({
-//   baseURL: 'http://localhost:8000',
+//   baseURL: 'https://marine-production.up.railway.app',
 //   headers: {
 //     'Accept': 'application/json',
 //     'Content-Type': 'application/json',
 //   }
 // });
+
+// Local development — swap the two blocks over, and swap them BACK before pushing.
+const api = axios.create({
+  baseURL: 'http://localhost:8000',
+  headers: {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  }
+});
 
 // Interceptor to attach the token from LocalStorage to every request
 api.interceptors.request.use(config => {
@@ -363,14 +363,6 @@ export const operatingExpensesAPI = {
   create: (payload) => api.post(apiUrl('/portal/operating-expenses'), payload),
   update: (id, payload) => api.patch(apiUrl(`/portal/operating-expenses/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/operating-expenses/${id}`)),
-};
-
-// --- Cash to Master: direct records of completed agent transactions ---
-export const cashToMasterAPI = {
-  list: (params = {}) => api.get(apiUrl('/portal/cash-to-master'), { params }),
-  create: (payload) => api.post(apiUrl('/portal/cash-to-master'), payload),
-  update: (id, payload) => api.patch(apiUrl(`/portal/cash-to-master/${id}`), payload),
-  remove: (id) => api.delete(apiUrl(`/portal/cash-to-master/${id}`)),
 };
 
 // --- Customers master (for outgoing documents) ---

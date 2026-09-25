@@ -26,7 +26,6 @@ import Reports from "./Reports";
 import Accounting from "./Accounting";
 import Statements from "./Statements";
 import OperatingExpenses from "./OperatingExpenses";
-import CashToMaster from "./CashToMaster";
 import Customers from "./Customers";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
@@ -102,7 +101,6 @@ export default function PortalApp() {
               <Route path="/accounting" component={Accounting} />
               <Route path="/statements" component={Statements} />
               <Route path="/operating-expenses" component={OperatingExpenses} />
-              <Route path="/cash-to-master" component={CashToMaster} />
               <Route path="/customers" component={Customers} />
               <Route path="/staff" component={ManageStaff} />
               <Route path="/numbering" component={DocumentSeries} />
