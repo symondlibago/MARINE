@@ -68,7 +68,7 @@ class AccountingBooks
 
         $credits = CreditMemo::query()
             ->where('status', 'issued')
-            ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name'])
+            ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->whereDate('memo_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('memo_date', '<=', $to))
             ->get()
@@ -191,7 +191,20 @@ class AccountingBooks
         $net = (float) $c->subtotal;
         $tax = (float) $c->tax_amount;
 
+        // A credit undoes a sale, so it is split the same way the sale was.
+        // Handing back a Cash to Master principal reverses a liability, not
+        // revenue — it was never income going out, so it is not income coming
+        // back either.
+        $split = self::lineSplit($c->items, 'line_total', $c->account_code, Account::INCOME);
+        $saleNet = $split['kept'];
+        $saleTax = $net > 0 ? round($tax * ($saleNet / $net), 2) : $tax;
+
         return self::classify([
+            'revenue_net' => round(-$saleNet, 2),
+            'billed_net' => round(-$net, 2),
+            'billed_gross' => round(-($net + $tax), 2),
+            'pass_through_net' => round(-$split['pass_through'], 2),
+            'account_breakdown' => $split['by_account'],
             'id' => $c->id,
             'kind' => 'credit_memo',
             'kind_label' => 'Credit note',
@@ -207,12 +220,14 @@ class AccountingBooks
             'currency' => $c->currency,
             'exchange_rate' => 1.0,
             // Negative throughout: a credit note is a sale running backwards.
-            'subtotal' => round(-$net, 2),
+            // Only the part that was a sale, for the same reason the invoice
+            // only counted that part in the first place.
+            'subtotal' => round(-$saleNet, 2),
             'delivery' => 0.0,
-            'net' => round(-$net, 2),
+            'net' => round(-$saleNet, 2),
             'tax_rate' => (float) $c->tax_rate,
-            'tax_amount' => round(-$tax, 2),
-            'gross' => round(-($net + $tax), 2),
+            'tax_amount' => round(-$saleTax, 2),
+            'gross' => round(-($saleNet + $saleTax), 2),
             'status' => $c->status,
             'paid' => true,
             'settled' => 0.0,
@@ -350,61 +365,89 @@ class AccountingBooks
             ->when($to, fn ($q) => $q->where(fn ($w) => $w->whereDate('payment_date', '<=', $to)
                 ->orWhere(fn ($n) => $n->whereNull('payment_date')->whereDate('period', '<=', $to))))
             ->get()
-            ->map(function ($run) {
-                $cost = $run->costToBusiness();
+            // One run becomes three rows: what staff earned, the employer's CPF
+            // on top, and the levy on top of that. The run already works all
+            // three out — posting them separately is what lets the income
+            // statement show the staff-cost breakdown instead of one figure.
+            ->flatMap(function ($run) {
                 $t = $run->totals();
-                $account = $run->accountRecord();
+                $to = $run->postingAccounts();
 
-                return [
-                    'id' => $run->id,
-                    'kind' => 'payroll',
-                    'kind_label' => 'Payroll',
-                    'number' => 'Payroll '.optional($run->period)->format('M Y'),
-                    'vendor_invoice_number' => null,
-                    'date' => optional($run->payment_date ?: $run->period)->toDateString(),
-                    'due_date' => null,
-                    'party_id' => null,
-                    'party_no' => null,
-                    'party_name' => sprintf('%d employee(s)', $t['headcount'] ?? 0),
-                    'party_reference' => null,
-                    'reference' => null,
-                    'vessel' => null,
-                    'currency' => $run->currency ?: self::baseCurrency(),
-                    'exchange_rate' => 1.0,
-                    'subtotal' => $cost,
-                    'expenses' => 0.0,
-                    'net' => $cost,
-                    'tax_rate' => 0.0,
-                    'tax_amount' => 0.0,
-                    'gross' => $cost,
-                    'status' => $run->status,
-                    'paid' => true,
-                    'settled' => 0.0,
-                    'outstanding' => 0.0,
-                    'sign' => self::INVOICE,
-                    // Everything below is stated outright rather than derived
-                    // through classify(), because payroll's GST treatment comes
-                    // from what it IS, not from the account it is booked to.
-                    'account_code' => $run->account_code,
-                    'account_name' => $account?->name,
-                    'account_type' => $account?->type,
-                    'gst_code' => GstCodes::OS,
-                    'gst_label' => GstCodes::label(GstCodes::OS),
-                    'f5_box' => null,
-                    'taxable' => false,
-                    'unclassified' => $run->account_code === null,
-                    'base_currency' => self::baseCurrency(),
-                    'base_net' => $cost,
-                    'base_tax' => 0.0,
-                    'base_gross' => $cost,
-                    // Context the payroll screens already show, carried through
-                    // so the register can explain the figure without a join.
-                    'headcount' => $t['headcount'] ?? 0,
-                    'gross_earnings' => $t['gross_earnings'] ?? 0,
-                    'employer_cpf' => $t['employer_cpf'] ?? 0,
-                    'sdl' => $t['sdl'] ?? 0,
+                $parts = [
+                    ['Salaries', (float) ($t['gross_earnings'] ?? 0), $to['salaries']],
+                    ['CPF (employer)', (float) ($t['employer_cpf'] ?? 0), $to['cpf']],
+                    ['SDL & other contributions', (float) ($t['sdl'] ?? 0), $to['sdl']],
                 ];
+
+                // A run that predates the split, or one whose figures do not add
+                // up to the recorded cost, stays a single row on its own account
+                // rather than quietly losing the difference.
+                $split = round(array_sum(array_column($parts, 1)), 2);
+                if (abs($split - $run->costToBusiness()) > 0.01 || Account::chart()->isEmpty()) {
+                    $parts = [[null, $run->costToBusiness(), $run->account_code]];
+                }
+
+                return collect($parts)
+                    ->reject(fn ($p) => abs($p[1]) < 0.005)
+                    ->map(fn ($p) => self::payrollRow($run, $t, $p[0], $p[1], $p[2]))
+                    ->values();
             });
+    }
+
+    /** One posting from a payroll run: its label, its amount, its account. */
+    private static function payrollRow($run, array $t, ?string $label, float $cost, ?string $code): array
+    {
+        $account = Account::find_by_code($code);
+
+        return [
+            'id' => $run->id,
+            'kind' => 'payroll',
+            'kind_label' => $label ? 'Payroll — '.$label : 'Payroll',
+            'number' => 'Payroll '.optional($run->period)->format('M Y').($label ? ' · '.$label : ''),
+            'vendor_invoice_number' => null,
+            'date' => optional($run->payment_date ?: $run->period)->toDateString(),
+            'due_date' => null,
+            'party_id' => null,
+            'party_no' => null,
+            'party_name' => sprintf('%d employee(s)', $t['headcount'] ?? 0),
+            'party_reference' => null,
+            'reference' => null,
+            'vessel' => null,
+            'currency' => $run->currency ?: self::baseCurrency(),
+            'exchange_rate' => 1.0,
+            'subtotal' => $cost,
+            'expenses' => 0.0,
+            'net' => $cost,
+            'tax_rate' => 0.0,
+            'tax_amount' => 0.0,
+            'gross' => $cost,
+            'status' => $run->status,
+            'paid' => true,
+            'settled' => 0.0,
+            'outstanding' => 0.0,
+            'sign' => self::INVOICE,
+        // Everything below is stated outright rather than derived
+        // through classify(), because payroll's GST treatment comes
+        // from what it IS, not from the account it is booked to.
+            'account_code' => $code,
+            'account_name' => $account?->name,
+            'account_type' => $account?->type,
+            'gst_code' => GstCodes::OS,
+            'gst_label' => GstCodes::label(GstCodes::OS),
+            'f5_box' => null,
+            'taxable' => false,
+            'unclassified' => $code === null,
+            'base_currency' => self::baseCurrency(),
+            'base_net' => $cost,
+            'base_tax' => 0.0,
+            'base_gross' => $cost,
+        // Context the payroll screens already show, carried through
+        // so the register can explain the figure without a join.
+            'headcount' => $t['headcount'] ?? 0,
+            'gross_earnings' => $t['gross_earnings'] ?? 0,
+            'employer_cpf' => $t['employer_cpf'] ?? 0,
+            'sdl' => $t['sdl'] ?? 0,
+        ];
     }
 
     private static function purchaseRow(PurchaseOrder $p): array

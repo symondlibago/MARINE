@@ -195,6 +195,11 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
 
         // Credit memos — credit part of an issued invoice back (PDF only, no email)
         Route::post('invoices/{invoice}/credit-memo', [CreditMemoController::class, 'storeForInvoice']);
+        Route::get('credit-memos', [CreditMemoController::class, 'index']);
+        // Static segments before the {creditMemo} routes below, or "creditable"
+        // would be read as a memo id.
+        Route::get('credit-memos/creditable-invoices', [CreditMemoController::class, 'creditableInvoices']);
+        Route::get('credit-memos/invoice/{invoice}/lines', [CreditMemoController::class, 'invoiceLines']);
         Route::get('credit-memos/{creditMemo}/pdf', [CreditMemoController::class, 'pdf']);
         Route::get('credit-memos/{creditMemo}', [CreditMemoController::class, 'show']);
         Route::patch('credit-memos/{creditMemo}', [CreditMemoController::class, 'update']);

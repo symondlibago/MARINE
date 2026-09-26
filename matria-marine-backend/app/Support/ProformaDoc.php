@@ -49,6 +49,20 @@ class ProformaDoc
         // Only what is actually charged: a zero delivery line or 0% GST on a
         // zero-rated marine supply is noise on a document asking to be paid.
         $extra = [];
+
+        // The discount taken off the whole quotation. Per-line discounts are
+        // NOT added here — they are already inside each line's amount, and are
+        // spelled out under their own item instead, so nothing is counted
+        // twice. The VENDOR's discount never appears at all: that is our buying
+        // price and none of the customer's business.
+        $overall = round((float) $offer->discount_amount, 2);
+        if ($overall > 0) {
+            $extra[] = [
+                'label' => 'Discount '.rtrim(rtrim(number_format((float) $offer->discount_pct, 2, '.', ''), '0'), '.').'%',
+                'amount' => -$overall,
+            ];
+        }
+
         if ($delivery > 0) {
             $extra[] = ['label' => 'Delivery', 'amount' => round($delivery, 2)];
         }
@@ -90,6 +104,10 @@ class ProformaDoc
             'qty' => (float) $i->qty,
             'unit_price' => (float) $i->unit_price,
             'line_total' => (float) $i->line_total,
+            // A discount given on this line alone. Already inside line_total,
+            // so it is printed under the item rather than added to the totals.
+            'discount_pct' => (float) ($i->cust_discount_pct ?? 0),
+            'discount_amount' => (float) ($i->cust_discount_amount ?? 0),
             'remarks' => $i->remarks,
         ])->values()->all();
     }

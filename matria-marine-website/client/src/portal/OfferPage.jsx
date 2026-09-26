@@ -45,13 +45,16 @@ export default function OfferPage({ params }) {
     queryFn: async () => (await offersAPI.get(id)).data.data,
   });
 
-  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", customer_po_number: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "", tax_rate: "" });
+  const [header, setHeader] = useState({ customer_id: "", currency: "USD", valid_until: "", payment_terms: "", delivery_terms: "", origin_type: "", customer_po_number: "", status: "draft", notes: "", packing_cost: "", transportation_cost: "", discount_pct: "", tax_rate: "" });
   const [items, setItems] = useState([]);
   const [bulk, setBulk] = useState("");
   const [pickedCustomerName, setPickedCustomerName] = useState(null);
   const [bulkLead, setBulkLead] = useState("");
   // One account from Matria's chart, stamped on every line at once.
   const [bulkAcct, setBulkAcct] = useState("");
+  const [bulkDisc, setBulkDisc] = useState("");
+  const [bulkVendorDisc, setBulkVendorDisc] = useState("");
+  const [bulkRemark, setBulkRemark] = useState("");
 
   useEffect(() => {
     if (!offer) return;
@@ -67,6 +70,7 @@ export default function OfferPage({ params }) {
       notes: offer.notes || "",
       packing_cost: offer.packing_cost != null ? String(offer.packing_cost) : "",
       transportation_cost: offer.transportation_cost != null ? String(offer.transportation_cost) : "",
+      discount_pct: offer.discount_pct != null && Number(offer.discount_pct) > 0 ? String(Number(offer.discount_pct)) : "",
       tax_rate: offer.tax_rate != null && Number(offer.tax_rate) > 0 ? String(Number(offer.tax_rate)) : "",
     });
     setItems(
@@ -265,6 +269,26 @@ export default function OfferPage({ params }) {
   const applyBulkAcct = () => {
     setItems((arr) => arr.map((it) => ({ ...it, accounting_code: bulkAcct.trim() })));
   };
+  /** The customer's discount — money off what they pay — on every line. */
+  const applyBulkDisc = () => {
+    const d = Number(bulkDisc);
+    if (Number.isNaN(d) || bulkDisc === "") return;
+    setItems((arr) => arr.map((it) => ({ ...it, cust_discount_pct: d })));
+  };
+  /** The vendor's — money off what we pay, which we keep. Not the same thing. */
+  const applyBulkVendorDisc = () => {
+    const d = Number(bulkVendorDisc);
+    if (Number.isNaN(d) || bulkVendorDisc === "") return;
+    // Lines Matria priced itself have no vendor behind them to discount.
+    setItems((arr) => arr.map((it) => (it.manual ? it : { ...it, discount_pct: d })));
+  };
+  /**
+   * Blank is allowed, like the account code: typing nothing and applying is how
+   * you clear a remark that went onto every line by mistake.
+   */
+  const applyBulkRemark = () => {
+    setItems((arr) => arr.map((it) => ({ ...it, remarks: bulkRemark.trim() })));
+  };
 
   // Live maths — must mirror OfferController::lineMaths() exactly.
   //
@@ -318,14 +342,22 @@ export default function OfferPage({ params }) {
   const custTotal = rows.reduce((s, r) => s + r.line_total, 0);
   // What the customer's discounts took off, across the whole quotation.
   const custDiscTotal = rows.reduce((s, r) => s + (Number(r.cust_disc_amount) || 0), 0);
-  const profit = custTotal - baseTotal;
-  const profitPct = baseTotal > 0 ? (profit / baseTotal) * 100 : 0;
   const packing = Number(header.packing_cost) || 0;
   const transportation = Number(header.transportation_cost) || 0;
   const deliveryTotal = packing + transportation;
+
+  // A discount over the whole quotation, on top of anything already taken off
+  // line by line. Off the items only, not delivery — and before GST, because
+  // the tax follows what is actually charged. Mirrors Offer::recalcTotals().
+  const overallDiscPct = Number(header.discount_pct) || 0;
+  const overallDiscAmount = Math.round(custTotal * overallDiscPct) / 100;
+  const netAfterDisc = custTotal - overallDiscAmount;
+
+  const profit = netAfterDisc - baseTotal;
+  const profitPct = baseTotal > 0 ? (profit / baseTotal) * 100 : 0;
   const taxRate = Number(header.tax_rate) || 0;
-  const taxAmount = ((custTotal + deliveryTotal) * taxRate) / 100;
-  const grandTotal = custTotal + deliveryTotal + taxAmount;
+  const taxAmount = ((netAfterDisc + deliveryTotal) * taxRate) / 100;
+  const grandTotal = netAfterDisc + deliveryTotal + taxAmount;
 
   const custName = header.customer_id ? pickedCustomerName ?? offer?.customer_name ?? null : null;
 
@@ -384,6 +416,7 @@ export default function OfferPage({ params }) {
         customer_po_number: header.customer_po_number.trim() || null,
         packing_cost: Number(header.packing_cost) || 0,
         transportation_cost: Number(header.transportation_cost) || 0,
+        discount_pct: Number(header.discount_pct) || 0,
         tax_rate: Number(header.tax_rate) || 0,
         status: header.status,
         notes: header.notes || null,
@@ -737,6 +770,27 @@ export default function OfferPage({ params }) {
             <span className="ml-2 text-xs text-slate-500">Set all acct code</span>
             <AccountCodeCell value={bulkAcct} onChange={setBulkAcct} className="w-56" placeholder="Choose account…" />
             <button onClick={applyBulkAcct} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
+
+            {/* The two discounts are opposites and sit apart for that reason:
+                this one comes off the customer's bill, the next comes off our
+                cost and stays with us. */}
+            <span className="ml-2 text-xs text-slate-500">Set all disc %</span>
+            <div className="relative">
+              <input type="number" value={bulkDisc} onChange={(e) => setBulkDisc(e.target.value)} placeholder="%" title="Discount for the customer — comes off what they pay" className="w-20 rounded border border-slate-200 px-2 py-1 pr-5 text-sm" />
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+            </div>
+            <button onClick={applyBulkDisc} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
+
+            <span className="ml-2 text-xs text-slate-500">Set all vendor disc %</span>
+            <div className="relative">
+              <input type="number" value={bulkVendorDisc} onChange={(e) => setBulkVendorDisc(e.target.value)} placeholder="%" title="Discount the VENDOR gives us — lowers our cost and becomes profit" className="w-20 rounded border border-amber-200 bg-amber-50/40 px-2 py-1 pr-5 text-sm" />
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+            </div>
+            <button onClick={applyBulkVendorDisc} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
+
+            <span className="ml-2 text-xs text-slate-500">Set all remarks</span>
+            <input value={bulkRemark} onChange={(e) => setBulkRemark(e.target.value)} placeholder="e.g. Genuine OEM" className="w-44 rounded border border-slate-200 px-2 py-1 text-sm" />
+            <button onClick={applyBulkRemark} className="rounded-lg border border-[#28364b] px-3 py-1 text-sm font-medium text-[#28364b] transition-colors hover:bg-slate-50">Apply to all</button>
           </div>
         </div>
 
@@ -912,6 +966,34 @@ export default function OfferPage({ params }) {
                 <td className="px-1.5 py-2 text-right whitespace-nowrap">
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">After mark-up</div>
                   <div className="text-sm font-semibold text-[#28364b]">{money(custTotal)}</div>
+                </td>
+                <td colSpan={4}></td>
+              </tr>
+              {/* A discount off the bottom line, for when the deal is struck on
+                  the total rather than item by item. It stacks on top of any
+                  per-line discount, and GST below follows the reduced figure. */}
+              <tr className="bg-slate-50">
+                <td colSpan={15} className="px-1.5 py-1 text-right text-xs text-slate-500">
+                  <span className="mr-2">Discount on the whole quotation</span>
+                  <span className="relative inline-block">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      value={header.discount_pct ?? ""}
+                      onChange={(e) => setH("discount_pct", e.target.value)}
+                      placeholder="0"
+                      title="Comes off the items before GST — on top of any discount already given per line"
+                      className="w-20 rounded border border-slate-200 px-2 py-1 pr-5 text-right text-sm"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                  </span>
+                </td>
+                <td className="px-1.5 py-1 text-right text-sm whitespace-nowrap">
+                  {overallDiscAmount > 0
+                    ? <span className="font-medium text-amber-700">− {money(overallDiscAmount)}</span>
+                    : <span className="text-slate-300">—</span>}
                 </td>
                 <td colSpan={4}></td>
               </tr>

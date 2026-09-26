@@ -26,6 +26,9 @@ class Offer extends Model
         'base_total',
         'subtotal',
         'markup_total',
+        // A discount over the whole quotation, separate from the per-line one.
+        'discount_pct',
+        'discount_amount',
         'packing_cost',
         'transportation_cost',
         'tax_rate',
@@ -46,6 +49,8 @@ class Offer extends Model
         'base_total' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'markup_total' => 'decimal:2',
+        'discount_pct' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'packing_cost' => 'decimal:2',
         'transportation_cost' => 'decimal:2',
         'tax_rate' => 'decimal:3',
@@ -90,14 +95,25 @@ class Offer extends Model
         $base = $lines->sum(fn ($i) => (float) $i->base_price * (float) $i->qty);
         $subtotal = $lines->sum(fn ($i) => (float) $i->line_total);
         $delivery = (float) $this->packing_cost + (float) $this->transportation_cost;
-        $tax = round(($subtotal + $delivery) * (float) $this->tax_rate / 100, 2);
+
+        // A discount across the whole quotation, on top of anything already
+        // taken off line by line (those are inside line_total above). Applied
+        // to the items only, not to delivery: knocking 10% off the goods is not
+        // an invitation to under-recover the freight.
+        $discount = round($subtotal * (float) $this->discount_pct / 100, 2);
+        $net = $subtotal - $discount;
+
+        // GST follows the discounted figure — the supply is what is charged.
+        $tax = round(($net + $delivery) * (float) $this->tax_rate / 100, 2);
 
         $this->update([
             'base_total' => round($base, 2),
             'subtotal' => round($subtotal, 2),
-            'markup_total' => round($subtotal - $base, 2),
+            // The mark-up we actually keep, once the discount is given away.
+            'markup_total' => round($subtotal - $base - $discount, 2),
+            'discount_amount' => $discount,
             'tax_amount' => $tax,
-            'grand_total' => round($subtotal + $delivery + $tax, 2),
+            'grand_total' => round($net + $delivery + $tax, 2),
         ]);
     }
 }

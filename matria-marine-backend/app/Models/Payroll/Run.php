@@ -9,7 +9,12 @@ class Run extends Model
     protected $table = 'payroll_runs';
 
     protected $fillable = [
-        'period', 'payment_date', 'status', 'currency', 'account_code', 'notes', 'finalised_at', 'finalised_by',
+        // Three accounts, because a run posts three different costs. The first
+        // is the salaries account; the other two take what the employer adds
+        // on top of the wage.
+        'period', 'payment_date', 'status', 'currency',
+        'account_code', 'cpf_account_code', 'sdl_account_code',
+        'notes', 'finalised_at', 'finalised_by',
     ];
 
     protected $casts = [
@@ -36,6 +41,24 @@ class Run extends Model
     public function accountRecord(): ?\App\Models\Account
     {
         return \App\Models\Account::find_by_code($this->account_code);
+    }
+
+    /**
+     * Where each part of this run is posted.
+     *
+     * Salaries, the employer's CPF and the levy are three separate costs and
+     * land in three separate accounts. A run saved before those existed falls
+     * back to the staff-cost accounts, which is where they belonged anyway.
+     *
+     * @return array{salaries: string, cpf: string, sdl: string}
+     */
+    public function postingAccounts(): array
+    {
+        return [
+            'salaries' => $this->account_code ?: \App\Models\Account::STAFF_SALARIES,
+            'cpf' => $this->cpf_account_code ?: \App\Models\Account::STAFF_CPF,
+            'sdl' => $this->sdl_account_code ?: \App\Models\Account::STAFF_SDL,
+        ];
     }
 
     /**

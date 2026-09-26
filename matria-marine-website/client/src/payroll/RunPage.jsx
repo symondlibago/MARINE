@@ -390,18 +390,42 @@ export default function RunPage() {
                   placeholder="Pick a date"
                 />
               </div>
-              {/* Which account the wage bill is booked to, so payroll reaches
-                  the income statement. Salaries are out of scope for GST
-                  whatever account is picked, so no rate is asked for. */}
+              {/* Three accounts, because the month posts three different
+                  costs: what staff earned, the CPF the employer adds on top,
+                  and the levy on top of that. A single code could only ever
+                  describe one of them. All three are out of scope for GST
+                  whatever is picked, so no rate is asked for. */}
               <div className="flex flex-col gap-1">
                 <AccountSelect
                   side="all"
-                  label="Accounting code"
+                  label="Accounting code — salaries"
                   value={run.account_code || ""}
                   onChange={(v) => {
                     if (v !== (run.account_code || "")) saveHeader.mutate({ account_code: v || null });
                   }}
-                  hint="Wages appear as an operating expense on the Accounting page. Not part of the GST return."
+                  hint="Gross earnings. Appears as an operating expense on the Accounting page, and not in the GST return."
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <AccountSelect
+                  side="all"
+                  label="Accounting code — employer CPF"
+                  value={run.cpf_account_code || ""}
+                  onChange={(v) => {
+                    if (v !== (run.cpf_account_code || "")) saveHeader.mutate({ cpf_account_code: v || null });
+                  }}
+                  hint="The employer's share, which is a cost to the business rather than a deduction from the employee."
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <AccountSelect
+                  side="all"
+                  label="Accounting code — SDL & other contributions"
+                  value={run.sdl_account_code || ""}
+                  onChange={(v) => {
+                    if (v !== (run.sdl_account_code || "")) saveHeader.mutate({ sdl_account_code: v || null });
+                  }}
+                  hint="Skills Development Levy and other statutory employer contributions."
                 />
               </div>
               <label className="flex flex-col gap-1">

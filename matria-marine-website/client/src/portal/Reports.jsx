@@ -30,9 +30,15 @@ function presetRange(key) {
     const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
     return z.toISOString().slice(0, 10);
   };
-  if (key === "month") return { from: ymd(new Date(today.getFullYear(), today.getMonth(), 1)), to: ymd(today) };
-  if (key === "quarter") { const d = new Date(today); d.setMonth(d.getMonth() - 3); return { from: ymd(d), to: ymd(today) }; }
-  if (key === "year") return { from: ymd(new Date(today.getFullYear(), 0, 1)), to: ymd(today) };
+  // Ranges run to the end of the period, not to today. A payroll month
+  // finalised on the 26th but paid on the 1st is dated ahead, and stopping at
+  // today would leave it out of the very report meant to show it.
+  const y = today.getFullYear();
+  const endOfThisMonth = ymd(new Date(y, today.getMonth() + 1, 0));
+
+  if (key === "month") return { from: ymd(new Date(y, today.getMonth(), 1)), to: endOfThisMonth };
+  if (key === "quarter") { const d = new Date(today); d.setMonth(d.getMonth() - 3); return { from: ymd(d), to: endOfThisMonth }; }
+  if (key === "year") return { from: ymd(new Date(y, 0, 1)), to: ymd(new Date(y, 11, 31)) };
   return { from: "", to: "" };
 }
 

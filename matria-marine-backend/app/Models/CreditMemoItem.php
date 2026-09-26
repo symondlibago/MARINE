@@ -13,6 +13,9 @@ class CreditMemoItem extends Model
         'unit',
         'qty',
         'unit_price',
+        // Inherited from the invoice line being credited, so the credit lands
+        // back in the account the sale came from.
+        'account_code',
         'line_total',
         'reason',
         'sort',

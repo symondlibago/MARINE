@@ -96,6 +96,9 @@ class AccountingController extends Controller
         $accounts = Account::ordered()->get()->map(fn (Account $a) => [
             'id' => $a->id,
             'code' => $a->code,
+            // Set on a sub-account, so pickers and statements can show it
+            // beneath the account it breaks down.
+            'parent_code' => $a->parent_code,
             'name' => $a->name,
             'type' => $a->type,
             'type_label' => Account::TYPES[$a->type] ?? $a->type,
@@ -196,16 +199,29 @@ class AccountingController extends Controller
     private function groupByAccount(Collection $rows): array
     {
         return $rows->groupBy(fn ($r) => $r['account_code'] ?? '—')
-            ->map(fn (Collection $g, $code) => [
-                'account_code' => $code === '—' ? null : $code,
-                'account_name' => $g->first()['account_name'] ?? 'Unclassified',
-                'gst_code' => $g->first()['gst_code'],
-                'gst_label' => $g->first()['gst_label'],
-                'count' => $g->count(),
-                'net' => round($g->sum('net'), 2),
-                'tax' => round($g->sum('tax_amount'), 2),
-                'gross' => round($g->sum('gross'), 2),
-            ])
+            ->map(function (Collection $g, $code) {
+                $account = $code === '—' ? null : \App\Models\Account::find_by_code($code);
+
+                return [
+                    'account_code' => $code === '—' ? null : $code,
+                    'account_name' => $g->first()['account_name'] ?? 'Unclassified',
+                    // Which account this rolls into on a statement. 5100-01
+                    // Salaries reports under 5100 Operating Expenses; an
+                    // account with no parent answers for itself.
+                    'parent_code' => $account?->parent_code,
+                    'parent_name' => $account?->parent_code
+                        ? \App\Models\Account::find_by_code($account->parent_code)?->name
+                        : null,
+                    'gst_code' => $g->first()['gst_code'],
+                    'gst_label' => $g->first()['gst_label'],
+                    'count' => $g->count(),
+                    'net' => round($g->sum('net'), 2),
+                    'tax' => round($g->sum('tax_amount'), 2),
+                    'gross' => round($g->sum('gross'), 2),
+                ];
+            })
+            // Sub-accounts sort directly beneath their parent, because "5100"
+            // sorts before "5100-01" as text anyway.
             ->sortBy('account_code')
             ->values()
             ->all();

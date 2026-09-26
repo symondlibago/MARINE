@@ -21,6 +21,12 @@ class AccountSeeder extends Seeder
         ['4200', 'CTM Service Fee Income', Account::INCOME, GstCodes::ZI, 'Fee earned for arranging Cash to Master services.'],
         ['5000', 'Cost of Sales', Account::EXPENSE, GstCodes::SR, 'Goods and services bought to fulfil a customer job.'],
         ['5100', 'Operating Expenses', Account::EXPENSE, GstCodes::SR, 'Running the business — overheads not tied to one job.'],
+        // The staff-cost breakdown beneath 5100. Payroll posts to these three
+        // rather than to 5100 itself, so the income statement shows salaries,
+        // CPF and the levy the way a set of accounts is expected to.
+        ['5100-01', 'Staff costs — Salaries', Account::EXPENSE, GstCodes::OS, 'Gross wages earned by staff before deductions.', '5100'],
+        ['5100-02', 'Staff costs — CPF (employer)', Account::EXPENSE, GstCodes::OS, "The employer's CPF contribution — a cost to the business, not a deduction from the employee.", '5100'],
+        ['5100-03', 'Staff costs — SDL & other contributions', Account::EXPENSE, GstCodes::OS, 'Skills Development Levy and other statutory employer contributions.', '5100'],
         ['5200', 'CTM FX Loss & Transfer Costs', Account::EXPENSE, GstCodes::OS, 'Foreign-exchange variance and transfer costs on CTM transactions.'],
     ];
 
@@ -28,10 +34,15 @@ class AccountSeeder extends Seeder
     {
         $created = 0;
 
-        foreach (self::ACCOUNTS as $i => [$code, $name, $type, $gst, $description]) {
+        foreach (self::ACCOUNTS as $i => $row) {
+            // The sixth element is the parent account, present only on the
+            // sub-accounts that break a bigger one down.
+            [$code, $name, $type, $gst, $description] = $row;
+
             $account = Account::firstOrCreate(
                 ['code' => $code],
                 [
+                    'parent_code' => $row[5] ?? null,
                     'name' => $name,
                     'type' => $type,
                     'gst_code' => $gst,

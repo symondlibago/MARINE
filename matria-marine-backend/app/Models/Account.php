@@ -17,6 +17,9 @@ class Account extends Model
 {
     protected $fillable = [
         'code',
+        // The account this one breaks down, if any. Set on a sub-account such
+        // as 5100-01 so reports can roll it back up into 5100.
+        'parent_code',
         'name',
         'type',
         'gst_code',
@@ -65,6 +68,19 @@ class Account extends Model
     public const DEFAULT_PURCHASE = '5000';
 
     public const DEFAULT_EXPENSE = '5100';
+
+    /**
+     * The staff-cost split beneath 5100.
+     *
+     * Payroll works all three out for every run already; these are simply
+     * where each one is posted, so the income statement can show the breakdown
+     * a set of financial statements expects instead of one "payroll" figure.
+     */
+    public const STAFF_SALARIES = '5100-01';
+
+    public const STAFF_CPF = '5100-02';
+
+    public const STAFF_SDL = '5100-03';
 
     /* ----------------------------------------------------------- behaviour */
 
@@ -115,6 +131,29 @@ class Account extends Model
      * static is honest — and it resets between requests, so an edit to the
      * chart takes effect on the next page load.
      */
+    /**
+     * The account a figure belongs under once it is rolled up.
+     *
+     * A sub-account reports into its parent — 5100-01 Salaries is part of 5100
+     * Operating Expenses — so a statement can show the total and the breakdown
+     * without storing the same money twice. Anything without a parent, and any
+     * code the chart does not know, answers for itself.
+     */
+    public static function rollUpCode(?string $code): ?string
+    {
+        if (! $code) {
+            return null;
+        }
+
+        return static::chart()->get(trim($code))?->parent_code ?: trim($code);
+    }
+
+    /** The sub-accounts that break this one down, in chart order. */
+    public function children(): \Illuminate\Support\Collection
+    {
+        return static::chart()->filter(fn ($a) => $a->parent_code === $this->code)->values();
+    }
+
     public static function chart(): \Illuminate\Support\Collection
     {
         static $chart = null;

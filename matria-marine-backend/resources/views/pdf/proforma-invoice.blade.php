@@ -3,8 +3,13 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px; }
+        /* Bottom margin leaves room for the fixed footer below. */
+        @page { margin: 28px 34px 100px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
+        /* Fixed page footer — repeats at the bottom of every page. DomPDF measures
+           a fixed element's `bottom` from the content box, so the negative offset
+           pulls it down into the page margin, flush to the bottom edge. */
+        .page-footer { position: fixed; bottom: -82px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #777; line-height: 1.45; }
         .navy { color: #28364b; }
         .bar { background: #28364b; color: #fff; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
         .val { padding: 4px 8px; font-size: 11px; }
@@ -107,7 +112,15 @@
         <tbody>
             @forelse($pf['items'] as $line)
                 <tr>
-                    <td>{!! nl2br(e($line['description'])) !!}@if($line['remarks'])<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line['remarks'])) !!}</span>@endif</td>
+                    <td>
+                        {!! nl2br(e($line['description'])) !!}
+                        @if($line['remarks'])<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line['remarks'])) !!}</span>@endif
+                        {{-- Already taken off the amount at the right; spelled
+                             out so the customer sees what they were given. --}}
+                        @if(($line['discount_amount'] ?? 0) > 0)
+                            <br><span style="color:#92400e; font-size:10px;">Less {{ rtrim(rtrim(number_format((float) $line['discount_pct'], 2), '0'), '.') }}% discount — {{ number_format((float) $line['discount_amount'], 2) }}</span>
+                        @endif
+                    </td>
                     <td>{{ $line['unit'] }}</td>
                     <td class="num">{{ rtrim(rtrim(number_format($line['qty'], 3), '0'), '.') }}</td>
                     <td class="num">{{ number_format($line['unit_price'], 2) }}</td>
@@ -148,10 +161,20 @@
         <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $pf['notes'] }}</p>
     @endif
 
-    {{-- Footer --}}
-    <div style="margin-top:26px; text-align:center;">
-        @if($logo)<img src="{{ $logo }}" style="height:34px;"><br>@endif
-        <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
+    {{-- The logo sits with the content; the company details repeat on every
+         page below, the same as the quotation and the invoice. --}}
+    @if($logo)
+        <div style="margin-top:26px; text-align:center;">
+            <img src="{{ $logo }}" style="height:34px;">
+        </div>
+    @endif
+
+    <div class="page-footer">
+        <div style="border-top:1px solid #ddd; padding-top:6px;">
+            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
+            {!! nl2br(e($company['address'])) !!}<br>
+            email: {{ $company['email'] }} &nbsp;·&nbsp; UEN: {{ $company['uen'] }}
+        </div>
     </div>
 
 </body>

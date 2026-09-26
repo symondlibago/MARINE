@@ -74,8 +74,13 @@ export function AccountCodeCell({ value, onChange, className = "", style, placeh
     ...(legacy ? [{ value, label: `${value} — not on the chart`, ...brief(value) }] : []),
     ...all
       .filter((a) => a.is_active)
-      // The cell shows the bare code; the menu spells out what it means.
-      .map((a) => ({ value: a.code, label: `${a.code} — ${a.name}`, ...brief(a.code) })),
+      // A sub-account is nudged in so the menu reads as a chart rather than a
+      // flat list — 5100-01 Salaries belongs under 5100 Operating Expenses.
+      .map((a) => ({
+        value: a.code,
+        label: `${a.parent_code ? "   " : ""}${a.code} — ${a.name}`,
+        ...brief(a.code),
+      })),
   ];
 
   return (

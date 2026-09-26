@@ -30,16 +30,29 @@ const ymd = (d) => {
   return z.toISOString().slice(0, 10);
 };
 
+/**
+ * A preset covers its WHOLE period, not "up to today".
+ *
+ * Documents are often dated ahead — a payroll month finalised on the 26th and
+ * paid on the 1st, an invoice raised today and due next week. Cutting the range
+ * off at today hides those, and a finalised payroll run simply missing from the
+ * books is alarming rather than informative. "This month" means the month.
+ */
 function presetRange(key) {
   const today = new Date();
-  if (key === "month") return { from: ymd(new Date(today.getFullYear(), today.getMonth(), 1)), to: ymd(today) };
+  const y = today.getFullYear();
+
+  // Day 0 of the following month is the last day of this one.
+  if (key === "month") {
+    return { from: ymd(new Date(y, today.getMonth(), 1)), to: ymd(new Date(y, today.getMonth() + 1, 0)) };
+  }
   if (key === "quarter") {
     // GST is filed quarterly, so "this quarter" means the calendar quarter the
     // return will actually cover — not the last 90 days.
     const q = Math.floor(today.getMonth() / 3) * 3;
-    return { from: ymd(new Date(today.getFullYear(), q, 1)), to: ymd(today) };
+    return { from: ymd(new Date(y, q, 1)), to: ymd(new Date(y, q + 3, 0)) };
   }
-  if (key === "year") return { from: ymd(new Date(today.getFullYear(), 0, 1)), to: ymd(today) };
+  if (key === "year") return { from: ymd(new Date(y, 0, 1)), to: ymd(new Date(y, 11, 31)) };
   return { from: "", to: "" };
 }
 
@@ -569,8 +582,16 @@ function ByAccount({ rows }) {
           <tbody className="divide-y divide-slate-50">
             {rows.map((g) => (
               <tr key={g.account_code || "none"}>
-                <TD mono className="font-semibold text-[#28364b]">{g.account_code || "—"}</TD>
-                <TD>{g.account_name}</TD>
+                {/* A sub-account is indented under the account it breaks down,
+                    so 5100-01 Salaries reads as part of Operating Expenses
+                    rather than as a separate overhead. */}
+                <TD mono className={g.parent_code ? "pl-8 text-slate-600" : "font-semibold text-[#28364b]"}>
+                  {g.account_code || "—"}
+                </TD>
+                <TD className={g.parent_code ? "text-slate-600" : undefined}>
+                  {g.account_name}
+                  {g.parent_name && <span className="ml-1 text-xs text-slate-400">· in {g.parent_name}</span>}
+                </TD>
                 <TD>{g.gst_code ? <Badge tone={GST_TONE[g.gst_code]}>{g.gst_code}</Badge> : <Badge tone="red">?</Badge>}</TD>
                 <TD right className="tabular-nums text-slate-500">{g.count}</TD>
                 <TD right><Amount value={g.net} bold /></TD>
@@ -819,8 +840,12 @@ function StatementGroup({ label, rows, total, extra = [] }) {
       )}
       {rows.map((g) => (
         <tr key={g.account_code || g.account_name} className="border-b border-slate-50">
-          <TD mono className="w-20 pl-8 font-semibold text-[#28364b]">{g.account_code || "—"}</TD>
-          <TD>{g.account_name}</TD>
+          {/* Sub-accounts sit a step further in, the way a set of financial
+              statements breaks Staff costs out under Administrative Expenses. */}
+          <TD mono className={`w-20 ${g.parent_code ? "pl-14 text-slate-500" : "pl-8 font-semibold text-[#28364b]"}`}>
+            {g.account_code || "—"}
+          </TD>
+          <TD className={g.parent_code ? "text-slate-600" : undefined}>{g.account_name}</TD>
           <TD className="w-24 text-right text-xs text-slate-400">{g.count} doc{g.count === 1 ? "" : "s"}</TD>
           <TD right className="w-40"><Amount value={g.net} /></TD>
         </tr>

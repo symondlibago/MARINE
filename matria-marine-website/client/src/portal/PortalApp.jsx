@@ -14,6 +14,7 @@ import OfferPage from "./OfferPage";
 import DeliveryOrders from "./DeliveryOrders";
 import DeliveryOrderPage from "./DeliveryOrderPage";
 import Invoices from "./Invoices";
+import CreditMemos from "./CreditMemos";
 import InvoicePage from "./InvoicePage";
 import PurchaseOrders from "./PurchaseOrders";
 import PurchaseOrderDetail from "./PurchaseOrderDetail";
@@ -93,6 +94,7 @@ export default function PortalApp() {
               <Route path="/delivery-orders/:id" component={DeliveryOrderPage} />
               <Route path="/invoices" component={Invoices} />
               <Route path="/invoices/:id" component={InvoicePage} />
+              <Route path="/credit-memos" component={CreditMemos} />
               <Route path="/purchase-orders" component={PurchaseOrders} />
               <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
               <Route path="/return-notes" component={ReturnNotes} />

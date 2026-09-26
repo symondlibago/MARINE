@@ -105,7 +105,10 @@ class RunController extends PayrollController
         $run->update($request->validate([
             'payment_date' => ['nullable', 'date'],
             // Which account the wage bill is booked to, chosen from the chart.
+            // One per cost: wages, the employer's CPF on top, the levy on top.
             'account_code' => \App\Models\Account::validationRule(),
+            'cpf_account_code' => \App\Models\Account::validationRule(),
+            'sdl_account_code' => \App\Models\Account::validationRule(),
             'notes' => ['nullable', 'string', 'max:2000'],
         ]));
 
@@ -326,6 +329,8 @@ class RunController extends PayrollController
             // read from the account — salaries are out of scope whatever they
             // sit on. See AccountingBooks::payroll().
             'account_code' => $run->account_code,
+            'cpf_account_code' => $run->cpf_account_code,
+            'sdl_account_code' => $run->sdl_account_code,
             'account_name' => $run->accountRecord()?->name,
             'notes' => $run->notes,
             'finalised_at' => $run->finalised_at?->toDateTimeString(),

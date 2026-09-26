@@ -210,6 +210,10 @@ export const purchaseOrdersAPI = {
 
 // --- Credit memos: credit part of an issued invoice back to the customer ---
 export const creditMemosAPI = {
+  list: (params = {}) => api.get(apiUrl('/portal/credit-memos'), { params }),
+  // Issued invoices a memo can be raised against, and one invoice's lines.
+  creditableInvoices: (params = {}) => api.get(apiUrl('/portal/credit-memos/creditable-invoices'), { params }),
+  invoiceLines: (invoiceId) => api.get(apiUrl(`/portal/credit-memos/invoice/${invoiceId}/lines`)),
   saveForInvoice: (invoiceId, payload) => api.post(apiUrl(`/portal/invoices/${invoiceId}/credit-memo`), payload),
   get: (id) => api.get(apiUrl(`/portal/credit-memos/${id}`)),
   update: (id, payload) => api.patch(apiUrl(`/portal/credit-memos/${id}`), payload),
