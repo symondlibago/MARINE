@@ -65,6 +65,8 @@ class Kernel extends HttpKernel
         'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
         'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         'active' => \App\Http\Middleware\EnsureUserIsActive::class,
+        // Which screens an admin was given — see App\Support\PortalPages.
+        'page.access' => \App\Http\Middleware\EnsurePageAccess::class,
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,

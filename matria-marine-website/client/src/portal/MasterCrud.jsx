@@ -13,6 +13,49 @@ const inputCls =
 
 const PER_PAGE = 100;
 
+/**
+ * A set of checkboxes storing an array of the ticked values.
+ *
+ * `highlight` marks options that deserve a second look before ticking — Payroll
+ * shows everyone's salary — so they stand apart from the rest of the list.
+ */
+function CheckboxGroup({ value, options, onChange, highlight = [] }) {
+  const toggle = (key) => onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key]);
+  const allOn = options.length > 0 && options.every((o) => value.includes(o.value));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-3 text-xs">
+        <button type="button" onClick={() => onChange(options.map((o) => o.value))} disabled={allOn} className="font-medium text-[#28364b] hover:underline disabled:text-slate-300 disabled:no-underline">
+          Tick all
+        </button>
+        <button type="button" onClick={() => onChange([])} disabled={value.length === 0} className="font-medium text-[#28364b] hover:underline disabled:text-slate-300 disabled:no-underline">
+          Clear
+        </button>
+        <span className="ml-auto text-slate-400">{value.length} of {options.length}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-slate-200 p-3">
+        {options.map((o) => {
+          const on = value.includes(o.value);
+          const flagged = highlight.includes(o.value);
+          return (
+            <label
+              key={o.value}
+              className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors ${
+                flagged ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-slate-50"
+              }`}
+            >
+              <input type="checkbox" checked={on} onChange={() => toggle(o.value)} className="h-4 w-4 accent-[#28364b]" />
+              <span className={on ? "text-slate-800" : "text-slate-500"}>{o.label}</span>
+              {flagged && <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-amber-700">Sensitive</span>}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function MasterCrud({ title, singular, queryKey, api, columns, fields, emptyRow }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -168,7 +211,9 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
 
       <Modal open={dialogOpen} onClose={() => setDialogOpen(false)} title={editing ? `Edit ${singular}` : `New ${singular}`}>
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          {fields.map((field) => (
+          {/* `showIf` lets a field appear only when it applies — the page
+              checkboxes mean nothing for a super admin, who sees everything. */}
+          {fields.filter((field) => !field.showIf || field.showIf(form)).map((field) => (
             <div key={field.name} className="space-y-1.5">
               <label htmlFor={field.name} className="text-xs font-bold uppercase tracking-wider text-[#28364b]">
                 {field.label}
@@ -178,6 +223,13 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
                 <textarea id={field.name} value={form[field.name] ?? ""} onChange={(e) => setField(field.name, e.target.value)} placeholder={field.placeholder} className={inputCls} rows={2} />
               ) : field.type === "select" ? (
                 <Select value={form[field.name] ?? ""} onChange={(v) => setField(field.name, v)} options={field.options} placeholder={`Select ${field.label.toLowerCase()}`} />
+              ) : field.type === "checkboxes" ? (
+                <CheckboxGroup
+                  value={Array.isArray(form[field.name]) ? form[field.name] : []}
+                  options={field.options || []}
+                  highlight={field.highlight}
+                  onChange={(v) => setField(field.name, v)}
+                />
               ) : field.type === "switch" ? (
                 <div className="flex items-center gap-2">
                   <button

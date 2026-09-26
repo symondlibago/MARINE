@@ -57,4 +57,23 @@ abstract class TestCase extends BaseTestCase
             );
         }
     }
+
+    /**
+     * Give an admin every portal page.
+     *
+     * Admins only reach the screens they were given (App\Support\PortalPages),
+     * so a test about documents rather than access needs its admin to have the
+     * lot — otherwise it is testing the access check by accident.
+     */
+    protected function grantAllPages(\App\Models\User $user): void
+    {
+        foreach (\App\Support\PortalPages::keys() as $key) {
+            \Spatie\Permission\Models\Permission::findOrCreate(\App\Support\PortalPages::permission($key), 'web');
+        }
+
+        $user->syncPermissions(array_map(
+            fn ($key) => \App\Support\PortalPages::permission($key),
+            \App\Support\PortalPages::keys()
+        ));
+    }
 }

@@ -83,7 +83,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 // Authenticated staff portal API for the procurement module.
 // Gated by Sanctum auth + active account + spatie role.
-Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
+// page.access: an admin only reaches the screens they were given; which path
+// belongs to which screen is defined in App\Support\PortalPages.
+Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin', 'page.access'])
     ->prefix('portal')
     ->group(function () {
         // Smoke endpoint — confirms auth + active + role gating works end to end.

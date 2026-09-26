@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\PortalPages;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -17,7 +18,7 @@ class UserController extends Controller
 
     public function index()
     {
-        $users = User::orderByDesc('id')->get()
+        $users = User::with('permissions')->orderByDesc('id')->get()
             ->map(fn (User $u) => [
                 'id' => $u->id,
                 'name' => $u->name,
@@ -26,10 +27,40 @@ class UserController extends Controller
                 'phone' => $u->phone,
                 'role' => $u->role,
                 'is_active' => (bool) $u->is_active,
+                // The screens this person can open. Super admins are shown
+                // every page, because that is what they actually get.
+                'pages' => PortalPages::visibleTo($u),
                 'created_at' => $u->created_at?->toDateString(),
             ]);
 
-        return response()->json(['success' => true, 'data' => $users]);
+        return response()->json([
+            'success' => true,
+            'data' => $users,
+            // What the checkboxes on the staff form are drawn from.
+            'meta' => ['pages' => PortalPages::all()],
+        ]);
+    }
+
+    /**
+     * Give an admin exactly the pages ticked on the form, and nothing else.
+     *
+     * Super admins are skipped: they are never checked, so storing a list for
+     * them would only mislead whoever reads the table later.
+     */
+    private function syncPages(User $user, ?array $pages): void
+    {
+        if ($pages === null) {
+            return;   // not sent — leave their access as it is
+        }
+
+        if ($user->role === 'super_admin') {
+            $user->syncPermissions([]);
+
+            return;
+        }
+
+        $wanted = array_values(array_intersect($pages, PortalPages::keys()));
+        $user->syncPermissions(array_map(fn ($k) => PortalPages::permission($k), $wanted));
     }
 
     public function store(Request $request)
@@ -42,6 +73,8 @@ class UserController extends Controller
             'password' => ['required', 'string', 'min:8'],
             'phone' => ['nullable', 'string', 'max:50'],
             'role' => ['required', Rule::in($this->roles)],
+            'pages' => ['nullable', 'array'],
+            'pages.*' => ['string', Rule::in(PortalPages::keys())],
         ]);
 
         $user = User::create([
@@ -54,6 +87,9 @@ class UserController extends Controller
             'is_active' => true,
         ]);
         $user->syncRoles([$data['role']]);
+        // A new admin with no boxes ticked sees only the dashboard — nothing
+        // is granted by default, so forgetting to tick is the safe mistake.
+        $this->syncPages($user, $data['pages'] ?? []);
 
         return response()->json(['success' => true, 'message' => 'Staff member added.', 'data' => $user], 201);
     }
@@ -73,6 +109,8 @@ class UserController extends Controller
             'phone' => ['nullable', 'string', 'max:50'],
             'role' => ['sometimes', Rule::in($this->roles)],
             'is_active' => ['sometimes', 'boolean'],
+            'pages' => ['sometimes', 'array'],
+            'pages.*' => ['string', Rule::in(PortalPages::keys())],
         ]);
 
         // Don't let the last active super admin be demoted or disabled.
@@ -107,6 +145,10 @@ class UserController extends Controller
         } else {
             $user->save();
         }
+
+        // After the role, so promoting someone to super admin clears their list
+        // rather than leaving a stale one behind.
+        $this->syncPages($user, array_key_exists('pages', $data) ? ($data['pages'] ?? []) : null);
 
         return response()->json(['success' => true, 'message' => 'Staff member updated.', 'data' => $user]);
     }

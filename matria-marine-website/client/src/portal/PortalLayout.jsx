@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { LayoutDashboard, FileText, Ship, ShoppingCart, BarChart3, Users, LogOut, Tag, Truck, Undo2, UserCog, Send, Receipt, Wallet, PanelLeftClose, PanelLeftOpen, BookUser, Hash, ArrowLeftRight, Calculator, FileMinus } from "lucide-react";
 import { authAPI } from "@/pages/api";
 import { cn } from "@/lib/utils";
+import { canSee, pageForPath } from "./ui/pages";
 
 const NAV = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
@@ -26,7 +27,11 @@ const NAV = [
 
 export default function PortalLayout({ user, children }) {
   const [location] = useLocation();
-  const nav = NAV.filter((item) => !item.superAdminOnly || user?.role === "super_admin");
+  // Only the screens this user was given. The server refuses the rest anyway;
+  // leaving them out just saves a click that would end in "no access".
+  const nav = NAV.filter((item) =>
+    item.superAdminOnly ? user?.role === "super_admin" : canSee(user, pageForPath(item.to))
+  );
 
   // Collapsed state is remembered across page loads.
   const [collapsed, setCollapsed] = useState(() => {
@@ -85,18 +90,21 @@ export default function PortalLayout({ user, children }) {
         </nav>
         <div className="space-y-1 border-t border-slate-200 p-3">
           {/* Payroll is a separate operation with its own screens, but the same
-              staff login — the same way Inventory links back to here. */}
-          <a
-            href="/payroll"
-            title={collapsed ? "Payroll" : undefined}
-            className={cn(
-              "flex items-center rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100",
-              collapsed ? "justify-center" : "gap-2"
-            )}
-          >
-            <ArrowLeftRight className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>Payroll</span>}
-          </a>
+              staff login — the same way Inventory links back to here. Shown
+              only to someone given Payroll: it holds every salary. */}
+          {canSee(user, "payroll") && (
+            <a
+              href="/payroll"
+              title={collapsed ? "Payroll" : undefined}
+              className={cn(
+                "flex items-center rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100",
+                collapsed ? "justify-center" : "gap-2"
+              )}
+            >
+              <ArrowLeftRight className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Payroll</span>}
+            </a>
+          )}
           <button
             onClick={() => setCollapsed((c) => !c)}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}

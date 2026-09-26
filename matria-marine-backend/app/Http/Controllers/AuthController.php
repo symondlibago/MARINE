@@ -59,9 +59,16 @@ class AuthController extends Controller
 
     public function user(Request $request)
     {
+        $user = $request->user();
+
         return response()->json([
             'success' => true,
-            'data' => $request->user()
+            'data' => array_merge($user->toArray(), [
+                // The screens this person may open, so the menu shows only
+                // those. The server enforces the same list on every request —
+                // this only decides what is drawn.
+                'pages' => \App\Support\PortalPages::visibleTo($user),
+            ]),
         ]);
     }
 

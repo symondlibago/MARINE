@@ -19,7 +19,9 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin'])
+// page.access closes the whole of /api/payroll to an admin who was not given
+// Payroll — salaries are the reason these checkboxes exist.
+Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin', 'page.access'])
     ->prefix('payroll')
     ->group(function () {
 

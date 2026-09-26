@@ -1,6 +1,7 @@
-import { Route, Switch, Redirect } from "wouter";
+import { Route, Switch, Redirect, Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { authAPI, isAuthenticated } from "@/pages/api";
+import { canSee, pageForPath } from "./ui/pages";
 import PortalLayout from "./PortalLayout";
 import PortalLogin from "./PortalLogin";
 import Dashboard from "./Dashboard";
@@ -70,7 +71,33 @@ function RequireAuth({ children }) {
     );
   }
 
-  return <PortalLayout user={user}>{children}</PortalLayout>;
+  return (
+    <PortalLayout user={user}>
+      <PageGuard user={user}>{children}</PageGuard>
+    </PortalLayout>
+  );
+}
+
+/**
+ * A screen this user was not given, reached by typing its address or following
+ * an old bookmark. Say so plainly instead of rendering a page whose every
+ * request comes back refused.
+ */
+function PageGuard({ user, children }) {
+  const [location] = useLocation();
+  const page = pageForPath(location);
+
+  if (canSee(user, page)) return children;
+
+  return (
+    <div className="mx-auto mt-16 max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center">
+      <p className="text-lg font-semibold text-[#28364b]">No access to this page</p>
+      <p className="mt-1 text-sm text-slate-500">
+        Your account hasn't been given this section. Ask a super admin to add it under Manage Staff.
+      </p>
+      <Link href="/" className="mt-4 inline-block text-sm font-medium text-[#28364b] underline">Back to the dashboard</Link>
+    </div>
+  );
 }
 
 export default function PortalApp() {

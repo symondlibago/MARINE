@@ -9,6 +9,7 @@ import Employees from "./Employees";
 import Settings from "./Settings";
 import { ConfirmProvider } from "@/portal/ui/confirm";
 import { PageLoader } from "@/portal/ui/Loading";
+import { canSee } from "@/portal/ui/pages";
 
 const STAFF_ROLES = ["super_admin", "admin"];
 
@@ -27,7 +28,10 @@ function RequireAuth({ children }) {
   });
 
   const user = data?.data ?? data?.user ?? data;
-  const allowed = STAFF_ROLES.includes(user?.role);
+  // Staff, AND given Payroll. The server refuses every payroll request from
+  // anyone else regardless; this only stops the screen loading around them.
+  const isStaff = STAFF_ROLES.includes(user?.role);
+  const allowed = isStaff && canSee(user, "payroll");
 
   // The company header sits on every screen, so it is fetched once here.
   const { data: company } = useQuery({
@@ -59,10 +63,14 @@ function RequireAuth({ children }) {
   if (!allowed) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 text-center">
-        <p className="text-lg font-semibold text-[#28364b]">Not authorized</p>
-        <p className="text-sm text-slate-500">This area is for Matria staff only.</p>
-        <a href="/" className="mt-2 text-sm text-[#28364b] underline">
-          Return to site
+        <p className="text-lg font-semibold text-[#28364b]">{isStaff ? "No access to Payroll" : "Not authorized"}</p>
+        <p className="text-sm text-slate-500">
+          {isStaff
+            ? "Your account hasn't been given Payroll. Ask a super admin to add it under Manage Staff."
+            : "This area is for Matria staff only."}
+        </p>
+        <a href={isStaff ? "/portal" : "/"} className="mt-2 text-sm text-[#28364b] underline">
+          {isStaff ? "Back to the portal" : "Return to site"}
         </a>
       </div>
     );

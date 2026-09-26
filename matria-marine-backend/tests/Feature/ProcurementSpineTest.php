@@ -23,6 +23,7 @@ class ProcurementSpineTest extends TestCase
         Role::findOrCreate('admin', 'web');
         $staff = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $staff->assignRole('admin');
+        $this->grantAllPages($staff);
 
         $v1 = Vendor::factory()->create(['email' => 'v1@test.com', 'currency' => 'USD']);
         $v2 = Vendor::factory()->create(['email' => 'v2@test.com', 'currency' => 'EUR']);

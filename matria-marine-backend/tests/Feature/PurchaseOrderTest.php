@@ -27,6 +27,7 @@ class PurchaseOrderTest extends TestCase
         Role::findOrCreate('admin', 'web');
         $staff = User::factory()->create(['role' => 'admin', 'is_active' => true]);
         $staff->assignRole('admin');
+        $this->grantAllPages($staff);
         Sanctum::actingAs($staff);
 
         return $staff;

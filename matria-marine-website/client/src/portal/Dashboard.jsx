@@ -3,7 +3,8 @@ import { Link } from "wouter";
 import { motion } from "framer-motion";
 import { Ship, FileText, ShoppingCart, Send, CheckCircle2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { rfqsAPI, vendorsAPI, purchaseOrdersAPI } from "@/pages/api";
+import { rfqsAPI, vendorsAPI, purchaseOrdersAPI, authAPI } from "@/pages/api";
+import { canSee } from "./ui/pages";
 
 const ENQ_ORDER = ["draft", "sent", "quoting", "awarded", "closed"];
 const ENQ_COLOR = { draft: "#94a3b8", sent: "#3b82f6", quoting: "#f59e0b", awarded: "#8b5cf6", closed: "#22c55e" };
@@ -30,11 +31,20 @@ const ENQ_BADGE = {
 };
 
 export default function Dashboard() {
-  const { data: rfqs } = useQuery({ queryKey: ["rfqs"], queryFn: async () => (await rfqsAPI.list()).data.data });
+  // The dashboard is the one screen every admin gets, so it only asks for
+  // what this user may see — otherwise an admin without Purchase Orders would
+  // land on a page whose requests the server refuses.
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => (await authAPI.getUser()).data });
+  const user = me?.data ?? me?.user ?? me;
+  const seesEnquiries = canSee(user, "enquiries");
+  const seesPOs = canSee(user, "purchase_orders");
+  const seesVendors = canSee(user, "vendors");
+
+  const { data: rfqs } = useQuery({ queryKey: ["rfqs"], queryFn: async () => (await rfqsAPI.list()).data.data, enabled: !!user && seesEnquiries });
   // Only the counts are needed here — fetch totals, not the whole vendor table.
-  const { data: vendorMeta } = useQuery({ queryKey: ["vendors", "count"], queryFn: async () => (await vendorsAPI.list({ per_page: 1 })).data.meta });
-  const { data: vendorActiveMeta } = useQuery({ queryKey: ["vendors", "count", "active"], queryFn: async () => (await vendorsAPI.list({ per_page: 1, active: 1 })).data.meta });
-  const { data: pos } = useQuery({ queryKey: ["dashboard-pos"], queryFn: async () => (await purchaseOrdersAPI.list()).data.data });
+  const { data: vendorMeta } = useQuery({ queryKey: ["vendors", "count"], queryFn: async () => (await vendorsAPI.list({ per_page: 1 })).data.meta, enabled: !!user && seesVendors });
+  const { data: vendorActiveMeta } = useQuery({ queryKey: ["vendors", "count", "active"], queryFn: async () => (await vendorsAPI.list({ per_page: 1, active: 1 })).data.meta, enabled: !!user && seesVendors });
+  const { data: pos } = useQuery({ queryKey: ["dashboard-pos"], queryFn: async () => (await purchaseOrdersAPI.list()).data.data, enabled: !!user && seesPOs });
 
   const rfqList = rfqs ?? [];
   const poList = pos ?? [];
@@ -48,14 +58,14 @@ export default function Dashboard() {
   const enqChart = ENQ_ORDER.map((s) => ({ status: s, count: rfqList.filter((r) => r.status === s).length })).filter((d) => d.count > 0);
 
   const stats = [
-    { label: "Enquiries", value: rfqList.length, sub: `${openEnq} open · ${quotes} quotes`, icon: FileText, to: "/enquiries" },
-    { label: "Purchase Orders", value: poList.length, sub: `${poAwaiting} awaiting acceptance`, icon: ShoppingCart, to: "/purchase-orders" },
-    { label: "Vendors", value: vendorTotal, sub: `${vendorActive} active`, icon: Ship, to: "/vendors" },
-  ];
+    seesEnquiries && { label: "Enquiries", value: rfqList.length, sub: `${openEnq} open · ${quotes} quotes`, icon: FileText, to: "/enquiries" },
+    seesPOs && { label: "Purchase Orders", value: poList.length, sub: `${poAwaiting} awaiting acceptance`, icon: ShoppingCart, to: "/purchase-orders" },
+    seesVendors && { label: "Vendors", value: vendorTotal, sub: `${vendorActive} active`, icon: Ship, to: "/vendors" },
+  ].filter(Boolean);
 
   const actions = [
-    { label: "POs awaiting vendor acceptance", count: poAwaiting, icon: Send, to: "/purchase-orders" },
-  ];
+    seesPOs && { label: "POs awaiting vendor acceptance", count: poAwaiting, icon: Send, to: "/purchase-orders" },
+  ].filter(Boolean);
   const allClear = actions.every((a) => a.count === 0);
 
   const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -91,7 +101,10 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Needs attention */}
+      {/* Needs attention — only when there is something this user could be
+          asked to act on. "All caught up" to someone who cannot see POs
+          would be reassurance they have no basis for. */}
+      {actions.length > 0 && (
       <div>
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Needs attention</h2>
         {allClear ? (
@@ -120,10 +133,15 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Enquiries chart + recent enquiries */}
+      {/* Enquiries chart + recent enquiries. Each block shows only for someone
+          who can see that section — "No enquiries yet" would be a lie to an
+          admin who simply was not given Enquiries. */}
+      {(seesEnquiries || seesPOs) && (
       <div className="grid gap-4 lg:grid-cols-3">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+        {seesEnquiries && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className={`rounded-xl border border-slate-200 bg-white p-5 ${seesPOs ? "lg:col-span-2" : "lg:col-span-3"}`}>
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Enquiries by status</h2>
           {enqChart.length === 0 ? (
             <p className="py-10 text-center text-sm text-slate-400">No enquiries yet.</p>
@@ -140,8 +158,10 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )}
         </motion.div>
+        )}
 
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }} className="rounded-xl border border-slate-200 bg-white p-5">
+        {seesPOs && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }} className={`rounded-xl border border-slate-200 bg-white p-5 ${seesEnquiries ? "" : "lg:col-span-3"}`}>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Purchase orders by status</h2>
           {poList.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-400">No purchase orders yet.</p>
@@ -165,10 +185,14 @@ export default function Dashboard() {
             </div>
           )}
         </motion.div>
+        )}
       </div>
+      )}
 
       {/* Recent activity */}
+      {(seesEnquiries || seesPOs) && (
       <div className="grid gap-4 lg:grid-cols-2">
+        {seesEnquiries && (
         <RecentCard
           title="Recent enquiries"
           to="/enquiries"
@@ -181,6 +205,8 @@ export default function Dashboard() {
             </Link>
           )}
         />
+        )}
+        {seesPOs && (
         <RecentCard
           title="Recent purchase orders"
           to="/purchase-orders"
@@ -196,7 +222,9 @@ export default function Dashboard() {
             </Link>
           )}
         />
+        )}
       </div>
+      )}
     </div>
   );
 }
