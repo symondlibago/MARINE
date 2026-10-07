@@ -243,6 +243,12 @@ class PurchaseOrderController extends Controller
             'status' => ['sometimes', 'in:draft,issued,received,cancelled'],
             'issued_date' => ['nullable', 'date'],
             'expected_date' => ['nullable', 'date'],
+            // An order raised from an enquiry inherits the vessel and port from
+            // it; a direct purchase has no enquiry behind it, so there was no
+            // way to say where the goods were going. Editable on both — the
+            // vessel can change after an order is placed.
+            'ship_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'delivery_port' => ['sometimes', 'nullable', 'string', 'max:255'],
             'delivery_address' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
             'receipt_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
@@ -313,7 +319,7 @@ class PurchaseOrderController extends Controller
 
         DB::transaction(function () use ($purchaseOrder, $data) {
             $attrs = [];
-            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'delivery_address', 'receipt_amount', 'has_credit_note', 'credit_note_number', 'credit_note_amount', 'credit_note_account_code', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
+            foreach (['status', 'notes', 'exchange_rate', 'issued_date', 'expected_date', 'ship_name', 'delivery_port', 'delivery_address', 'receipt_amount', 'has_credit_note', 'credit_note_number', 'credit_note_amount', 'credit_note_account_code', 'expenses', 'expense_currency', 'expense_rate', 'paid_at'] as $key) {
                 if (array_key_exists($key, $data)) {
                     $attrs[$key] = $data[$key];
                 }

@@ -9,6 +9,7 @@ import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import { gridKeyDown } from "./ui/gridKeys";
+import BackupButton from "./ui/BackupButton";
 import { AccountCodeCell } from "./ui/AccountSelect";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
@@ -542,6 +543,7 @@ export default function OfferPage({ params }) {
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50">
             <Download className="h-4 w-4" /> Quotation PDF
           </button>
+          <BackupButton type="offer" id={id} number={offer.offer_number} />
           {/* Not the tax invoice: this one can be reissued after an amendment,
               which is the whole point for a customer paying in advance. */}
           <button

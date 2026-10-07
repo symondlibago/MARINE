@@ -286,6 +286,25 @@ export const invoicesAPI = {
   email: (id) => api.post(apiUrl(`/portal/invoices/${id}/email`)),
 };
 
+// --- Local backup: the copy of each document kept in a folder on a staff PC ---
+// Every call is a GET. Mirroring a document never changes it, so the buttons
+// behind these are safe to press on anything, as often as you like.
+const backupSlug = (type) => String(type).replace(/_/g, '-');
+
+export const backupAPI = {
+  // Everything that could be mirrored. What is already on disk is worked out
+  // in the browser, against that machine's own _index.csv.
+  pending: () => api.get(apiUrl('/portal/backup/pending')),
+  // What one document's folder should contain: the text files inline, and an
+  // index per PDF/attachment to fetch with file() below.
+  manifest: (type, id) => api.get(apiUrl(`/portal/backup/${backupSlug(type)}/${id}`)),
+  file: (type, id, index) =>
+    api.get(apiUrl(`/portal/backup/${backupSlug(type)}/${id}/file/${index}`), { responseType: 'blob' }),
+  // The same folder as a ZIP — for a browser that cannot write to disk.
+  zip: (type, id) =>
+    api.get(apiUrl(`/portal/backup/${backupSlug(type)}/${id}/zip`), { responseType: 'blob' }),
+};
+
 // --- Staff management (super admin only) ---
 export const usersAPI = {
   list: () => api.get(apiUrl('/portal/users')),

@@ -9,6 +9,7 @@ import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import ProofOfDelivery from "./ProofOfDelivery";
+import BackupButton from "./ui/BackupButton";
 import { gridKeyDown } from "./ui/gridKeys";
 import AccountSelect, { AccountCodeCell } from "./ui/AccountSelect";
 import { PageLoader, Spinner } from "./ui/Loading";
@@ -243,6 +244,7 @@ export default function InvoicePage({ params }) {
           <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">
             <Download className="h-4 w-4" /> PDF
           </button>
+          <BackupButton type="invoice" id={id} number={data?.invoice_number} />
           <button onClick={() => emailIt.mutate()} disabled={emailIt.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-70">
             {emailIt.isLoading ? <Spinner className="h-4 w-4" /> : <Mail className="h-4 w-4" />} Email customer
           </button>

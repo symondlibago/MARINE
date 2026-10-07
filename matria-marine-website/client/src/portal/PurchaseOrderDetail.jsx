@@ -9,10 +9,15 @@ import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
 import { gridKeyDown } from "./ui/gridKeys";
+import BackupButton from "./ui/BackupButton";
 import AccountSelect, { AccountCodeCell } from "./ui/AccountSelect";
 import { fetchRates, rateToBase } from "@/lib/fx";
 
 const CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
+
+// The inputs in the order's header card, which all share one look.
+const headerInput =
+  "w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
@@ -57,6 +62,11 @@ export default function PurchaseOrderDetail({ params }) {
   const [returns, setReturns] = useState([]); // [{ po_item_id, description, unit, ordered, unit_cost, qty, reason }]
   const [returnDate, setReturnDate] = useState("");
   const [returnNotes, setReturnNotes] = useState("");
+  // Where the goods are going. An order built from an enquiry inherits these,
+  // but a direct purchase has no enquiry to inherit from — so they are typed.
+  const [vessel, setVessel] = useState("");
+  const [port, setPort] = useState("");
+  const [issued, setIssued] = useState("");
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -75,6 +85,9 @@ export default function PurchaseOrderDetail({ params }) {
     })));
     setNotes(po.notes || "");
     setExpected(po.expected_date ? String(po.expected_date).slice(0, 10) : "");
+    setIssued(po.issued_date ? String(po.issued_date).slice(0, 10) : "");
+    setVessel(po.ship_name || "");
+    setPort(po.delivery_port || "");
     setDeliverTo(po.delivery_address || "");
     setReceiptAmount(po.receipt_amount != null ? String(Number(po.receipt_amount)) : "");
     setHasCreditNote(!!po.has_credit_note);
@@ -173,6 +186,9 @@ export default function PurchaseOrderDetail({ params }) {
       purchaseOrdersAPI.update(id, {
         notes,
         expected_date: expected || null,
+        issued_date: issued || null,
+        ship_name: vessel.trim() || null,
+        delivery_port: port.trim() || null,
         delivery_address: deliverTo || null,
         receipt_amount: receiptAmount === "" ? null : Number(receiptAmount),
         has_credit_note: hasCreditNote,
@@ -347,6 +363,7 @@ export default function PurchaseOrderDetail({ params }) {
           <button onClick={downloadFinalInvoice} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50" title="Order less any returns = net payable to the vendor">
             <FileText className="h-4 w-4" /> Final Invoice
           </button>
+          <BackupButton type="purchase_order" id={id} number={po.po_number} />
           <button onClick={handleEmail} disabled={emailPo.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60">
             {emailPo.isLoading ? <Spinner className="h-4 w-4" /> : <Mail className="h-4 w-4" />} Email vendor
           </button>
@@ -394,36 +411,58 @@ export default function PurchaseOrderDetail({ params }) {
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Info label="Vessel" value={po.ship_name} />
-            <Info label="Delivery port" value={po.delivery_port} />
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Deliver to</div>
-              <div className="mt-1">
-                {isClosed ? (
-                  <div className="whitespace-pre-line text-sm text-[#28364b]">{po.delivery_address || "—"}</div>
-                ) : (
-                  <textarea
-                    rows={2}
-                    value={deliverTo}
-                    onChange={(e) => setDeliverTo(e.target.value)}
-                    placeholder="Warehouse / port / forwarder address the vendor ships to"
-                    className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]"
-                  />
-                )}
-              </div>
-            </div>
+            <Field label="Vessel">
+              {isClosed ? (
+                <div className="text-sm text-[#28364b]">{po.ship_name || "—"}</div>
+              ) : (
+                <input
+                  value={vessel}
+                  onChange={(e) => setVessel(e.target.value)}
+                  placeholder="Vessel the goods are for"
+                  className={headerInput}
+                />
+              )}
+            </Field>
+            <Field label="Delivery port">
+              {isClosed ? (
+                <div className="text-sm text-[#28364b]">{po.delivery_port || "—"}</div>
+              ) : (
+                <input
+                  value={port}
+                  onChange={(e) => setPort(e.target.value)}
+                  placeholder="Port of delivery"
+                  className={headerInput}
+                />
+              )}
+            </Field>
+            <Field label="Deliver to">
+              {isClosed ? (
+                <div className="whitespace-pre-line text-sm text-[#28364b]">{po.delivery_address || "—"}</div>
+              ) : (
+                <textarea
+                  rows={2}
+                  value={deliverTo}
+                  onChange={(e) => setDeliverTo(e.target.value)}
+                  placeholder="Warehouse / port / forwarder address the vendor ships to"
+                  className={headerInput}
+                />
+              )}
+            </Field>
             <Info label="Currency" value={`${po.currency}${po.currency !== po.base_currency ? ` · ×${Number(po.exchange_rate)} → ${po.base_currency}` : ""}`} />
-            <Info label="Issued" value={po.issued_date ? String(po.issued_date).slice(0, 10) : "—"} />
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Expected delivery</div>
-              <div className="mt-1">
-                {isClosed ? (
-                  <div className="text-sm text-[#28364b]">{expected || "—"}</div>
-                ) : (
-                  <DatePicker value={expected} onChange={setExpected} placeholder="Set date" />
-                )}
-              </div>
-            </div>
+            <Field label="Issued">
+              {isClosed ? (
+                <div className="text-sm text-[#28364b]">{issued || "—"}</div>
+              ) : (
+                <DatePicker value={issued} onChange={setIssued} placeholder="Set date" />
+              )}
+            </Field>
+            <Field label="Expected delivery">
+              {isClosed ? (
+                <div className="text-sm text-[#28364b]">{expected || "—"}</div>
+              ) : (
+                <DatePicker value={expected} onChange={setExpected} placeholder="Set date" />
+              )}
+            </Field>
           </div>
         </div>
       </div>
@@ -919,6 +958,16 @@ function Info({ label, value }) {
     <div>
       <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div>
       <div className="mt-1 text-sm text-[#28364b]">{value || "—"}</div>
+    </div>
+  );
+}
+
+/** The same heading as Info, over something editable rather than a value. */
+function Field({ label, children }) {
+  return (
+    <div>
+      <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="mt-1">{children}</div>
     </div>
   );
 }

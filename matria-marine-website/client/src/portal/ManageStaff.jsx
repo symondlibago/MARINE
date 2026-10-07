@@ -7,9 +7,10 @@ const ROLES = [
   { value: "admin", label: "Admin" },
 ];
 
-// Worth a second look before ticking: Payroll shows every salary, and the
-// money screens show the company's figures.
-const SENSITIVE = ["payroll", "accounting", "reports", "statements"];
+// Worth a second look before ticking: Payroll shows every salary, the money
+// screens show the company's figures, and Local Backup writes copies of
+// whatever they can see onto their own machine.
+const SENSITIVE = ["payroll", "accounting", "reports", "statements", "local_backup"];
 
 const roleBadge = (r) => (
   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${r.role === "super_admin" ? "bg-[#28364b] text-white" : "bg-slate-100 text-slate-700"}`}>

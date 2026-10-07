@@ -256,6 +256,36 @@ class PurchaseOrderTest extends TestCase
         $this->assertEquals(2, AccountingBooks::vendorCredits(null, null)->firstWhere('id', $po->id)['net']);
     }
 
+    /**
+     * A direct purchase has no enquiry to inherit a vessel and port from, so
+     * until these were accepted there was no way to say where the goods were
+     * going — the fields sat on screen showing a dash.
+     */
+    public function test_vessel_and_port_can_be_keyed_in_on_a_direct_purchase(): void
+    {
+        $this->actingStaff();
+        $vendor = Vendor::create(['name' => 'Mombasa Ship Chandlers Ltd', 'currency' => 'USD']);
+
+        $created = $this->postJson('/api/portal/purchase-orders', [
+            'vendor_id' => $vendor->id,
+            'currency' => 'USD',
+        ])->assertCreated();
+
+        $po = PurchaseOrder::findOrFail($created->json('data.id'));
+        $this->assertNull($po->ship_name);
+
+        $this->patchJson("/api/portal/purchase-orders/{$po->id}", [
+            'ship_name' => 'MV Pacific Star',
+            'delivery_port' => 'Mombasa',
+            'issued_date' => '2026-10-06',
+        ])->assertOk();
+
+        $po->refresh();
+        $this->assertSame('MV Pacific Star', $po->ship_name);
+        $this->assertSame('Mombasa', $po->delivery_port);
+        $this->assertSame('2026-10-06', $po->issued_date->format('Y-m-d'));
+    }
+
     public function test_generate_rejects_enquiry_without_awards(): void
     {
         $this->actingStaff();

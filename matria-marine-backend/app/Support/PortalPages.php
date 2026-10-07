@@ -34,6 +34,12 @@ class PortalPages
      * like, which several screens lean on at once.
      */
     private const PAGES = [
+        // Above every document page: the whole of portal/backup belongs to
+        // Local Backup, so taking that checkbox away stops someone copying
+        // documents onto a machine even where they may still read them on
+        // screen. WHICH documents they may mirror is a second question, and
+        // BackupController asks it against the page each type belongs to.
+        'local_backup' => ['Local Backup', ['#^portal/backup(/|$)#']],
         'enquiries' => ['Enquiries', ['#^portal/(rfqs|quotes|item-suggestions)(/|$)#']],
         'offers' => ['Offers', ['#^portal/offers(/|$)#']],
         'delivery_orders' => ['Delivery Orders', ['#^portal/delivery-orders(/|$)#']],

@@ -11,6 +11,7 @@ use App\Http\Controllers\PublicPurchaseOrderController;
 use App\Http\Controllers\PublicOfferController;
 use App\Http\Controllers\VendorController;
 use App\Http\Controllers\RfqController;
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\RfqPdfController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\ReturnNoteController;
@@ -302,6 +303,15 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin', 'page.acc
         Route::get('documents/{document}', [DocumentController::class, 'show']);
         Route::match(['put', 'patch'], 'documents/{document}', [DocumentController::class, 'update']);
         Route::delete('documents/{document}', [DocumentController::class, 'destroy']);
+
+        // Local backup — the copy kept in a folder on staff machines. All GET:
+        // mirroring a document never changes it. 'pending' is declared first so
+        // it is not swallowed as a {type}.
+        Route::get('backup/pending', [BackupController::class, 'pending']);
+        Route::get('backup/{type}/{id}', [BackupController::class, 'manifest']);
+        Route::get('backup/{type}/{id}/file/{index}', [BackupController::class, 'file'])
+            ->where('index', '[0-9]+');
+        Route::get('backup/{type}/{id}/zip', [BackupController::class, 'zip']);
     });
 
 // Vessel Provision Inventory — a separate operation with its own controllers,

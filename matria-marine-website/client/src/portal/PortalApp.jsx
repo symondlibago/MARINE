@@ -29,6 +29,7 @@ import Accounting from "./Accounting";
 import Statements from "./Statements";
 import OperatingExpenses from "./OperatingExpenses";
 import Customers from "./Customers";
+import LocalBackup from "./LocalBackup";
 import { ConfirmProvider } from "./ui/confirm";
 import { PageLoader } from "./ui/Loading";
 
@@ -134,6 +135,9 @@ export default function PortalApp() {
               <Route path="/staff" component={ManageStaff} />
               <Route path="/numbering" component={DocumentSeries} />
               <Route path="/sent-log" component={SentLog} />
+              {/* Open to every admin: the screen only offers the documents
+                  their own pages already cover, and the folder is per-machine. */}
+              <Route path="/local-backup" component={LocalBackup} />
               <Route>
                 <div className="p-8 text-slate-500">Portal page not found.</div>
               </Route>

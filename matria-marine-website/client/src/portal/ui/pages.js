@@ -23,6 +23,7 @@ const ROUTE_PAGES = [
   ["/customers", "customers"],
   ["/vendors", "vendors"],
   ["/sent-log", "sent_log"],
+  ["/local-backup", "local_backup"],
 ];
 
 /** The page key for a portal path, or null when it is open to everyone. */

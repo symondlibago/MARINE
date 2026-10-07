@@ -25,6 +25,7 @@ import DatePicker from "./DatePicker";
 import AccountSelect from "@/portal/ui/AccountSelect";
 import { PageLoader, Spinner } from "@/portal/ui/Loading";
 import { useConfirm } from "@/portal/ui/confirm";
+import BackupButton from "@/portal/ui/BackupButton";
 import Select from "@/portal/ui/Select";
 
 /** The columns the office types into, in the order they appear on screen. */
@@ -188,6 +189,9 @@ export default function RunPage() {
           <button onClick={() => getPdf("summary")} disabled={downloading === "summary"} className={btn.ghost}>
             {downloading === "summary" ? <Spinner className="h-4 w-4" /> : <FileText className="h-4 w-4" />} Summary PDF
           </button>
+          {/* Writes the month's folder — summary and every payslip — into the
+              local backup, the same button the procurement documents carry. */}
+          <BackupButton type="payroll_run" id={id} number={`payroll-${String(run.period).slice(0, 7)}`} />
           {locked ? (
             <button onClick={() => lock.mutate(false)} disabled={lock.isLoading} className={btn.ghost}>
               <Unlock className="h-4 w-4" /> Reopen

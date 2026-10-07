@@ -9,6 +9,7 @@ import Modal from "./ui/Modal";
 import Select from "./ui/Select";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
+import BackupButton from "./ui/BackupButton";
 
 // Offered in the quotation editor; the enquiry's own currency and whatever the
 // vendor already quoted in are merged in, so nothing existing is ever lost.
@@ -304,6 +305,7 @@ export default function EnquiryDetail({ params }) {
           <Link href={`/enquiries/${id}/edit`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
             <Pencil className="h-4 w-4" /> Edit
           </Link>
+          <BackupButton type="enquiry" id={id} number={rfq.reference} />
           <button onClick={handleDelete} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-red-50 hover:text-red-600">
             <Trash2 className="h-4 w-4" />
           </button>
