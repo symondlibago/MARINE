@@ -85,21 +85,39 @@
         </tr>
     </table>
 
-    {{-- Line items --}}
+    {{-- Line items.
+
+         With a second currency asked for, every money column gains a
+         converted twin. The invoice is still payable in its own currency —
+         the converted side is there because some customers reconcile in
+         theirs, and the note under the totals says so outright. --}}
+    @php
+        $fx = $fx ?? null;
+        $cols = $fx ? 6 : 5;
+        $money = fn ($amount) => number_format((float) $amount, 2);
+        $conv = fn ($amount) => number_format((float) $amount * ($fx['rate'] ?? 0), 2);
+    @endphp
     <table class="items">
         <thead>
             <tr>
                 <th style="text-align:left;">Description</th>
-                <th class="num" style="width:55px;">Qty</th>
-                <th style="text-align:left; width:55px;">Unit</th>
-                <th class="num" style="width:90px;">Unit Price</th>
-                <th class="num" style="width:105px;">Amount ({{ $invoice->currency }})</th>
+                <th class="num" style="width:50px;">Qty</th>
+                <th style="text-align:left; width:50px;">Unit</th>
+                {{-- One unit price, two amounts — the shape the customer asked
+                     for. Converting the unit price as well adds a column that
+                     says nothing the line amount does not, and squeezes the
+                     description, which is the part anyone reads. --}}
+                <th class="num" style="width:{{ $fx ? 80 : 90 }}px;">Unit Price<br><span style="font-weight:normal;">{{ $invoice->currency }}</span></th>
+                <th class="num" style="width:{{ $fx ? 95 : 105 }}px;">Amount<br><span style="font-weight:normal;">{{ $invoice->currency }}</span></th>
+                @if($fx)
+                    <th class="num" style="width:95px;">Amount<br><span style="font-weight:normal;">{{ $fx['code'] }}</span></th>
+                @endif
             </tr>
         </thead>
         <tbody>
             @forelse($invoice->items as $line)
                 @if($line->is_heading)
-                    <tr><td colspan="5" style="font-weight:bold; padding-top:9px; border-bottom:none;" class="navy">{{ $line->description }}</td></tr>
+                    <tr><td colspan="{{ $cols }}" style="font-weight:bold; padding-top:9px; border-bottom:none;" class="navy">{{ $line->description }}</td></tr>
                 @else
                     <tr>
                         <td>
@@ -109,12 +127,13 @@
                         </td>
                         <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
                         <td>{{ $line->unit }}</td>
-                        <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>
-                        <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
+                        <td class="num">{{ $money($line->unit_price) }}</td>
+                        <td class="num">{{ $money($line->line_total) }}</td>
+                        @if($fx)<td class="num">{{ $conv($line->line_total) }}</td>@endif
                     </tr>
                 @endif
             @empty
-                <tr><td colspan="5">No line items.</td></tr>
+                <tr><td colspan="{{ $cols }}">No line items.</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -128,38 +147,62 @@
     @endphp
     <table style="width:100%; margin-top:10px;">
         <tr>
-            <td style="width:52%; vertical-align:bottom; padding-top:14px;">
+            <td style="width:{{ $fx ? 38 : 52 }}%; vertical-align:bottom; padding-top:14px;">
                 <em class="navy">Thank you for your business!</em>
             </td>
-            <td style="width:48%; vertical-align:top;">
+            <td style="width:{{ $fx ? 62 : 48 }}%; vertical-align:top;">
                 <table class="tot" style="width:100%;">
+                    @if($fx)
+                    <tr style="font-size:10px; color:#666;">
+                        <td></td>
+                        <td class="num" style="width:95px;">{{ $invoice->currency }}</td>
+                        <td class="num" style="width:95px;">{{ $fx['code'] }}</td>
+                    </tr>
+                    @endif
                     <tr>
                         <td style="text-align:right; color:#444;">Subtotal</td>
-                        <td class="num" style="width:110px;">{{ number_format((float) $invoice->subtotal, 2) }}</td>
+                        <td class="num" style="width:{{ $fx ? 95 : 110 }}px;">{{ $money($invoice->subtotal) }}</td>
+                        @if($fx)<td class="num">{{ $conv($invoice->subtotal) }}</td>@endif
                     </tr>
                     @if($packing > 0)
                     <tr>
                         <td style="text-align:right; color:#444;">Packing</td>
-                        <td class="num">{{ number_format($packing, 2) }}</td>
+                        <td class="num">{{ $money($packing) }}</td>
+                        @if($fx)<td class="num">{{ $conv($packing) }}</td>@endif
                     </tr>
                     @endif
                     @if($transport > 0)
                     <tr>
                         <td style="text-align:right; color:#444;">Transportation</td>
-                        <td class="num">{{ number_format($transport, 2) }}</td>
+                        <td class="num">{{ $money($transport) }}</td>
+                        @if($fx)<td class="num">{{ $conv($transport) }}</td>@endif
                     </tr>
                     @endif
                     @if($tax > 0)
                     <tr>
                         <td style="text-align:right; color:#444;">GST {{ (float) $taxRate }}%</td>
-                        <td class="num">{{ number_format($tax, 2) }}</td>
+                        <td class="num">{{ $money($tax) }}</td>
+                        @if($fx)<td class="num">{{ $conv($tax) }}</td>@endif
                     </tr>
                     @endif
                     <tr style="font-weight:bold; font-size:14px;">
-                        <td class="navy" style="text-align:right; border-top:2px solid #28364b; padding-top:7px;">TOTAL ({{ $invoice->currency }})</td>
-                        <td class="num navy" style="border-top:2px solid #28364b; padding-top:7px;">{{ number_format((float) $invoice->grand_total, 2) }}</td>
+                        <td class="navy" style="text-align:right; border-top:2px solid #28364b; padding-top:7px;">TOTAL</td>
+                        <td class="num navy" style="border-top:2px solid #28364b; padding-top:7px;">{{ $money($invoice->grand_total) }}</td>
+                        @if($fx)<td class="num navy" style="border-top:2px solid #28364b; padding-top:7px;">{{ $conv($invoice->grand_total) }}</td>@endif
                     </tr>
                 </table>
+
+                @if($fx)
+                    {{-- Which number is owed has to be unmistakable: the second
+                         column is a conversion for the customer's own books. --}}
+                    <div style="margin-top:6px; font-size:9.5px; color:#666; text-align:right; line-height:1.5;">
+                        {{-- Printed at the precision it was applied at, so
+                             multiplying by this number reproduces the column. --}}
+                        Rate: 1 {{ $invoice->currency }} = {{ rtrim(rtrim(number_format($fx['rate'], 6, '.', ''), '0'), '.') }} {{ $fx['code'] }}<br>
+                        <span style="color:#888;">{{ $fx['code'] }} shown for reference only —
+                        payable in {{ $invoice->currency }}.</span>
+                    </div>
+                @endif
             </td>
         </tr>
     </table>

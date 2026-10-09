@@ -321,7 +321,7 @@ class CustomerInvoiceController extends Controller
         return response()->json(['success' => true, 'message' => 'Invoice deleted.']);
     }
 
-    public function pdf(CustomerInvoice $invoice)
+    public function pdf(Request $request, CustomerInvoice $invoice)
     {
         $invoice->load(['items', 'rfq:id,reference', 'creator:id,name,phone']);
 
@@ -337,9 +337,58 @@ class CustomerInvoiceController extends Controller
             'company' => config('procurement.company'),
             'logo' => $logo,
             'due' => $due ? \Illuminate\Support\Carbon::parse($due) : null,
+            'fx' => self::secondCurrency($request, $invoice),
         ]);
 
         return $pdf->download(($invoice->invoice_number ?: 'invoice').'.pdf');
+    }
+
+    /**
+     * Decimal places the conversion rate is quoted and applied at.
+     *
+     * Six is the usual market convention, and enough that the rounding on a
+     * six-figure invoice stays under a cent.
+     */
+    private const FX_PRECISION = 6;
+
+    /**
+     * The optional second money column, for customers who want to see the
+     * invoice converted alongside what they are actually billed.
+     *
+     * Off unless ?currency= asks for it, so the ordinary invoice is untouched.
+     * The rate comes from the caller when it sends one — the screen shows it
+     * before the download, and a pegged currency like AED wants its exact peg
+     * rather than whatever a feed quotes today — and is otherwise read live.
+     *
+     * Converted figures are a courtesy, never the amount owed: the invoice is
+     * payable in its own currency, which the template says in as many words.
+     *
+     * @return array{code: string, rate: float}|null
+     */
+    private static function secondCurrency(Request $request, CustomerInvoice $invoice): ?array
+    {
+        $code = strtoupper(substr((string) $request->query('currency', ''), 0, 3));
+
+        if ($code === '' || $code === strtoupper((string) $invoice->currency)) {
+            return null;
+        }
+
+        $rate = (float) $request->query('rate', 0);
+
+        if ($rate <= 0) {
+            $live = \App\Support\FxRates::for($invoice->currency ?: 'USD');
+            $rate = (float) ($live['rates'][$code] ?? 0);
+        }
+
+        // Rounded HERE, once, and every converted figure on the document is
+        // then worked out from this exact number — which is also the number
+        // printed on it. A rate shown to four places while the arithmetic ran
+        // on fifteen puts a customer who checks the multiplication half a
+        // dollar out, and an invoice that does not add up is an invoice that
+        // gets queried.
+        $rate = round($rate, self::FX_PRECISION);
+
+        return $rate > 0 ? ['code' => $code, 'rate' => $rate] : null;
     }
 
     /** Email the invoice (PDF attached) to the customer. */

@@ -176,7 +176,12 @@ export default function PurchaseOrderDetail({ params }) {
   };
 
   const isDraft = po?.status === "draft";
-  const isClosed = po?.status === "received" || po?.status === "cancelled";
+  // Only a cancelled order is finished with. A received one is still very much
+  // open to correction: provisions are priced by weight, so the vendor's final
+  // invoice routinely differs from the order, and that arrives AFTER delivery.
+  const isCancelled = po?.status === "cancelled";
+  // Lines included: the figures are the whole point of the correction.
+  const canEditLines = !isCancelled;
   const vendorCharge = receiptAmount === "" ? Number(po?.subtotal) || 0 : Number(receiptAmount) || 0;
   const vendorCredit = hasCreditNote ? Number(creditNoteAmount) || 0 : 0;
   const netVendorCost = Math.max(vendorCharge - vendorCredit, 0);
@@ -203,7 +208,7 @@ export default function PurchaseOrderDetail({ params }) {
         expense_items: expenseItems
           .filter((e) => (e.name || "").trim() !== "" || e.amount !== "")
           .map((e) => ({ name: e.name, amount: e.amount === "" ? 0 : Number(e.amount) })),
-        ...(isDraft
+        ...(canEditLines
           ? {
               items: items.map((it) => ({
                 id: it.id,
@@ -412,7 +417,7 @@ export default function PurchaseOrderDetail({ params }) {
         <div className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Vessel">
-              {isClosed ? (
+              {isCancelled ? (
                 <div className="text-sm text-[#28364b]">{po.ship_name || "—"}</div>
               ) : (
                 <input
@@ -424,7 +429,7 @@ export default function PurchaseOrderDetail({ params }) {
               )}
             </Field>
             <Field label="Delivery port">
-              {isClosed ? (
+              {isCancelled ? (
                 <div className="text-sm text-[#28364b]">{po.delivery_port || "—"}</div>
               ) : (
                 <input
@@ -436,7 +441,7 @@ export default function PurchaseOrderDetail({ params }) {
               )}
             </Field>
             <Field label="Deliver to">
-              {isClosed ? (
+              {isCancelled ? (
                 <div className="whitespace-pre-line text-sm text-[#28364b]">{po.delivery_address || "—"}</div>
               ) : (
                 <textarea
@@ -450,14 +455,14 @@ export default function PurchaseOrderDetail({ params }) {
             </Field>
             <Info label="Currency" value={`${po.currency}${po.currency !== po.base_currency ? ` · ×${Number(po.exchange_rate)} → ${po.base_currency}` : ""}`} />
             <Field label="Issued">
-              {isClosed ? (
+              {isCancelled ? (
                 <div className="text-sm text-[#28364b]">{issued || "—"}</div>
               ) : (
                 <DatePicker value={issued} onChange={setIssued} placeholder="Set date" />
               )}
             </Field>
             <Field label="Expected delivery">
-              {isClosed ? (
+              {isCancelled ? (
                 <div className="text-sm text-[#28364b]">{expected || "—"}</div>
               ) : (
                 <DatePicker value={expected} onChange={setExpected} placeholder="Set date" />
@@ -468,6 +473,17 @@ export default function PurchaseOrderDetail({ params }) {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        {/* Correcting an order that has already gone out changes what the job
+            cost, so it changes the reports too. That is the point — a weight
+            correction is the real figure — but it is worth saying out loud. */}
+        {canEditLines && !isDraft && (
+          <p className="border-b border-slate-100 bg-amber-50/60 px-4 py-2 text-xs text-amber-800">
+            This order is <strong>{po.status}</strong>. Editing the lines updates what the purchase cost,
+            and so the accounting figures with it — which is what you want when the vendor's final invoice
+            differs from the order. To record a different total without touching the lines, use
+            <strong> Receipt amount</strong> below instead.
+          </p>
+        )}
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -478,7 +494,7 @@ export default function PurchaseOrderDetail({ params }) {
               {/* Per line, so one order can split across accounts. */}
               <th className="w-64 px-3 py-3 font-semibold" title="Which account this line is costed to">Account</th>
               <th className="w-32 px-3 py-3 text-right font-semibold">Line total</th>
-              {isDraft && <th className="w-10 px-2 py-3"></th>}
+              {canEditLines && <th className="w-10 px-2 py-3"></th>}
             </tr>
           </thead>
           {/* Arrow keys move around the grid — see ui/gridKeys */}
@@ -487,35 +503,35 @@ export default function PurchaseOrderDetail({ params }) {
               <tr key={it.id ?? `new-${idx}`} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-2">
                   {/* textarea, not input: keeps multi-line specs intact on save */}
-                  {isDraft ? (
+                  {canEditLines ? (
                     <textarea rows={2} className={cellInput + " resize-y leading-snug"} value={it.description} onChange={(e) => setItem(idx, { description: e.target.value })} placeholder="Item description" />
                   ) : (
                     <span className="text-slate-700 whitespace-pre-line">{it.description}</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {isDraft ? (
+                  {canEditLines ? (
                     <input className={cellInput} value={it.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} placeholder="kg" />
                   ) : (
                     <span className="text-slate-600">{it.unit || "—"}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {isDraft ? (
+                  {canEditLines ? (
                     <input type="number" step="0.001" className={`${cellInput} text-right`} value={it.qty} onChange={(e) => setItem(idx, { qty: e.target.value })} />
                   ) : (
                     <span className="text-slate-600">{Number(it.qty)}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {isDraft ? (
+                  {canEditLines ? (
                     <input type="number" step="0.0001" className={`${cellInput} text-right`} value={it.unit_cost} onChange={(e) => setItem(idx, { unit_cost: e.target.value })} />
                   ) : (
                     <span className="text-slate-600">{Number(it.unit_cost).toFixed(2)}</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {isDraft ? (
+                  {canEditLines ? (
                     <AccountCodeCell
                       full
                       className={`w-full ${it.account_code ? "" : "ring-1 ring-amber-300"}`}
@@ -530,7 +546,7 @@ export default function PurchaseOrderDetail({ params }) {
                 <td className="px-3 py-2 text-right font-medium text-[#28364b]">
                   {((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)).toFixed(2)}
                 </td>
-                {isDraft && (
+                {canEditLines && (
                   <td className="px-2 py-2 text-center">
                     <button onClick={() => removeItem(idx)} className="text-slate-300 transition-colors hover:text-red-500" title="Remove line">
                       <X className="h-4 w-4" />
@@ -540,7 +556,7 @@ export default function PurchaseOrderDetail({ params }) {
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={isDraft ? 7 : 6} className="py-8 text-center text-slate-400">No line items.</td></tr>
+              <tr><td colSpan={canEditLines ? 7 : 6} className="py-8 text-center text-slate-400">No line items.</td></tr>
             )}
           </tbody>
           <tfoot>
@@ -549,11 +565,11 @@ export default function PurchaseOrderDetail({ params }) {
                   to the Line total column, which holds the figure. */}
               <td colSpan={5} className="px-4 py-3 text-right text-sm font-semibold text-slate-500">Total ({po.currency})</td>
               <td className="px-3 py-3 text-right text-base font-bold text-[#28364b]">{grandTotal.toFixed(2)}</td>
-              {isDraft && <td></td>}
+              {canEditLines && <td></td>}
             </tr>
           </tfoot>
         </table>
-        {isDraft && (
+        {canEditLines && (
           <div className="border-t border-slate-100 p-3">
             <button onClick={addItem} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm text-slate-500 transition-colors hover:border-[#28364b] hover:text-[#28364b]">
               <Plus className="h-4 w-4" /> Add line
@@ -654,7 +670,7 @@ export default function PurchaseOrderDetail({ params }) {
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          disabled={isClosed}
+          disabled={isCancelled}
           placeholder="Internal notes or instructions for the vendor…"
           className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
         />
@@ -943,7 +959,7 @@ export default function PurchaseOrderDetail({ params }) {
             </button>
           )}
         </div>
-        {!isClosed && (
+        {!isCancelled && (
           <button onClick={() => save.mutate()} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-4 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save changes
           </button>

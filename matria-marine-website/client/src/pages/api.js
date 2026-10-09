@@ -282,7 +282,10 @@ export const invoicesAPI = {
   fromOffer: (offerId) => api.post(apiUrl(`/portal/offers/${offerId}/invoice`)),
   update: (id, payload) => api.patch(apiUrl(`/portal/invoices/${id}`), payload),
   remove: (id) => api.delete(apiUrl(`/portal/invoices/${id}`)),
-  pdf: (id) => api.get(apiUrl(`/portal/invoices/${id}/pdf`), { responseType: 'blob' }),
+  // params: { currency, rate } adds a second money column converted at that
+  // rate — for customers who reconcile in a currency they are not billed in.
+  pdf: (id, params = {}) =>
+    api.get(apiUrl(`/portal/invoices/${id}/pdf`), { params, responseType: 'blob' }),
   email: (id) => api.post(apiUrl(`/portal/invoices/${id}/email`)),
 };
 

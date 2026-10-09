@@ -286,6 +286,67 @@ class PurchaseOrderTest extends TestCase
         $this->assertSame('2026-10-06', $po->issued_date->format('Y-m-d'));
     }
 
+    /**
+     * Provisions are priced by weight, so the vendor's final invoice routinely
+     * differs from the order — and it arrives after delivery, when the order is
+     * already marked received. Re-pricing it then has to be possible, and the
+     * cost the reports see has to follow.
+     */
+    public function test_a_received_order_can_be_repriced_from_the_final_invoice(): void
+    {
+        $this->actingStaff();
+        $vendor = Vendor::create(['name' => 'Adamar International', 'currency' => 'EUR']);
+
+        $po = PurchaseOrder::create([
+            'vendor_id' => $vendor->id,
+            'currency' => 'EUR',
+            'base_currency' => 'EUR',
+            'exchange_rate' => 1,
+            'status' => 'received',
+        ]);
+        $item = $po->items()->create([
+            'description' => 'Provisions Supply, Yalova Turkey',
+            'unit' => 'Ea',
+            'qty' => 1,
+            'unit_cost' => 2567.83,
+            'line_total' => 2567.83,
+        ]);
+        $po->recalcSubtotal();
+
+        $this->patchJson("/api/portal/purchase-orders/{$po->id}", [
+            'items' => [[
+                'id' => $item->id,
+                'description' => 'Provisions Supply, Yalova Turkey',
+                'unit' => 'Ea',
+                'qty' => 1,
+                'unit_cost' => 2604.31,
+                'account_code' => '5000',
+            ]],
+        ])->assertOk();
+
+        $po->refresh();
+        $this->assertEquals(2604.31, (float) $po->items()->first()->unit_cost);
+        $this->assertEquals(2604.31, (float) $po->subtotal);
+        $this->assertEquals(2604.31, $po->vendorNetAmount());
+    }
+
+    public function test_a_cancelled_order_is_left_alone(): void
+    {
+        $this->actingStaff();
+        $vendor = Vendor::create(['name' => 'Void Vendor', 'currency' => 'EUR']);
+
+        $po = PurchaseOrder::create([
+            'vendor_id' => $vendor->id,
+            'currency' => 'EUR',
+            'base_currency' => 'EUR',
+            'exchange_rate' => 1,
+            'status' => 'cancelled',
+        ]);
+
+        // A cancelled order is not a payable, whatever is on it.
+        $this->assertEquals(0, PurchaseOrder::live()->where('id', $po->id)->count());
+    }
+
     public function test_generate_rejects_enquiry_without_awards(): void
     {
         $this->actingStaff();

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send, ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
 import { invoicesAPI, customersAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -10,6 +10,8 @@ import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
 import ProofOfDelivery from "./ProofOfDelivery";
 import BackupButton from "./ui/BackupButton";
+import Modal from "./ui/Modal";
+import { fetchRates } from "@/lib/fx";
 import { gridKeyDown } from "./ui/gridKeys";
 import AccountSelect, { AccountCodeCell } from "./ui/AccountSelect";
 import { PageLoader, Spinner } from "./ui/Loading";
@@ -157,6 +159,41 @@ export default function InvoicePage({ params }) {
     onError: () => toast.error("Could not delete."),
   });
 
+  // Second-currency download: some customers are billed in one currency and
+  // reconcile in another, and want both on the page. The rate is read live and
+  // shown before the download, so nobody is guessing what was applied.
+  //
+  // Declared ABOVE the early return below: a hook after it is only reached on
+  // the renders where the invoice has loaded, and React counts hooks per
+  // render — which is exactly the "rendered more hooks" crash.
+  const [fxOpen, setFxOpen] = useState(false);
+  const [fxCurrency, setFxCurrency] = useState("");
+  const [fxRate, setFxRate] = useState(null);
+  const [fxLoading, setFxLoading] = useState(false);
+
+  useEffect(() => {
+    if (!fxOpen || !fxCurrency) return;
+
+    const invoiceCurrency = form?.currency || data?.currency || "USD";
+    let cancelled = false;
+
+    setFxLoading(true);
+    setFxRate(null);
+
+    fetchRates(invoiceCurrency)
+      // Rounded to the six places the PDF quotes and converts at, so the rate
+      // shown here, the one sent, and the one printed are the same number.
+      .then((r) => {
+        if (cancelled) return;
+        const live = Number(r.rates?.[fxCurrency]);
+        setFxRate(live > 0 ? Math.round(live * 1e6) / 1e6 : null);
+      })
+      .catch(() => { if (!cancelled) setFxRate(null); })
+      .finally(() => { if (!cancelled) setFxLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [fxOpen, fxCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (isLoading || !form) return <PageLoader />;
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -181,18 +218,25 @@ export default function InvoicePage({ params }) {
   const grand = subtotal + delivery + taxAmount;
   const cur = form.currency;
 
-  const downloadPdf = async () => {
+  const downloadPdf = async (params = {}) => {
     try {
-      const res = await invoicesAPI.pdf(id);
+      const res = await invoicesAPI.pdf(id, params);
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${data.invoice_number}.pdf`;
+      a.download = `${data.invoice_number}${params.currency ? `-${params.currency}` : ""}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
       toast.error("Could not download the PDF.");
     }
+  };
+
+  const openFx = () => {
+    const invoiceCurrency = form?.currency || data?.currency || "USD";
+    setFxCurrency(CURRENCIES.find((c) => c !== invoiceCurrency) || "AED");
+    setFxRate(null);
+    setFxOpen(true);
   };
 
   const handleDelete = async () => {
@@ -241,9 +285,24 @@ export default function InvoicePage({ params }) {
           <button onClick={saveWithDateCheck} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save
           </button>
-          <button onClick={downloadPdf} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">
-            <Download className="h-4 w-4" /> PDF
-          </button>
+          {/* Joined to the PDF button, because that is what it is — the same
+              invoice, got a different way. On its own as a bare icon it sat
+              next to another bare icon and nobody found it. */}
+          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+            <button
+              onClick={() => downloadPdf()}
+              className="inline-flex items-center gap-1 px-3 py-2 text-sm hover:bg-slate-50"
+            >
+              <Download className="h-4 w-4" /> PDF
+            </button>
+            <button
+              onClick={openFx}
+              title="The same invoice with a second currency shown beside every amount"
+              className="inline-flex items-center gap-1 border-l border-slate-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              <ArrowLeftRight className="h-4 w-4" /> 2 currencies
+            </button>
+          </div>
           <BackupButton type="invoice" id={id} number={data?.invoice_number} />
           <button onClick={() => emailIt.mutate()} disabled={emailIt.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-70">
             {emailIt.isLoading ? <Spinner className="h-4 w-4" /> : <Mail className="h-4 w-4" />} Email customer
@@ -461,6 +520,52 @@ export default function InvoicePage({ params }) {
         onChange={() => refetch()}
         hint="Attach the delivery order signed and stamped by the vessel, confirming this invoice's goods were received."
       />
+
+      <Modal open={fxOpen} onClose={() => setFxOpen(false)} title="Invoice with a second currency" maxWidth="max-w-md">
+        <div className="space-y-4 px-6 py-5">
+          <p className="text-sm text-slate-500">
+            The same invoice, with every amount shown again in a second currency beside it. The invoice stays
+            payable in <strong className="text-[#28364b]">{form?.currency || data?.currency}</strong> — the
+            extra column is for the customer's own books, and the PDF says so.
+          </p>
+
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Show alongside</label>
+            <div className="mt-1">
+              <Select
+                value={fxCurrency}
+                onChange={setFxCurrency}
+                options={CURRENCIES.filter((c) => c !== (form?.currency || data?.currency))}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+            {fxLoading ? (
+              <span className="flex items-center gap-2 text-slate-500"><Spinner className="h-4 w-4" /> Reading today's rate…</span>
+            ) : fxRate ? (
+              <span className="text-[#28364b]">
+                1 {form?.currency || data?.currency} = <strong>{fxRate}</strong> {fxCurrency}
+              </span>
+            ) : (
+              <span className="text-amber-700">No live rate for {fxCurrency} right now — try another currency.</span>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => setFxOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50">
+              Cancel
+            </button>
+            <button
+              onClick={() => { downloadPdf({ currency: fxCurrency, rate: fxRate }); setFxOpen(false); }}
+              disabled={!fxRate || fxLoading}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" /> Download
+            </button>
+          </div>
+        </div>
+      </Modal>
     </motion.div>
   );
 }
