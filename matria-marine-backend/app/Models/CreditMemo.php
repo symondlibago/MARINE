@@ -24,6 +24,11 @@ class CreditMemo extends Model
         'customer_name',
         'customer_address',
         'currency',
+        // Inherited from the invoice it credits, so a credit note reverses a
+        // sale at the rate the sale was booked at — not at whatever the
+        // currency has done since.
+        'exchange_rate',
+        'base_currency',
         'status',
         'memo_date',
         'reason',

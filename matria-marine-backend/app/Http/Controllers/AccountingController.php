@@ -192,6 +192,20 @@ class AccountingController extends Controller
             'base_net' => round($rows->sum('base_net'), 2),
             'base_tax' => round($rows->sum('base_tax'), 2),
             'base_gross' => round($rows->sum('base_gross'), 2),
+            // A row with no rate contributes nothing to the converted totals,
+            // which makes those totals understated rather than wrong. The
+            // screen has to say so, or an incomplete figure reads as a
+            // complete one — so the documents still waiting for a rate are
+            // named here rather than merely counted.
+            'unrated' => \App\Support\AccountingBooks::unrated($rows)
+                ->map(fn ($r) => [
+                    'id' => $r['id'] ?? null,
+                    'kind' => $r['kind'] ?? null,
+                    'number' => $r['number'] ?? null,
+                    'currency' => $r['currency'] ?? null,
+                    'net' => $r['net'] ?? null,
+                ])
+                ->all(),
         ];
     }
 

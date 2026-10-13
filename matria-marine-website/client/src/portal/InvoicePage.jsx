@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send, ArrowLeftRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send, ArrowLeftRight, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { invoicesAPI, customersAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -60,6 +60,11 @@ export default function InvoicePage({ params }) {
       customer_address: data.customer_address ?? "",
       customer_reference: data.customer_reference ?? "",
       currency: data.currency ?? "SGD",
+      // Null means nobody has set one. Kept as null rather than defaulted to 1,
+      // because a rate of 1 on a USD invoice is how the sales register came to
+      // add 536,185 AED to a Singapore dollar total.
+      exchange_rate: data.exchange_rate != null ? String(Number(data.exchange_rate)) : "",
+      grand_total: data.grand_total ?? 0,
       status: data.status ?? "draft",
       issue_date: ymd(data.issue_date),
       due_date: ymd(data.due_date),
@@ -86,7 +91,15 @@ export default function InvoicePage({ params }) {
   }, [data]);
 
   const save = useMutation({
-    mutationFn: () => invoicesAPI.update(id, { ...form, customer_id: form.customer_id || null, items: lines }),
+    mutationFn: () => invoicesAPI.update(id, {
+      ...form,
+      customer_id: form.customer_id || null,
+      // Empty box means "not set yet", which is a null, not a zero and not a
+      // one — the registers leave an unrated invoice out of the converted
+      // total rather than counting it at par.
+      exchange_rate: form.exchange_rate === "" ? null : Number(form.exchange_rate),
+      items: lines,
+    }),
     onSuccess: () => { toast.success("Invoice saved."); refetch(); },
     onError: (e) => toast.error(e?.response?.data?.message || "Could not save the invoice."),
   });
@@ -170,6 +183,7 @@ export default function InvoicePage({ params }) {
   const [fxCurrency, setFxCurrency] = useState("");
   const [fxRate, setFxRate] = useState(null);
   const [fxLoading, setFxLoading] = useState(false);
+  const [rateLoading, setRateLoading] = useState(false);
 
   useEffect(() => {
     if (!fxOpen || !fxCurrency) return;
@@ -195,6 +209,11 @@ export default function InvoicePage({ params }) {
   }, [fxOpen, fxCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading || !form) return <PageLoader />;
+
+  // What the books are kept in. Comes from the server so there is one answer,
+  // not a copy of it here that can drift.
+  const baseCurrency = data?.base_currency || "SGD";
+  const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setLine = (i, k, v) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, [k]: v } : l)));
@@ -229,6 +248,29 @@ export default function InvoicePage({ params }) {
       URL.revokeObjectURL(url);
     } catch {
       toast.error("Could not download the PDF.");
+    }
+  };
+
+  // The posting rate for a foreign invoice. Today's rate is only a starting
+  // point — the right one is the rate on the day of supply, which is why it is
+  // typed into a box rather than read at report time.
+  const useLiveRate = async () => {
+    setRateLoading(true);
+    try {
+      // DBS board rates — the bank Matria actually converts through, so the
+      // figure in the books is the one that reaches the bank statement.
+      // See App\Support\FxRates.
+      const r = await fetchRates(form.currency);
+      const live = Number(r.rates?.[baseCurrency]);
+      if (!(live > 0)) throw new Error(`DBS has no ${baseCurrency} rate for ${form.currency}.`);
+
+      const rate = Math.round(live * 1e6) / 1e6;
+      setField("exchange_rate", String(rate));
+      toast.success(`Rate applied — 1 ${form.currency} = ${rate} ${baseCurrency}`);
+    } catch (e) {
+      toast.error(e?.message || "Could not read today's rate.");
+    } finally {
+      setRateLoading(false);
     }
   };
 
@@ -331,6 +373,38 @@ export default function InvoicePage({ params }) {
           <Field label="Currency">
             <Select value={form.currency} onChange={(v) => setField("currency", v)} options={CURRENCIES} />
           </Field>
+          {/* Only when it is actually a foreign invoice. One SGD is one SGD,
+              and a rate box showing 1 on every local invoice is a box people
+              stop reading — which is how a wrong one gets through. */}
+          {form.currency !== baseCurrency && (
+            <Field label={`Rate to ${baseCurrency}`}>
+              <div className="flex items-center gap-2">
+                <input
+                  className={`${input} ${form.exchange_rate ? "" : "ring-1 ring-amber-400"}`}
+                  type="number"
+                  step="0.000001"
+                  min="0"
+                  value={form.exchange_rate ?? ""}
+                  onChange={(e) => setField("exchange_rate", e.target.value)}
+                  placeholder="Needed to report this invoice"
+                />
+                <button
+                  type="button"
+                  onClick={useLiveRate}
+                  disabled={rateLoading}
+                  title={`Fill in today's rate for ${form.currency} → ${baseCurrency}`}
+                  className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2 text-slate-500 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {rateLoading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {form.exchange_rate
+                  ? `1 ${form.currency} = ${form.exchange_rate} ${baseCurrency} · ${money(Number(form.grand_total || 0) * Number(form.exchange_rate))} ${baseCurrency}`
+                  : `Until this is set, the invoice is left out of the ${baseCurrency} totals rather than counted at par.`}
+              </p>
+            </Field>
+          )}
           <Field label="Status">
             <Select value={form.status} onChange={(v) => setField("status", v)} options={STATUSES} />
           </Field>

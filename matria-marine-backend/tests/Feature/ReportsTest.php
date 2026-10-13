@@ -59,7 +59,9 @@ class ReportsTest extends TestCase
         $this->seedActivity();
 
         $res = $this->getJson('/api/portal/reports/spend')->assertOk();
-        $res->assertJsonPath('data.base_currency', 'USD');
+        // Singapore dollars: the books are kept in what the GST return is
+        // filed in. This read USD until the reporting currency was corrected.
+        $res->assertJsonPath('data.base_currency', 'SGD');
         $this->assertEquals(30, $res->json('data.totals.ordered'));  // 10 * 3
         $this->assertEquals(1, $res->json('data.totals.po_count'));
         $this->assertEquals('Alpha', $res->json('data.by_vendor.0.vendor'));

@@ -184,6 +184,13 @@ class CustomerInvoiceController extends Controller
             'customer_address' => ['nullable', 'string', 'max:2000'],
             'customer_reference' => ['nullable', 'string', 'max:255'],
             'currency' => ['sometimes', 'string', 'size:3'],
+            // What this invoice converts to the reporting currency at. Stored
+            // on the document so the books stay put: a report run in March must
+            // give the same figure as the one run in January, which it cannot
+            // do if the rate is looked up fresh each time. Null means nobody
+            // has set one yet, and the registers say so rather than counting
+            // the invoice at par.
+            'exchange_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'status' => ['sometimes', 'string', 'in:draft,sent,paid'],
             'issue_date' => ['nullable', 'date'],
             'due_date' => ['nullable', 'date'],
@@ -235,6 +242,23 @@ class CustomerInvoiceController extends Controller
             if (isset($data['currency'])) {
                 $invoice->currency = strtoupper($data['currency']);
             }
+
+            if (array_key_exists('exchange_rate', $data)) {
+                $rate = $data['exchange_rate'];
+                $invoice->exchange_rate = ($rate === null || (float) $rate <= 0) ? null : (float) $rate;
+            }
+
+            // An invoice in the reporting currency converts at one, and that is
+            // not something anyone should have to type or be able to get wrong.
+            // Done after the two assignments above so it follows a currency
+            // change in the same save.
+            $base = \App\Support\AccountingBooks::baseCurrency();
+
+            if (strtoupper((string) $invoice->currency) === $base) {
+                $invoice->exchange_rate = 1;
+            }
+
+            $invoice->base_currency = $base;
             foreach (['issue_date', 'due_date'] as $key) {
                 if (array_key_exists($key, $data)) {
                     $invoice->{$key} = $data[$key];

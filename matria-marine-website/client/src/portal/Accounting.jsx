@@ -1,9 +1,10 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "wouter";
 import {
   BookOpen, Receipt, ShoppingCart, Percent, Scale, PieChart, Landmark,
-  Clock, Users, Download, ChevronRight, AlertTriangle, Search, Check,
+  Clock, Users, Download, ChevronRight, AlertTriangle, Search, Check, ExternalLink,
 } from "lucide-react";
 import { accountingAPI } from "@/pages/api";
 import { PageLoader } from "./ui/Loading";
@@ -296,13 +297,79 @@ function ChartOfAccounts() {
 
 /* ====================== 2 & 3. Registers ====================== */
 
+/**
+ * Where a document in the accounting registers actually lives.
+ *
+ * A vendor credit note has no screen of its own — it is recorded on the
+ * purchase order it credits, and carries that order's id. Credit memos and
+ * operating expenses have a list but no detail page, so those land on the
+ * list, which is still closer than the Accounting screen.
+ */
+function docHref({ kind, id }) {
+  if (!id) return null;
+
+  switch (kind) {
+    case "invoice": return `/invoices/${id}`;
+    case "purchase_order":
+    case "vendor_credit_note": return `/purchase-orders/${id}`;
+    case "credit_memo": return "/credit-memos";
+    case "operating_expense": return "/operating-expenses";
+    default: return null;   // payroll lives in its own app
+  }
+}
+
+/**
+ * Which documents cannot be converted, and so are missing from the totals.
+ *
+ * The register used to add face values across currencies and present the
+ * result as a total — one AED invoice put 536,185 into a Singapore dollar
+ * figure. Now every amount is converted at the rate stored on its document,
+ * and a document without one is left out. Left out silently is its own kind of
+ * wrong, so the ones still waiting are named here.
+ */
 function CurrencyWarning({ data }) {
-  if (!data.multi_currency) return null;
+  const unrated = data.totals?.unrated ?? [];
+
+  if (!unrated.length) {
+    if (!data.multi_currency) return null;
+    return (
+      <Note tone="slate">
+        These documents are in {data.currencies.join(", ")}. Each is converted at the rate recorded on
+        it, and the totals below are in {data.base_currency}.
+      </Note>
+    );
+  }
+
   return (
     <Note tone="amber">
-      These documents are in {data.currencies.join(", ")}. Totals add the face values together —
-      customer invoices do not yet carry an exchange rate, so treat a mixed-currency total as
-      indicative until the posting rate is recorded.
+      <strong>
+        {unrated.length} document{unrated.length === 1 ? " has" : "s have"} no exchange rate, so{" "}
+        {unrated.length === 1 ? "it is" : "they are"} missing from the {data.base_currency} totals.
+      </strong>{" "}
+      Open each one and set its rate — until then these figures are understated, not wrong.
+      {/* Linked, because the whole point of naming them is to go and fix
+          them — and hunting eleven numbers through four list screens is how
+          they stay unfixed. */}
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
+        {unrated.map((u) => {
+          const amount = Number(u.net ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const label = `${u.number} · ${u.currency} ${amount}`;
+          const href = docHref(u);
+
+          return href ? (
+            <Link
+              key={`${u.kind}-${u.id}`}
+              href={href}
+              className="inline-flex items-center gap-1 underline decoration-amber-400 underline-offset-2 hover:text-amber-900"
+              title={`Open ${u.number} and set its rate`}
+            >
+              {label} <ExternalLink className="h-3 w-3 shrink-0" />
+            </Link>
+          ) : (
+            <span key={`${u.kind}-${u.id}`}>{label}</span>
+          );
+        })}
+      </div>
     </Note>
   );
 }
@@ -329,16 +396,18 @@ function SalesRegister({ range }) {
           <CurrencyWarning data={d} />
           <UnclassifiedWarning count={d.unclassified} what="sales document(s)" />
 
+          {/* Headline figures are the converted ones. A sum of face values
+              across currencies is not a number anybody can file. */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Documents" value={`${d.totals.invoices} inv · ${d.totals.credit_notes} CN`} />
-            <Stat label="Net of GST" value={money(d.totals.net)} />
-            <Stat label="GST charged" value={money(d.totals.tax)} />
+            <Stat label={`Net of GST (${d.base_currency})`} value={money(d.totals.base_net)} />
+            <Stat label={`GST charged (${d.base_currency})`} value={money(d.totals.base_tax)} />
             <Stat label="Outstanding" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
           </div>
 
           <Card
             title="Sales invoices & income credits"
-            subtitle={`${d.totals.count} document(s) · gross ${money(d.totals.gross)}`}
+            subtitle={`${d.totals.count} document(s) · gross ${money(d.totals.base_gross)} ${d.base_currency}`}
             action={
               <div className="flex items-center gap-2">
                 <SearchBox value={term} onChange={setTerm} placeholder="Invoice, customer, vessel…" />
@@ -347,12 +416,21 @@ function SalesRegister({ range }) {
                   onClick={() =>
                     downloadCsv(
                       rangedFilename("sales-invoices", range),
+                      // Rate and the converted columns sit beside the native
+                      // ones, so the sheet can be totalled without anyone
+                      // working out which rows are in which currency — which
+                      // was the whole problem with the file sent to the
+                      // accountant.
                       ["Date", "Type", "Number", "Party no", "Customer / Vendor", "Customer ref", "Enquiry", "Vessel",
-                        "Currency", "Account", "Account name", "GST code", "F5 box", "Subtotal", "Delivery",
-                        "Net", "GST %", "GST amount", "Gross", "Status", "Settled", "Outstanding"],
+                        "Currency", "Rate", "Account", "Account name", "GST code", "F5 box", "Subtotal", "Delivery",
+                        "Net", "GST %", "GST amount", "Gross",
+                        `Net (${d.base_currency})`, `GST (${d.base_currency})`, `Gross (${d.base_currency})`,
+                        "Status", "Settled", "Outstanding"],
                       d.rows.map((r) => [r.date, r.kind_label, r.number, r.party_no, r.party_name, r.party_reference,
-                        r.reference, r.vessel, r.currency, r.account_code, r.account_name, r.gst_code, r.f5_box,
-                        r.subtotal, r.delivery, r.net, r.tax_rate, r.tax_amount, r.gross, r.status, r.settled, r.outstanding])
+                        r.reference, r.vessel, r.currency, r.exchange_rate, r.account_code, r.account_name, r.gst_code, r.f5_box,
+                        r.subtotal, r.delivery, r.net, r.tax_rate, r.tax_amount, r.gross,
+                        r.base_net, r.base_tax, r.base_gross,
+                        r.status, r.settled, r.outstanding])
                     )
                   }
                 />
@@ -425,14 +503,20 @@ function SalesRegister({ range }) {
                       </tr>
                     ))}
                   </tbody>
+                  {/* Totalled in the reporting currency, because the column
+                      above it holds AED, EUR, SGD and USD side by side and
+                      adding those together is how 536,185 dirhams became
+                      Singapore dollars. */}
                   <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-semibold">
                     <tr>
-                      <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={12}>Total</TD>
+                      <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={12}>
+                        Total <span className="font-normal normal-case text-slate-400">· converted to {d.base_currency}</span>
+                      </TD>
                       <TD right colSpan={2} />
-                      <TD right><Amount value={d.totals.net} bold /></TD>
+                      <TD right><Amount value={d.totals.base_net} bold /></TD>
                       <TD right />
-                      <TD right><Amount value={d.totals.tax} bold /></TD>
-                      <TD right><Amount value={d.totals.gross} bold /></TD>
+                      <TD right><Amount value={d.totals.base_tax} bold /></TD>
+                      <TD right><Amount value={d.totals.base_gross} bold /></TD>
                       <TD right><Amount value={d.totals.billed} bold /></TD>
                       <TD right>
                         {Number(d.totals.pass_through)
@@ -488,11 +572,14 @@ function PurchaseRegister({ range }) {
                       rangedFilename("purchase-invoices", range),
                       ["Date", "Type", "Number", "Vendor invoice", "Vendor no", "Vendor", "Enquiry", "Vessel",
                         "Currency", "Rate", "Account", "Account name", "GST code", "F5 box", "Net", "Expenses",
-                        "GST %", "GST amount", "Gross", "Status", "Settled", "Outstanding"],
+                        "GST %", "GST amount", "Gross",
+                        `Net (${d.base_currency})`, `GST (${d.base_currency})`, `Gross (${d.base_currency})`,
+                        "Status", "Settled", "Outstanding"],
                       d.rows.map((r) => [r.date, r.kind_label, r.number, r.vendor_invoice_number, r.party_no,
                         r.party_name, r.reference, r.vessel, r.currency, r.exchange_rate, r.account_code,
                         r.account_name, r.gst_code, r.f5_box, r.net, r.expenses, r.tax_rate, r.tax_amount,
-                        r.gross, r.status, r.settled, r.outstanding])
+                        r.gross, r.base_net, r.base_tax, r.base_gross,
+                        r.status, r.settled, r.outstanding])
                     )
                   }
                 />
@@ -548,12 +635,14 @@ function PurchaseRegister({ range }) {
                   </tbody>
                   <tfoot className="border-t-2 border-slate-200 bg-slate-50/60 font-semibold">
                     <tr>
-                      <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={13}>Total</TD>
-                      <TD right><Amount value={d.totals.net} bold /></TD>
+                      <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={13}>
+                        Total <span className="font-normal normal-case text-slate-400">· converted to {d.base_currency}</span>
+                      </TD>
+                      <TD right><Amount value={d.totals.base_net} bold /></TD>
                       <TD right><Amount value={d.totals.job_expenses} bold /></TD>
                       <TD right />
-                      <TD right><Amount value={d.totals.tax} bold /></TD>
-                      <TD right><Amount value={d.totals.gross} bold /></TD>
+                      <TD right><Amount value={d.totals.base_tax} bold /></TD>
+                      <TD right><Amount value={d.totals.base_gross} bold /></TD>
                       <TD />
                       <TD right><Amount value={d.totals.outstanding} bold /></TD>
                     </tr>

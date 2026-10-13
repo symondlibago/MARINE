@@ -25,6 +25,11 @@ class CustomerInvoice extends Model
         'customer_address',
         'customer_reference',
         'currency',
+        // What this invoice converts to the reporting currency at, fixed on
+        // the document so a report of a closed period never moves. Null until
+        // somebody sets it — see AccountingBooks::rateOf().
+        'exchange_rate',
+        'base_currency',
         'status',
         'subtotal',
         'packing_cost',

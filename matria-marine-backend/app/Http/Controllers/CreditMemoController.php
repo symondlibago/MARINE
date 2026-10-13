@@ -172,6 +172,12 @@ class CreditMemoController extends Controller
                 'customer_name' => $invoice->customer_name,
                 'customer_address' => $invoice->customer_address,
                 'currency' => $invoice->currency,
+                // The rate the invoice was booked at, not today's. A credit
+                // note undoes a sale, so it has to undo it at the figure that
+                // sale actually went into the books as — otherwise crediting
+                // an invoice in full leaves a stray gain or loss behind.
+                'exchange_rate' => $invoice->exchange_rate,
+                'base_currency' => \App\Support\AccountingBooks::baseCurrency(),
                 'tax_rate' => (float) $invoice->tax_rate,
                 'memo_date' => $data['memo_date'] ?? $cm->memo_date ?? now()->toDateString(),
                 'reason' => array_key_exists('reason', $data) ? $data['reason'] : $cm->reason,

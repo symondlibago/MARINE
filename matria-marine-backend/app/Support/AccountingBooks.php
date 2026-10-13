@@ -45,6 +45,36 @@ class AccountingBooks
         return strtoupper(config('procurement.base_currency', 'SGD'));
     }
 
+    /**
+     * What a document converts to the reporting currency at.
+     *
+     * Returns null when nobody has set one yet, and that null is the point.
+     * The old code answered 1.0 here, which is why an invoice for AED 536,185
+     * went into the sales register as 536,185 Singapore dollars and the total
+     * underneath it was meaningless. A rate that has not been decided is not a
+     * rate of one, so documents without one are reported as needing attention
+     * rather than silently converted at par.
+     *
+     * A document already in the reporting currency needs no stored rate: one
+     * is simply the truth.
+     */
+    public static function rateOf(object $doc): ?float
+    {
+        if (strtoupper((string) $doc->currency) === self::baseCurrency()) {
+            return 1.0;
+        }
+
+        $rate = $doc->exchange_rate ?? null;
+
+        return $rate !== null && (float) $rate > 0 ? (float) $rate : null;
+    }
+
+    /** Documents whose figures cannot be converted, and so cannot be totalled. */
+    public static function unrated(Collection $rows): Collection
+    {
+        return $rows->filter(fn ($r) => ($r['exchange_rate'] ?? null) === null)->values();
+    }
+
     /* ------------------------------------------------------------------ */
     /*  Sales                                                             */
     /* ------------------------------------------------------------------ */
@@ -161,7 +191,7 @@ class AccountingBooks
             'reference' => $i->rfq?->reference,
             'vessel' => $i->rfq?->ship_name,
             'currency' => $i->currency,
-            'exchange_rate' => 1.0,
+            'exchange_rate' => self::rateOf($i),
             // The SALE, not the invoice. A Cash to Master principal is billed
             // to the client and collected from them, but it was never a supply
             // Matria made — it belongs to the vessel master. Leaving it in
@@ -218,7 +248,7 @@ class AccountingBooks
             'reference' => $c->rfq?->reference,
             'vessel' => $c->rfq?->ship_name,
             'currency' => $c->currency,
-            'exchange_rate' => 1.0,
+            'exchange_rate' => self::rateOf($c),
             // Negative throughout: a credit note is a sale running backwards.
             // Only the part that was a sale, for the same reason the invoice
             // only counted that part in the first place.
@@ -306,7 +336,7 @@ class AccountingBooks
                     'reference' => $p->rfq?->reference,
                     'vessel' => $p->rfq?->ship_name ?: $p->ship_name,
                     'currency' => $p->currency,
-                    'exchange_rate' => (float) ($p->exchange_rate ?: 1),
+                    'exchange_rate' => self::rateOf($p),
                     'subtotal' => round($amount, 2),
                     'delivery' => 0.0,
                     'net' => round($amount, 2),
@@ -414,7 +444,10 @@ class AccountingBooks
             'reference' => null,
             'vessel' => null,
             'currency' => $run->currency ?: self::baseCurrency(),
-            'exchange_rate' => 1.0,
+            // Salaries are paid in the reporting currency, so the rate is one.
+            // Spelled out rather than assumed: a run in anything else has no
+            // rate to convert at, and should say so instead of posting at par.
+            'exchange_rate' => strtoupper((string) ($run->currency ?: self::baseCurrency())) === self::baseCurrency() ? 1.0 : null,
             'subtotal' => $cost,
             'expenses' => 0.0,
             'net' => $cost,
@@ -488,7 +521,7 @@ class AccountingBooks
             'reference' => $p->rfq?->reference,
             'vessel' => $p->rfq?->ship_name ?: $p->ship_name,
             'currency' => $p->currency,
-            'exchange_rate' => (float) ($p->exchange_rate ?: 1),
+            'exchange_rate' => self::rateOf($p),
             'subtotal' => round($net, 2),
             'expenses' => round((float) $p->expenses, 2),
             'net' => round($net, 2),
@@ -535,7 +568,7 @@ class AccountingBooks
                     'reference' => null,
                     'vessel' => null,
                     'currency' => $e->currency,
-                    'exchange_rate' => (float) ($e->exchange_rate ?: 1),
+                    'exchange_rate' => self::rateOf($e),
                     'subtotal' => round($net, 2),
                     'expenses' => 0.0,
                     'net' => round($net, 2),
@@ -598,10 +631,41 @@ class AccountingBooks
             'billed_gross' => $row['gross'],
             'account_breakdown' => [],
             'base_currency' => self::baseCurrency(),
-            'base_revenue' => round(($row['revenue_net'] ?? $row['net']) * $row['exchange_rate'], 2),
-            'base_net' => round($row['net'] * $row['exchange_rate'], 2),
-            'base_tax' => round($row['tax_amount'] * $row['exchange_rate'], 2),
-            'base_gross' => round($row['gross'] * $row['exchange_rate'], 2),
+        ] + self::converted($row);
+    }
+
+    /**
+     * The same figures in the reporting currency.
+     *
+     * Every one comes back null when the document has no rate, and null is
+     * carried all the way to the screen on purpose: a row that cannot be
+     * converted has to be visibly missing from the total, not quietly counted
+     * as zero. Multiplying by a null rate would have given exactly that — a
+     * row worth nothing, sitting in a total that looked complete.
+     *
+     * @return array<string, float|null>
+     */
+    private static function converted(array $row): array
+    {
+        $rate = $row['exchange_rate'] ?? null;
+
+        if ($rate === null || (float) $rate <= 0) {
+            return [
+                'exchange_rate' => null,
+                'base_revenue' => null,
+                'base_net' => null,
+                'base_tax' => null,
+                'base_gross' => null,
+            ];
+        }
+
+        $rate = (float) $rate;
+
+        return [
+            'base_revenue' => round(($row['revenue_net'] ?? $row['net']) * $rate, 2),
+            'base_net' => round($row['net'] * $rate, 2),
+            'base_tax' => round($row['tax_amount'] * $rate, 2),
+            'base_gross' => round($row['gross'] * $rate, 2),
         ];
     }
 

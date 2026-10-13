@@ -26,9 +26,18 @@ return [
     ],
 
     /*
-    | Company base currency used to total multi-currency spend in reports.
-    | Document amounts are converted via their stored exchange_rate.
+    | The currency the books are kept and reported in.
+    |
+    | Singapore dollars, because that is what the GST return and the financial
+    | statements are filed in — a set of books totalled in anything else has to
+    | be converted again before it can be submitted, which is a second place
+    | for the figures to go wrong.
+    |
+    | Every document stores the rate it was converted at (exchange_rate), and
+    | the reports total those converted amounts. Changing this value does NOT
+    | restate the rates already recorded against existing documents, so it is
+    | not something to switch on a whim.
     */
-    'base_currency' => env('PROCUREMENT_BASE_CURRENCY', 'USD'),
+    'base_currency' => env('PROCUREMENT_BASE_CURRENCY', 'SGD'),
 
 ];
