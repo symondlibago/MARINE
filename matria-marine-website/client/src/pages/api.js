@@ -350,8 +350,10 @@ export const accountingAPI = {
   // New documents take a rate when they are saved; this is for the backlog.
   // restamp: also rewrite rates that are already stored, at today's. Opt-in —
   // it restates figures that may already have been reported.
-  fillRates: (restamp = false) =>
-    api.post(apiUrl('/portal/accounting/fill-rates'), null, { params: restamp ? { restamp: 1 } : {} }),
+  // Always scoped to a date range, so re-stamping December cannot reach back
+  // and re-convert January at December's rate.
+  fillRates: (params = {}) =>
+    api.post(apiUrl('/portal/accounting/fill-rates'), null, { params }),
   chart: () => api.get(apiUrl('/portal/accounting/chart')),
   salesInvoices: (params = {}) => api.get(apiUrl('/portal/accounting/sales-invoices'), { params }),
   purchaseInvoices: (params = {}) => api.get(apiUrl('/portal/accounting/purchase-invoices'), { params }),

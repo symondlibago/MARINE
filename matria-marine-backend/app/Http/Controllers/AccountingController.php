@@ -960,17 +960,40 @@ class AccountingController extends Controller
         // and correcting that across a whole set by hand is not realistic.
         $restamp = $request->boolean('restamp');
 
+        // Scoped to the period on screen, and that matters most when
+        // re-stamping. A January invoice must not be re-converted at
+        // December's rate because somebody looking at December pressed a
+        // button — that is the exact thing storing the rate was for. Each
+        // type is filtered on the date the registers already file it under.
+        // input(), not query(): read wherever they arrive. With query() the
+        // dates are invisible unless they are in the URL, and a scope that
+        // silently disappears on this endpoint means re-converting every
+        // document ever instead of the month that was asked for.
+        $from = $request->input('from');
+        $to = $request->input('to');
+
+        // And rather than trust that, refuse. Filling blanks across the whole
+        // set is harmless; REPLACING stored rates across the whole set rewrites
+        // periods that have been reported, so it has to name its period.
+        abort_if(
+            $restamp && (! $from || ! $to),
+            422,
+            'Say which period to re-convert — re-stamping every document at once is not something to do by accident.'
+        );
+
         $targets = [
-            \App\Models\CustomerInvoice::class => 'invoice_number',
-            \App\Models\CreditMemo::class => 'cm_number',
-            \App\Models\PurchaseOrder::class => 'po_number',
-            \App\Models\OperatingExpense::class => 'label',
+            \App\Models\CustomerInvoice::class => ['invoice_number', 'issue_date'],
+            \App\Models\CreditMemo::class => ['cm_number', 'memo_date'],
+            \App\Models\PurchaseOrder::class => ['po_number', 'issued_date'],
+            \App\Models\OperatingExpense::class => ['label', 'period_start'],
         ];
 
-        foreach ($targets as $model => $numberColumn) {
+        foreach ($targets as $model => [$numberColumn, $dateColumn]) {
             $model::query()
                 ->when(! $restamp, fn ($q) => $q->whereNull('exchange_rate'))
                 ->when($restamp, fn ($q) => $q->whereRaw('UPPER(currency) <> ?', [$base]))
+                ->when($from, fn ($q) => $q->whereDate($dateColumn, '>=', $from))
+                ->when($to, fn ($q) => $q->whereDate($dateColumn, '<=', $to))
                 ->get()
                 ->each(function ($doc) use ($base, $numberColumn, &$filled, &$unpriced) {
                     $rate = \App\Support\AccountingBooks::stampRate((string) $doc->currency);
@@ -1000,6 +1023,8 @@ class AccountingController extends Controller
             'filled_count' => count($filled),
             'unpriced' => $unpriced,
             'base_currency' => $base,
+            'from' => $from,
+            'to' => $to,
         ]);
     }
 }

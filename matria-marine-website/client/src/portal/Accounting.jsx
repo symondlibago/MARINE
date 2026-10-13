@@ -329,12 +329,16 @@ function docHref({ kind, id }) {
  * be reviewed — but nobody is opening fifteen purchase orders one at a time to
  * get a complete total.
  */
-function FillRatesButton({ tone = "amber" }) {
+function FillRatesButton({ tone = "amber", range = {} }) {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 
+  // Always within the dates on screen. Nothing outside the period being looked
+  // at is touched, so re-stamping December cannot reach back into January.
+  const scope = { from: range.from, to: range.to };
+
   const fill = useMutation({
-    mutationFn: (restamp = false) => accountingAPI.fillRates(restamp),
+    mutationFn: (restamp = false) => accountingAPI.fillRates({ ...scope, ...(restamp ? { restamp: 1 } : {}) }),
     onSuccess: (res) => {
       const { filled_count: filled, unpriced = [], base_currency: base } = res.data.data;
 
@@ -350,14 +354,21 @@ function FillRatesButton({ tone = "amber" }) {
   // Rewriting rates that are already stored restates figures that may have
   // been reported, so it is asked for explicitly rather than offered as the
   // same click.
+  const period = range.from && range.to
+    ? `${range.from} to ${range.to}`
+    : range.from ? `from ${range.from}` : range.to ? `up to ${range.to}` : "every period";
+
   const recheck = async () => {
     const ok = await confirm({
-      title: "Re-check every rate?",
+      title: `Re-convert ${period} at today's rate?`,
       message:
-        "Every foreign document will be re-converted at today's rate, replacing the rate currently stored on it. " +
-        "Use this when the stored rates were taken wrongly — not as a routine refresh, because it changes figures " +
-        "that may already have been reported.",
-      confirmText: "Re-check all",
+        `Every foreign document dated ${period} will be re-converted at today's rate, replacing the rate stored on ` +
+        "it. Documents outside these dates are not touched.\n\n" +
+        "A document keeps the rate it was saved at precisely so a past period does not move — so use this only " +
+        "when the stored rates were taken wrongly, never as a routine refresh. Narrow the dates first if you only " +
+        "mean to redo part of the year.",
+      confirmText: "Re-convert",
+      tone: "danger",
     });
 
     if (ok) fill.mutate(true);
@@ -389,7 +400,7 @@ function FillRatesButton({ tone = "amber" }) {
  * and a document without one is left out. Left out silently is its own kind of
  * wrong, so the ones still waiting are named here.
  */
-function CurrencyWarning({ data }) {
+function CurrencyWarning({ data, range = {} }) {
   const unrated = data.totals?.unrated ?? [];
 
   if (!unrated.length) {
@@ -401,7 +412,7 @@ function CurrencyWarning({ data }) {
             These documents are in {data.currencies.join(", ")}. Each is converted at the rate recorded on
             it, and the totals below are in {data.base_currency}.
           </span>
-          <FillRatesButton tone="slate" />
+          <FillRatesButton tone="slate" range={range} />
         </div>
       </Note>
     );
@@ -417,7 +428,7 @@ function CurrencyWarning({ data }) {
           </strong>{" "}
           These are documents raised before rates existed — anything new takes one automatically when it is saved.
         </span>
-        <FillRatesButton />
+        <FillRatesButton range={range} />
       </div>
       {/* Linked, because the whole point of naming them is to go and fix
           them — and hunting eleven numbers through four list screens is how
@@ -465,7 +476,7 @@ function SalesRegister({ range }) {
     <Section query={q}>
       {(d) => (
         <div className="space-y-4">
-          <CurrencyWarning data={d} />
+          <CurrencyWarning data={d} range={range} />
           <UnclassifiedWarning count={d.unclassified} what="sales document(s)" />
 
           {/* Headline figures are the converted ones. A sum of face values
@@ -648,7 +659,7 @@ function PurchaseRegister({ range }) {
     <Section query={q}>
       {(d) => (
         <div className="space-y-4">
-          <CurrencyWarning data={d} />
+          <CurrencyWarning data={d} range={range} />
           <UnclassifiedWarning count={d.unclassified} what="purchase document(s)" />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -837,7 +848,7 @@ function GstSummary({ range }) {
           {d.warnings.map((w, i) => (
             <Note key={i} tone="amber">{w}</Note>
           ))}
-          <CurrencyWarning data={d} />
+          <CurrencyWarning data={d} range={range} />
 
           <div className="grid gap-3 sm:grid-cols-3">
             <Stat label="Output tax (sales)" value={money(d.output.tax)} />

@@ -344,6 +344,42 @@ class MultiCurrencyBooksTest extends TestCase
         );
     }
 
+    /**
+     * Re-converting one period must not reach into another.
+     *
+     * The question that prompted this, in Dru's words: a January invoice worth
+     * 1,000 SGD — if somebody opens the books in December, does it pick up
+     * December's weaker rate and become 900? Storing the rate answers that for
+     * ordinary use, but the re-stamp button could still have reached back and
+     * undone it. It is scoped to the dates on screen so it cannot.
+     */
+    public function test_restamping_one_period_leaves_another_alone(): void
+    {
+        $this->staff();
+
+        $january = $this->invoice('USD', 1000, 1.35);
+        $january->update(['issue_date' => '2026-01-15']);
+
+        $december = $this->invoice('USD', 1000, 1.35);
+        $december->update(['issue_date' => '2026-12-15']);
+
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake([
+            'www.dbs.com.sg/*' => \Illuminate\Support\Facades\Http::response([], 500),
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'result' => 'success', 'base_code' => 'USD',
+                'rates' => ['USD' => 1, 'SGD' => 0.9],   // the rate has fallen a long way
+                'time_last_update_utc' => 'Tue, 15 Dec 2026 00:00:01 +0000',
+            ], 200),
+        ]);
+
+        // Looking at December, and re-converting it.
+        $this->postJson('/api/portal/accounting/fill-rates?restamp=1&from=2026-12-01&to=2026-12-31')->assertOk();
+
+        $this->assertEqualsWithDelta(0.9, (float) $december->fresh()->exchange_rate, 0.0001, 'December was not re-converted');
+        $this->assertEqualsWithDelta(1.35, (float) $january->fresh()->exchange_rate, 0.0001, 'January moved when only December was re-converted');
+    }
+
     public function test_an_unpriceable_currency_is_refused_rather_than_guessed(): void
     {
         $this->staff();
