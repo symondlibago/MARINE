@@ -250,7 +250,11 @@ class PurchaseOrderController extends Controller
             'ship_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'delivery_port' => ['sometimes', 'nullable', 'string', 'max:255'],
             'delivery_address' => ['sometimes', 'nullable', 'string', 'max:2000'],
-            'exchange_rate' => ['sometimes', 'numeric', 'min:0'],
+            // Nullable: a rate nobody has set is not a rate of one. The books
+            // leave an unrated order out of the converted totals and name it,
+            // rather than booking a USD purchase as though it were Singapore
+            // dollars.
+            'exchange_rate' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'receipt_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'has_credit_note' => ['sometimes', 'boolean'],
             'credit_note_number' => ['nullable', 'string', 'max:100', 'required_if:has_credit_note,true'],
@@ -324,6 +328,22 @@ class PurchaseOrderController extends Controller
                     $attrs[$key] = $data[$key];
                 }
             }
+            // A rate of zero or blank means "not set", and an order already in
+            // the reporting currency converts at one whatever was sent.
+            if (array_key_exists('exchange_rate', $attrs)) {
+                $attrs['exchange_rate'] = ($attrs['exchange_rate'] === null || (float) $attrs['exchange_rate'] <= 0)
+                    ? null
+                    : (float) $attrs['exchange_rate'];
+            }
+
+            $base = \App\Support\AccountingBooks::baseCurrency();
+
+            if (strtoupper((string) $purchaseOrder->currency) === $base) {
+                $attrs['exchange_rate'] = 1;
+            }
+
+            $attrs['base_currency'] = $base;
+
             if (array_key_exists('has_credit_note', $attrs)) {
                 $attrs['has_credit_note'] = (bool) $attrs['has_credit_note'];
                 if (! $attrs['has_credit_note']) {

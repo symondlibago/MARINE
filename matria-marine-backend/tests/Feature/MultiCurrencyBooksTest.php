@@ -144,6 +144,47 @@ class MultiCurrencyBooksTest extends TestCase
         $this->assertSame('EUR', $totals['unrated'][0]['currency']);
     }
 
+    /**
+     * A credit note has no rate of its own to decide.
+     *
+     * It undoes a sale, so it undoes it at the figure that sale was booked at.
+     * It also means there is nowhere on the credit memo screen to type a rate —
+     * setting the invoice's fixes both, which is what someone staring at an
+     * unrated credit note with no rate box actually needs.
+     */
+    public function test_a_credit_note_follows_the_invoice_it_credits(): void
+    {
+        $this->staff();
+        $invoice = $this->invoice('USD', 1000, 1.35);
+
+        $memo = \App\Models\CreditMemo::create([
+            'cm_number' => 'MMS-CM-2026-000101',
+            'customer_invoice_id' => $invoice->id,
+            'customer_id' => $invoice->customer_id,
+            'currency' => 'USD',
+            'exchange_rate' => null,          // never set on the memo itself
+            'status' => 'issued',
+            'memo_date' => '2026-06-20',
+            'account_code' => '4100',
+        ]);
+        $memo->items()->create([
+            'description' => 'Discount',
+            'qty' => 1,
+            'unit_price' => -100,
+            'line_total' => -100,
+            'account_code' => '4100',
+        ]);
+
+        $row = AccountingBooks::sales(
+            \Illuminate\Support\Carbon::parse('2026-01-01'),
+            \Illuminate\Support\Carbon::parse('2026-12-31'),
+        )->firstWhere('number', 'MMS-CM-2026-000101');
+
+        $this->assertNotNull($row, 'the credit note is missing from the sales register');
+        $this->assertSame(1.35, $row['exchange_rate']);
+        $this->assertNotNull($row['base_net'], 'it was left unconvertible despite the invoice having a rate');
+    }
+
     public function test_setting_the_currency_to_sgd_sets_the_rate_to_one(): void
     {
         $this->staff();

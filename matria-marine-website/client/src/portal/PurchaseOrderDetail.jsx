@@ -67,6 +67,10 @@ export default function PurchaseOrderDetail({ params }) {
   const [vessel, setVessel] = useState("");
   const [port, setPort] = useState("");
   const [issued, setIssued] = useState("");
+  // What this order converts to the reporting currency at. Empty means nobody
+  // has set one, which is not the same as one — see AccountingBooks::rateOf().
+  const [rate, setRate] = useState("");
+  const [poRateLoading, setPoRateLoading] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -88,6 +92,7 @@ export default function PurchaseOrderDetail({ params }) {
     setIssued(po.issued_date ? String(po.issued_date).slice(0, 10) : "");
     setVessel(po.ship_name || "");
     setPort(po.delivery_port || "");
+    setRate(po.exchange_rate != null && Number(po.exchange_rate) > 0 ? String(Number(po.exchange_rate)) : "");
     setDeliverTo(po.delivery_address || "");
     setReceiptAmount(po.receipt_amount != null ? String(Number(po.receipt_amount)) : "");
     setHasCreditNote(!!po.has_credit_note);
@@ -180,6 +185,21 @@ export default function PurchaseOrderDetail({ params }) {
   // open to correction: provisions are priced by weight, so the vendor's final
   // invoice routinely differs from the order, and that arrives AFTER delivery.
   const isCancelled = po?.status === "cancelled";
+
+  // Today's rate, from the same DBS board rates the rest of the app prices at.
+  const useLiveRate = async () => {
+    setPoRateLoading(true);
+    try {
+      const r = await fetchRates(po.currency);
+      const live = Number(r.rates?.[po.base_currency]);
+      if (!(live > 0)) throw new Error(`No ${po.base_currency} rate for ${po.currency}.`);
+      setRate(String(Math.round(live * 1e6) / 1e6));
+    } catch (e) {
+      toast.error(e?.message || "Could not read today's rate.");
+    } finally {
+      setPoRateLoading(false);
+    }
+  };
   // Lines included: the figures are the whole point of the correction.
   const canEditLines = !isCancelled;
   const vendorCharge = receiptAmount === "" ? Number(po?.subtotal) || 0 : Number(receiptAmount) || 0;
@@ -190,6 +210,7 @@ export default function PurchaseOrderDetail({ params }) {
     mutationFn: () =>
       purchaseOrdersAPI.update(id, {
         notes,
+        exchange_rate: rate === "" ? null : Number(rate),
         expected_date: expected || null,
         issued_date: issued || null,
         ship_name: vessel.trim() || null,
@@ -453,7 +474,42 @@ export default function PurchaseOrderDetail({ params }) {
                 />
               )}
             </Field>
-            <Info label="Currency" value={`${po.currency}${po.currency !== po.base_currency ? ` · ×${Number(po.exchange_rate)} → ${po.base_currency}` : ""}`} />
+            {po.currency === po.base_currency ? (
+              <Info label="Currency" value={po.currency} />
+            ) : (
+              /* A foreign order has to say what it converts at, or the books
+                 cannot total it — it used to read "×0 → SGD", which is not a
+                 rate, just an empty column rendered as a number. */
+              <Field label={`Currency · rate to ${po.base_currency}`}>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-sm font-medium text-[#28364b]">{po.currency}</span>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    min="0"
+                    disabled={isCancelled}
+                    className={`${headerInput} ${rate ? "" : "ring-1 ring-amber-400"}`}
+                    value={rate}
+                    onChange={(e) => setRate(e.target.value)}
+                    placeholder="Rate not set"
+                  />
+                  <button
+                    type="button"
+                    onClick={useLiveRate}
+                    disabled={poRateLoading || isCancelled}
+                    title={`Fill in today's ${po.currency} → ${po.base_currency} rate`}
+                    className="shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-500 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {poRateLoading ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {rate
+                    ? `${(grandTotal * Number(rate)).toFixed(2)} ${po.base_currency}`
+                    : `Left out of the ${po.base_currency} totals until this is set.`}
+                </p>
+              </Field>
+            )}
             <Field label="Issued">
               {isCancelled ? (
                 <div className="text-sm text-[#28364b]">{issued || "—"}</div>

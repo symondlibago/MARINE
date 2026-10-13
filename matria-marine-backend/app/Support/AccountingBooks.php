@@ -98,7 +98,7 @@ class AccountingBooks
 
         $credits = CreditMemo::query()
             ->where('status', 'issued')
-            ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name', 'items'])
+            ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name', 'items', 'invoice:id,exchange_rate,currency'])
             ->when($from, fn ($q) => $q->whereDate('memo_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('memo_date', '<=', $to))
             ->get()
@@ -248,7 +248,12 @@ class AccountingBooks
             'reference' => $c->rfq?->reference,
             'vessel' => $c->rfq?->ship_name,
             'currency' => $c->currency,
-            'exchange_rate' => self::rateOf($c),
+            // Falls back to the invoice it credits. A credit note has no rate
+            // of its own to decide — it undoes a sale, so it undoes it at the
+            // figure that sale went into the books at. It also means setting
+            // the invoice's rate fixes the credit note with it, instead of
+            // leaving a memo stranded with nowhere on screen to type one.
+            'exchange_rate' => self::rateOf($c) ?? ($c->invoice ? self::rateOf($c->invoice) : null),
             // Negative throughout: a credit note is a sale running backwards.
             // Only the part that was a sale, for the same reason the invoice
             // only counted that part in the first place.
