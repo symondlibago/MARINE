@@ -1,16 +1,18 @@
 import { useState, useMemo, Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import {
   BookOpen, Receipt, ShoppingCart, Percent, Scale, PieChart, Landmark,
-  Clock, Users, Download, ChevronRight, AlertTriangle, Search, Check, ExternalLink,
+  Clock, Users, Download, ChevronRight, AlertTriangle, Search, Check, ExternalLink, RefreshCw,
 } from "lucide-react";
 import { accountingAPI } from "@/pages/api";
 import { PageLoader } from "./ui/Loading";
 import DatePicker from "./ui/DatePicker";
 import { downloadCsv, rangedFilename } from "./ui/exportCsv";
 import { useDebounced } from "./ui/useDebounced";
+import { useConfirm } from "./ui/confirm";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -319,6 +321,66 @@ function docHref({ kind, id }) {
 }
 
 /**
+ * Fill every missing rate at once.
+ *
+ * Today's rate goes onto each document and stays there, so the figures stop
+ * moving the moment this runs. For an old document the rate on the day of
+ * supply would be better, and the toast says how many were stamped so they can
+ * be reviewed — but nobody is opening fifteen purchase orders one at a time to
+ * get a complete total.
+ */
+function FillRatesButton({ tone = "amber" }) {
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
+
+  const fill = useMutation({
+    mutationFn: (restamp = false) => accountingAPI.fillRates(restamp),
+    onSuccess: (res) => {
+      const { filled_count: filled, unpriced = [], base_currency: base } = res.data.data;
+
+      if (filled) toast.success(`Rate set on ${filled} document${filled === 1 ? "" : "s"} — totals are now complete.`);
+      if (unpriced.length) toast.warning(`No ${base} rate available for ${unpriced.length}: ${unpriced.slice(0, 3).join(", ")}`);
+      if (!filled && !unpriced.length) toast.info("Nothing left to fill.");
+
+      queryClient.invalidateQueries({ queryKey: ["accounting"] });
+    },
+    onError: () => toast.error("Could not read today's rates."),
+  });
+
+  // Rewriting rates that are already stored restates figures that may have
+  // been reported, so it is asked for explicitly rather than offered as the
+  // same click.
+  const recheck = async () => {
+    const ok = await confirm({
+      title: "Re-check every rate?",
+      message:
+        "Every foreign document will be re-converted at today's rate, replacing the rate currently stored on it. " +
+        "Use this when the stored rates were taken wrongly — not as a routine refresh, because it changes figures " +
+        "that may already have been reported.",
+      confirmText: "Re-check all",
+    });
+
+    if (ok) fill.mutate(true);
+  };
+
+  const styles = tone === "amber"
+    ? "border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100";
+
+  return (
+    <button
+      onClick={() => (tone === "amber" ? fill.mutate(false) : recheck())}
+      disabled={fill.isLoading}
+      title={tone === "amber" ? undefined : "Re-convert every foreign document at today's rate"}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 ${styles}`}
+    >
+      <RefreshCw className={`h-3.5 w-3.5 ${fill.isLoading ? "animate-spin" : ""}`} />
+      {fill.isLoading ? "Converting…" : tone === "amber" ? "Convert them all" : "Re-check rates"}
+    </button>
+  );
+}
+
+/**
  * Which documents cannot be converted, and so are missing from the totals.
  *
  * The register used to add face values across currencies and present the
@@ -334,19 +396,29 @@ function CurrencyWarning({ data }) {
     if (!data.multi_currency) return null;
     return (
       <Note tone="slate">
-        These documents are in {data.currencies.join(", ")}. Each is converted at the rate recorded on
-        it, and the totals below are in {data.base_currency}.
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>
+            These documents are in {data.currencies.join(", ")}. Each is converted at the rate recorded on
+            it, and the totals below are in {data.base_currency}.
+          </span>
+          <FillRatesButton tone="slate" />
+        </div>
       </Note>
     );
   }
 
   return (
     <Note tone="amber">
-      <strong>
-        {unrated.length} document{unrated.length === 1 ? " has" : "s have"} no exchange rate, so{" "}
-        {unrated.length === 1 ? "it is" : "they are"} missing from the {data.base_currency} totals.
-      </strong>{" "}
-      Open each one and set its rate — until then these figures are understated, not wrong.
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <span>
+          <strong>
+            {unrated.length} document{unrated.length === 1 ? " has" : "s have"} no exchange rate, so{" "}
+            {unrated.length === 1 ? "it is" : "they are"} missing from the {data.base_currency} totals.
+          </strong>{" "}
+          These are documents raised before rates existed — anything new takes one automatically when it is saved.
+        </span>
+        <FillRatesButton />
+      </div>
       {/* Linked, because the whole point of naming them is to go and fix
           them — and hunting eleven numbers through four list screens is how
           they stay unfixed. */}
@@ -448,7 +520,11 @@ function SalesRegister({ range }) {
                       <TH>Cust. ref</TH><TH>Enquiry</TH><TH>Vessel</TH><TH>Cur</TH>
                       <TH>Account</TH><TH>GST</TH><TH>Box</TH>
                       <TH right>Subtotal</TH><TH right>Delivery</TH><TH right>Net</TH>
-                      <TH right>GST %</TH><TH right>GST</TH><TH right>Gross</TH>
+                      <TH right>Net ({d.base_currency})</TH>
+                      <TH right>GST %</TH><TH right>GST</TH><TH right>GST ({d.base_currency})</TH><TH right>Gross</TH>
+                      {/* What that gross is worth in the books. Dru asked for it
+                          plainly: 450 USD, and how much is that in SGD. */}
+                      <TH right>Gross ({d.base_currency})</TH>
                       {/* Net/Gross above are the SALE. These two say what the
                           customer was actually invoiced and how much of that
                           was never ours — a CTM principal, for instance. */}
@@ -484,9 +560,24 @@ function SalesRegister({ range }) {
                         <TD right><Amount value={r.subtotal} /></TD>
                         <TD right><Amount value={r.delivery} zeroDash /></TD>
                         <TD right><Amount value={r.net} bold /></TD>
+                        <TD right className="bg-slate-50/60 font-medium">
+                          {r.base_net == null
+                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
+                            : <Amount value={r.base_net} />}
+                        </TD>
                         <TD right className="text-slate-500">{Number(r.tax_rate || 0)}%</TD>
                         <TD right><Amount value={r.tax_amount} zeroDash /></TD>
+                        <TD right className="bg-slate-50/60 font-medium">
+                          {r.base_tax == null
+                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
+                            : <Amount value={r.base_tax} zeroDash />}
+                        </TD>
                         <TD right><Amount value={r.gross} /></TD>
+                        <TD right className="bg-slate-50/60 font-medium">
+                          {r.base_gross == null
+                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
+                            : <Amount value={r.base_gross} />}
+                        </TD>
                         <TD right className={Number(r.pass_through_net) ? "" : "text-slate-400"}>
                           <Amount value={r.billed_gross ?? r.gross} />
                         </TD>
@@ -512,10 +603,18 @@ function SalesRegister({ range }) {
                       <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={12}>
                         Total <span className="font-normal normal-case text-slate-400">· converted to {d.base_currency}</span>
                       </TD>
+                      {/* 25 columns, and they have to line up exactly. Every
+                          NATIVE money column shows a dash — four currencies in
+                          one column cannot be added, which is what started all
+                          this — and the totals live under their converted
+                          twins. Subtotal, Delivery, GST %. */}
                       <TD right colSpan={2} />
+                      <TD right><span className="text-slate-300">—</span></TD>
                       <TD right><Amount value={d.totals.base_net} bold /></TD>
                       <TD right />
+                      <TD right><span className="text-slate-300">—</span></TD>
                       <TD right><Amount value={d.totals.base_tax} bold /></TD>
+                      <TD right><span className="text-slate-300">—</span></TD>
                       <TD right><Amount value={d.totals.base_gross} bold /></TD>
                       <TD right><Amount value={d.totals.billed} bold /></TD>
                       <TD right>
@@ -596,8 +695,8 @@ function PurchaseRegister({ range }) {
                       <TH>Date</TH><TH>Type</TH><TH>Number</TH><TH>Vendor inv.</TH><TH>Vend #</TH>
                       <TH>Vendor</TH><TH>Enquiry</TH><TH>Vessel</TH><TH>Cur</TH><TH right>Rate</TH>
                       <TH>Account</TH><TH>GST</TH><TH>Box</TH>
-                      <TH right>Net</TH><TH right>Expenses</TH><TH right>GST %</TH><TH right>GST</TH>
-                      <TH right>Gross</TH><TH>Status</TH><TH right>Outstanding</TH>
+                      <TH right>Net</TH><TH right>Net ({d.base_currency})</TH><TH right>Expenses</TH><TH right>GST %</TH><TH right>GST</TH><TH right>GST ({d.base_currency})</TH>
+                      <TH right>Gross</TH><TH right>Gross ({d.base_currency})</TH><TH>Status</TH><TH right>Outstanding</TH>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -624,10 +723,25 @@ function PurchaseRegister({ range }) {
                         <TD>{r.gst_code ? <Badge tone={GST_TONE[r.gst_code]}>{r.gst_code}</Badge> : <Badge tone="red">?</Badge>}</TD>
                         <TD className="text-slate-500">{r.f5_box ? `Box ${r.f5_box}` : "—"}</TD>
                         <TD right><Amount value={r.net} bold /></TD>
+                        <TD right className="bg-slate-50/60 font-medium">
+                          {r.base_net == null
+                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
+                            : <Amount value={r.base_net} />}
+                        </TD>
                         <TD right><Amount value={r.expenses} zeroDash /></TD>
                         <TD right className="text-slate-500">{Number(r.tax_rate || 0)}%</TD>
                         <TD right><Amount value={r.tax_amount} zeroDash /></TD>
+                        <TD right className="bg-slate-50/60 font-medium">
+                          {r.base_tax == null
+                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
+                            : <Amount value={r.base_tax} zeroDash />}
+                        </TD>
                         <TD right><Amount value={r.gross} /></TD>
+                        <TD right className="bg-slate-50/60 font-medium">
+                          {r.base_gross == null
+                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
+                            : <Amount value={r.base_gross} />}
+                        </TD>
                         <TD><Badge tone={r.paid ? "green" : "amber"}>{r.paid ? "paid" : r.status}</Badge></TD>
                         <TD right><Amount value={r.outstanding} zeroDash /></TD>
                       </tr>
@@ -638,10 +752,16 @@ function PurchaseRegister({ range }) {
                       <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={13}>
                         Total <span className="font-normal normal-case text-slate-400">· converted to {d.base_currency}</span>
                       </TD>
+                      {/* 23 columns. Same rule as the sales footer: a dash
+                          under every native money column, the totals under the
+                          converted ones. */}
+                      <TD right><span className="text-slate-300">—</span></TD>
                       <TD right><Amount value={d.totals.base_net} bold /></TD>
                       <TD right><Amount value={d.totals.job_expenses} bold /></TD>
                       <TD right />
+                      <TD right><span className="text-slate-300">—</span></TD>
                       <TD right><Amount value={d.totals.base_tax} bold /></TD>
+                      <TD right><span className="text-slate-300">—</span></TD>
                       <TD right><Amount value={d.totals.base_gross} bold /></TD>
                       <TD />
                       <TD right><Amount value={d.totals.outstanding} bold /></TD>

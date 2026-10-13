@@ -338,6 +338,16 @@ class PurchaseOrderController extends Controller
 
             $base = \App\Support\AccountingBooks::baseCurrency();
 
+            // Taken automatically the first time a foreign order is saved, for
+            // the same reason invoices do it: the rate belongs on the document,
+            // but nobody should have to go and fetch it by hand.
+            // Only when the request said nothing about the rate — clearing the
+            // box is a deliberate "needs looking at", not an invitation to
+            // refill it.
+            if (! array_key_exists('exchange_rate', $data) && $purchaseOrder->exchange_rate === null) {
+                $attrs['exchange_rate'] = \App\Support\AccountingBooks::stampRate((string) $purchaseOrder->currency);
+            }
+
             if (strtoupper((string) $purchaseOrder->currency) === $base) {
                 $attrs['exchange_rate'] = 1;
             }

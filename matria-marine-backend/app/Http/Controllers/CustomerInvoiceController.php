@@ -254,6 +254,18 @@ class CustomerInvoiceController extends Controller
             // change in the same save.
             $base = \App\Support\AccountingBooks::baseCurrency();
 
+            // Nobody should have to type a rate on every foreign invoice. One
+            // is taken for them the first time the invoice is saved and kept
+            // on the document — so the figures are automatic AND they stay
+            // put, which converting afresh at report time would not.
+            //
+            // Only when the request said nothing about the rate. Someone who
+            // clears the box is saying "this one needs looking at", and having
+            // it silently refilled on the next save would be maddening.
+            if (! array_key_exists('exchange_rate', $data) && $invoice->exchange_rate === null) {
+                $invoice->exchange_rate = \App\Support\AccountingBooks::stampRate((string) $invoice->currency);
+            }
+
             if (strtoupper((string) $invoice->currency) === $base) {
                 $invoice->exchange_rate = 1;
             }

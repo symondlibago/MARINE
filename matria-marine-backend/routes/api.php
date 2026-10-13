@@ -103,6 +103,8 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin', 'page.acc
 
         // Live FX rates (vendor currency -> enquiry currency on the compare grid)
         Route::get('fx-rates', [FxController::class, 'rates']);
+        // The single source of a posting rate — see FxController::toBase().
+        Route::get('fx-rates/to-base', [FxController::class, 'toBase']);
 
         // Phase 1 masters
         Route::apiResource('vendors', VendorController::class);
@@ -252,6 +254,9 @@ Route::middleware(['auth:sanctum', 'active', 'role:super_admin|admin', 'page.acc
             Route::get('ar-ageing', [AccountingController::class, 'arAgeing']);
             Route::get('ap-ageing', [AccountingController::class, 'apAgeing']);
             Route::get('parties', [AccountingController::class, 'parties']);
+            // Stamp today's rate onto every document still without one, in one
+            // go, rather than opening each in turn.
+            Route::post('fill-rates', [AccountingController::class, 'fillRates']);
         });
 
         // Reports / analytics

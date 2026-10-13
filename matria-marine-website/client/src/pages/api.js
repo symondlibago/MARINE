@@ -346,6 +346,12 @@ export const reportsAPI = {
 // Every one of these is read-only on the server; nothing here can alter a
 // document. Each takes { from, to } (and the registers also take q).
 export const accountingAPI = {
+  // Stamp today's rate onto every document still without one, in one call.
+  // New documents take a rate when they are saved; this is for the backlog.
+  // restamp: also rewrite rates that are already stored, at today's. Opt-in —
+  // it restates figures that may already have been reported.
+  fillRates: (restamp = false) =>
+    api.post(apiUrl('/portal/accounting/fill-rates'), null, { params: restamp ? { restamp: 1 } : {} }),
   chart: () => api.get(apiUrl('/portal/accounting/chart')),
   salesInvoices: (params = {}) => api.get(apiUrl('/portal/accounting/sales-invoices'), { params }),
   purchaseInvoices: (params = {}) => api.get(apiUrl('/portal/accounting/purchase-invoices'), { params }),
@@ -413,6 +419,9 @@ export const documentsAPI = {
 
 // --- Live FX rates (server-side lookup, used by the Compare & Award grid) ---
 export const fxAPI = {
+  // The rate a document is booked at. Always ask the server rather than
+  // working one out from the rate table — see FxController::toBase().
+  toBase: (currency) => api.get(apiUrl('/portal/fx-rates/to-base'), { params: { currency } }),
   rates: (base) => api.get(apiUrl('/portal/fx-rates'), { params: { base } }),
 };
 

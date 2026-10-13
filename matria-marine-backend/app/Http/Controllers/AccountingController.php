@@ -927,4 +927,79 @@ class AccountingController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Put today's rate on every document that still has none.
+     *
+     * New documents take a rate the moment they are saved, so this is for the
+     * ones that already existed when rates were introduced — fifteen purchase
+     * orders is not something anyone should open one at a time.
+     *
+     * Today's rate, not the rate on the day of supply, because that is the only
+     * one obtainable: the board-rate feed publishes current rates and nothing
+     * historic. It goes ONTO each document, so the figures stop moving the
+     * moment it runs, and any of them can still be corrected by hand
+     * afterwards. For a document from months ago that correction may well be
+     * worth making, and the response says which ones were touched so there is a
+     * list to work from.
+     */
+    public function fillRates(Request $request)
+    {
+        $base = \App\Support\AccountingBooks::baseCurrency();
+        $filled = [];
+        $unpriced = [];
+
+        // With ?restamp=1, documents that ALREADY have a rate are rewritten at
+        // today's too. Opt-in and never the default: a stored rate is what a
+        // past period was reported at, and quietly replacing it would restate
+        // figures somebody has already filed.
+        //
+        // It exists because a rate can turn out to have been taken the wrong
+        // way round — the posting rate crossed the bank's spread twice for a
+        // while, putting USD in at 1.2922 where the converter says 1.2691 —
+        // and correcting that across a whole set by hand is not realistic.
+        $restamp = $request->boolean('restamp');
+
+        $targets = [
+            \App\Models\CustomerInvoice::class => 'invoice_number',
+            \App\Models\CreditMemo::class => 'cm_number',
+            \App\Models\PurchaseOrder::class => 'po_number',
+            \App\Models\OperatingExpense::class => 'label',
+        ];
+
+        foreach ($targets as $model => $numberColumn) {
+            $model::query()
+                ->when(! $restamp, fn ($q) => $q->whereNull('exchange_rate'))
+                ->when($restamp, fn ($q) => $q->whereRaw('UPPER(currency) <> ?', [$base]))
+                ->get()
+                ->each(function ($doc) use ($base, $numberColumn, &$filled, &$unpriced) {
+                    $rate = \App\Support\AccountingBooks::stampRate((string) $doc->currency);
+
+                    if ($rate === null) {
+                        $unpriced[] = (string) ($doc->{$numberColumn} ?: class_basename($doc).' #'.$doc->id);
+
+                        return;
+                    }
+
+                    $doc->exchange_rate = $rate;
+                    if (in_array('base_currency', $doc->getFillable(), true)) {
+                        $doc->base_currency = $base;
+                    }
+                    $doc->save();
+
+                    $filled[] = [
+                        'number' => (string) ($doc->{$numberColumn} ?: class_basename($doc).' #'.$doc->id),
+                        'currency' => (string) $doc->currency,
+                        'rate' => (float) $rate,
+                    ];
+                });
+        }
+
+        return $this->ok([
+            'filled' => $filled,
+            'filled_count' => count($filled),
+            'unpriced' => $unpriced,
+            'base_currency' => $base,
+        ]);
+    }
 }

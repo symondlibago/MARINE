@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2, RefreshCw, Truck } from "lucide-react";
 import { toast } from "sonner";
-import { purchaseOrdersAPI, returnNotesAPI } from "@/pages/api";
+import { purchaseOrdersAPI, returnNotesAPI, fxAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
 import DatePicker from "./ui/DatePicker";
@@ -190,10 +190,10 @@ export default function PurchaseOrderDetail({ params }) {
   const useLiveRate = async () => {
     setPoRateLoading(true);
     try {
-      const r = await fetchRates(po.currency);
-      const live = Number(r.rates?.[po.base_currency]);
-      if (!(live > 0)) throw new Error(`No ${po.base_currency} rate for ${po.currency}.`);
-      setRate(String(Math.round(live * 1e6) / 1e6));
+      // One source for a posting rate — see FxController::toBase(). Working it
+      // out here gave a different side of the bank's spread than the automatic
+      // stamp, and the books ended up holding both.
+      setRate(String(Number((await fxAPI.toBase(po.currency)).data.data.rate)));
     } catch (e) {
       toast.error(e?.message || "Could not read today's rate.");
     } finally {

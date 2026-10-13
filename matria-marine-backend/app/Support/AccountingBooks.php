@@ -75,6 +75,46 @@ class AccountingBooks
         return $rows->filter(fn ($r) => ($r['exchange_rate'] ?? null) === null)->values();
     }
 
+    /**
+     * Today's rate for a document that has none, ready to be stored on it.
+     *
+     * Called when a foreign document is saved, so nobody has to go and type a
+     * rate on every invoice and order — but it is recorded ON the document at
+     * that moment rather than looked up again each time a report is drawn.
+     *
+     * The difference is the whole thing. Converting at report time would mean
+     * last quarter's figures changing every morning as the market moves, and a
+     * number filed with IRAS that the system can no longer reproduce. Stamping
+     * it once gives the same absence of clicking and a set of books that stays
+     * put.
+     *
+     * Null when the pair cannot be priced, which leaves the document unrated
+     * and visible rather than converted at a number nobody can defend.
+     */
+    public static function stampRate(string $currency): ?float
+    {
+        $base = self::baseCurrency();
+
+        if (strtoupper($currency) === $base) {
+            return 1.0;
+        }
+
+        // Read straight off the board for this currency — the same number the
+        // DBS converter on dbs.com.sg shows, which is what anyone checking
+        // these figures will type into it.
+        //
+        // NOT FxRates::rateToBase(). That one deliberately crosses the bank's
+        // spread in both directions, because it answers a different question:
+        // what a vendor's foreign invoice costs us to settle. For USD it gives
+        // 1.292213 against the converter's 1.2691, and for EUR 1.444371
+        // against 1.4182 — fine for pricing a purchase, wrong for stating what
+        // a sale was worth. The two are kept apart on purpose.
+        $data = \App\Support\FxRates::for($currency);
+        $rate = (float) ($data['rates'][$base] ?? 0);
+
+        return $rate > 0 ? round($rate, 6) : null;
+    }
+
     /* ------------------------------------------------------------------ */
     /*  Sales                                                             */
     /* ------------------------------------------------------------------ */

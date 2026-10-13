@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send, ArrowLeftRight, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { invoicesAPI, customersAPI } from "@/pages/api";
+import { invoicesAPI, customersAPI, fxAPI } from "@/pages/api";
 import Select from "./ui/Select";
 import EntityPicker from "./ui/EntityPicker";
 import DatePicker from "./ui/DatePicker";
@@ -257,14 +257,11 @@ export default function InvoicePage({ params }) {
   const useLiveRate = async () => {
     setRateLoading(true);
     try {
-      // DBS board rates — the bank Matria actually converts through, so the
-      // figure in the books is the one that reaches the bank statement.
-      // See App\Support\FxRates.
-      const r = await fetchRates(form.currency);
-      const live = Number(r.rates?.[baseCurrency]);
-      if (!(live > 0)) throw new Error(`DBS has no ${baseCurrency} rate for ${form.currency}.`);
-
-      const rate = Math.round(live * 1e6) / 1e6;
+      // Asked of the server, never worked out here. Deriving it from the rate
+      // table gave the other side of the bank's buy/sell spread than the
+      // automatic stamp did, so two USD invoices raised on the same day went
+      // into the books nearly two percent apart.
+      const rate = Number((await fxAPI.toBase(form.currency)).data.data.rate);
       setField("exchange_rate", String(rate));
       toast.success(`Rate applied — 1 ${form.currency} = ${rate} ${baseCurrency}`);
     } catch (e) {

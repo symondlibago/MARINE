@@ -185,6 +185,175 @@ class MultiCurrencyBooksTest extends TestCase
         $this->assertNotNull($row['base_net'], 'it was left unconvertible despite the invoice having a rate');
     }
 
+    /**
+     * A new foreign invoice takes a rate on its own, so nobody has to go and
+     * fetch one for every document that is raised.
+     */
+    public function test_a_new_foreign_invoice_is_rated_automatically_on_save(): void
+    {
+        $this->staff();
+
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake([
+            'www.dbs.com.sg/*' => \Illuminate\Support\Facades\Http::response([], 500),
+            // Quoted against the currency asked for, so USD -> SGD is read
+            // straight off — the way the posting rate is taken.
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'result' => 'success',
+                'base_code' => 'USD',
+                'rates' => ['USD' => 1, 'SGD' => 1.2691],
+                'time_last_update_utc' => 'Tue, 13 Oct 2026 00:00:01 +0000',
+            ], 200),
+        ]);
+
+        $invoice = $this->invoice('USD', 1000, null);
+        $this->assertNull($invoice->exchange_rate);
+
+        // An ordinary save, with no rate sent.
+        $this->patchJson("/api/portal/invoices/{$invoice->id}", ['customer_reference' => 'PO-123'])->assertOk();
+
+        $rate = $invoice->fresh()->exchange_rate;
+        $this->assertNotNull($rate, 'the invoice was saved still unrated');
+        $this->assertEqualsWithDelta(1.2691, (float) $rate, 0.0001);
+    }
+
+    /**
+     * The rate is written onto the document, not worked out afresh each time a
+     * report is drawn. A figure filed with IRAS has to still be there next
+     * quarter when somebody asks where it came from.
+     */
+    public function test_a_stamped_rate_does_not_move_when_the_market_does(): void
+    {
+        $this->staff();
+        $invoice = $this->invoice('USD', 1000, 1.35);
+
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response([
+            'result' => 'success', 'base_code' => 'SGD',
+            'rates' => ['SGD' => 1, 'USD' => 0.5],   // the market has moved a long way
+            'time_last_update_utc' => 'Tue, 13 Oct 2026 00:00:01 +0000',
+        ], 200)]);
+
+        $totals = $this->getJson('/api/portal/accounting/sales-invoices?from=2026-01-01&to=2026-12-31')
+            ->assertOk()->json('data.totals');
+
+        // Still 1,000 x 1.35, the rate on the invoice — not 1,000 x 2.
+        $this->assertEqualsWithDelta(1350.00, $totals['base_net'], 0.02);
+    }
+
+    public function test_fill_rates_clears_the_backlog_in_one_call(): void
+    {
+        $this->staff();
+
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake([
+            'www.dbs.com.sg/*' => \Illuminate\Support\Facades\Http::response([], 500),
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'result' => 'success', 'base_code' => 'SGD',
+                'rates' => ['SGD' => 1, 'USD' => 0.74, 'EUR' => 0.69],
+                'time_last_update_utc' => 'Tue, 13 Oct 2026 00:00:01 +0000',
+            ], 200),
+        ]);
+
+        $a = $this->invoice('USD', 1000, null);
+        $b = $this->invoice('EUR', 2000, null);
+
+        $res = $this->postJson('/api/portal/accounting/fill-rates')->assertOk()->json('data');
+
+        $this->assertGreaterThanOrEqual(2, $res['filled_count']);
+        $this->assertNotNull($a->fresh()->exchange_rate);
+        $this->assertNotNull($b->fresh()->exchange_rate);
+
+        $totals = $this->getJson('/api/portal/accounting/sales-invoices?from=2026-01-01&to=2026-12-31')
+            ->assertOk()->json('data.totals');
+
+        $this->assertSame([], $totals['unrated'], 'documents are still missing from the totals');
+    }
+
+    /**
+     * There is one posting rate, however it was arrived at.
+     *
+     * The rate button on a document used to work one out from the rate table
+     * while the automatic stamp used another route, and the two landed on
+     * opposite sides of the bank's buy/sell spread. Two USD invoices raised on
+     * the same day went into the books at 1.292222 and 1.269084 — a shade under
+     * two percent apart, decided by which button somebody pressed. Both paths
+     * now ask the server, and this is what keeps them that way.
+     */
+    public function test_the_button_and_the_automatic_stamp_give_the_same_rate(): void
+    {
+        $this->staff();
+
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake([
+            'www.dbs.com.sg/*' => \Illuminate\Support\Facades\Http::response([], 500),
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'result' => 'success', 'base_code' => 'SGD',
+                'rates' => ['SGD' => 1, 'USD' => 0.74],
+                'time_last_update_utc' => 'Tue, 13 Oct 2026 00:00:01 +0000',
+            ], 200),
+        ]);
+
+        // What the rate button on a document is handed.
+        $fromButton = (float) $this->getJson('/api/portal/fx-rates/to-base?currency=USD')
+            ->assertOk()->json('data.rate');
+
+        // What a save stamps on by itself.
+        $invoice = $this->invoice('USD', 1000, null);
+        $this->patchJson("/api/portal/invoices/{$invoice->id}", ['customer_reference' => 'x'])->assertOk();
+        $fromStamp = (float) $invoice->fresh()->exchange_rate;
+
+        // And what "Convert them all" writes.
+        $second = $this->invoice('USD', 500, null);
+        $this->postJson('/api/portal/accounting/fill-rates')->assertOk();
+        $fromBulk = (float) $second->fresh()->exchange_rate;
+
+        $this->assertSame($fromButton, $fromStamp, 'the button and the automatic stamp disagree');
+        $this->assertSame($fromButton, $fromBulk, 'the bulk fill disagrees with the button');
+    }
+
+    /**
+     * The posting rate is the number the DBS converter shows.
+     *
+     * It is what anyone checking these books will type into dbs.com.sg, and it
+     * has to agree. FxRates::rateToBase() does NOT: it crosses the bank's
+     * spread in both directions to answer what settling a vendor's foreign
+     * invoice costs, which put USD into the books at 1.2922 where the
+     * converter said 1.2691. Right for pricing a purchase, wrong for stating
+     * what a sale was worth, and the two must not be confused again.
+     */
+    public function test_the_posting_rate_is_the_converter_rate_not_the_spread_crossed_one(): void
+    {
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake([
+            'www.dbs.com.sg/*' => \Illuminate\Support\Facades\Http::response([], 500),
+            // The mid-market fallback quotes against the base it is asked for,
+            // so USD -> SGD reads straight off and needs no inversion.
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'result' => 'success', 'base_code' => 'USD',
+                'rates' => ['USD' => 1, 'SGD' => 1.2691],
+                'time_last_update_utc' => 'Tue, 13 Oct 2026 00:00:01 +0000',
+            ], 200),
+        ]);
+
+        $this->assertEqualsWithDelta(
+            1.2691,
+            AccountingBooks::stampRate('USD'),
+            0.0001,
+            'the posting rate no longer matches what the DBS converter shows'
+        );
+    }
+
+    public function test_an_unpriceable_currency_is_refused_rather_than_guessed(): void
+    {
+        $this->staff();
+
+        \Illuminate\Support\Facades\Cache::flush();
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response([], 500)]);
+
+        $this->getJson('/api/portal/fx-rates/to-base?currency=XYZ')->assertStatus(502);
+    }
+
     public function test_setting_the_currency_to_sgd_sets_the_rate_to_one(): void
     {
         $this->staff();
