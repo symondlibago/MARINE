@@ -135,6 +135,26 @@ class Settlement
         return self::of($doc)['outstanding'];
     }
 
+    /**
+     * How much of this document no money has actually been recorded against,
+     * IGNORING the manual paid flag.
+     *
+     * room() honours the flag, which is right for ordinary work: a document
+     * somebody ticked as paid should not then be paid again. But it turns the
+     * flag into a dead end — the one document that most needs a real payment
+     * recorded is the one the payment screen refuses to offer, because the flag
+     * insists it is already settled. The only way out was to know to un-tick it
+     * first, which nobody would guess.
+     *
+     * So this answers the other question. A document that has been ticked but
+     * never paid can be put right in one step, and one that genuinely has
+     * payments against it still comes back zero, so nothing can be paid twice.
+     */
+    public static function unallocated($doc): float
+    {
+        return round(max(self::billed($doc) - self::credited($doc) - self::allocated($doc), 0), 2);
+    }
+
     /** Whether the document carries the old manual "paid" marker. */
     public static function manuallyPaid($doc): bool
     {

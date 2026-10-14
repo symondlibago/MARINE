@@ -8,6 +8,7 @@ import { invoicesAPI } from "@/pages/api";
 import { TableSkeleton } from "./ui/Loading";
 import { Spinner } from "./ui/Loading";
 import ListToolbar from "./ui/ListToolbar";
+import { useConfirm } from "./ui/confirm";
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
@@ -44,6 +45,7 @@ function RefTrail({ refs }) {
 
 export default function Invoices() {
   const [, setLocation] = useLocation();
+  const confirm = useConfirm();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
 
@@ -83,6 +85,43 @@ export default function Invoices() {
     onSuccess: () => { toast.success("Marked as paid."); refetch(); },
     onError: () => toast.error("Could not update the payment status."),
   });
+
+  /**
+   * Say what the old one-click did, then go and do the right thing.
+   *
+   * This button used to set "paid" outright. It reads as finishing the job,
+   * but it only stops the invoice being chased: no money is recorded, so the
+   * amount leaves what customers owe and never arrives in cash. Four live
+   * documents were sitting exactly like that, and the balance sheet was out by
+   * them. The dialog explains it once; the button then takes you to the form
+   * that asks for the amount.
+   */
+  const recordPayment = async (row) => {
+    if (!row.customer_id) {
+      toast.error("Add the customer to this invoice first — a payment is recorded against an account.");
+      return;
+    }
+
+    const ok = await confirm({
+      title: `Record the payment for ${row.invoice_number}`,
+      message:
+        "Marking an invoice paid on its own records no money — it only stops it being chased, and the amount "
+        + "then goes missing from the books.\n\n"
+        + "The next screen asks for the amount received, the date and the method. Save it and this invoice "
+        + "is marked paid automatically, with the money behind it.",
+      confirmText: "Enter the amount",
+    });
+    if (!ok) return;
+
+    const q = new URLSearchParams({
+      type: "customer",
+      party: String(row.customer_id),
+      name: row.customer_name || "",
+      pay: "1",
+      doc: String(row.id),
+    });
+    setLocation(`/statements?${q}`);
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="space-y-5">
@@ -157,12 +196,16 @@ export default function Invoices() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] || "bg-slate-100"}`}>{r.status}</span>
-                      {r.status !== "paid" && (
+                      {/* A draft is not money owed, so there is nothing to pay
+                          yet. Everything else offers the payment, not the flag:
+                          this button used to set "paid" on one click, which is
+                          how invoices left receivables with nothing arriving in
+                          cash and the balance sheet stopped balancing. */}
+                      {r.status !== "paid" && r.status !== "draft" && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); markPaid.mutate(r.id); }}
-                          disabled={markPaid.isLoading}
-                          title="Customer paid — mark as paid"
-                          className="inline-flex items-center gap-1 rounded-md border border-green-300 bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700 transition-colors hover:bg-green-100 disabled:opacity-60"
+                          onClick={(e) => { e.stopPropagation(); recordPayment(r); }}
+                          title="Record the money received against this invoice"
+                          className="inline-flex items-center gap-1 rounded-md border border-green-300 bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700 transition-colors hover:bg-green-100"
                         >
                           <CheckCircle2 className="h-3.5 w-3.5" /> Mark paid
                         </button>

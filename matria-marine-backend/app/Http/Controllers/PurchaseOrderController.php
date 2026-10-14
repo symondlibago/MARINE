@@ -134,6 +134,13 @@ class PurchaseOrderController extends Controller
         $data['returns_total'] = round($returnsTotal, 4);
         $data['net_payable'] = round((float) $purchaseOrder->subtotal - $returnsTotal, 4);
 
+        // What has actually been paid, as against what the paid tickbox claims.
+        // The screen offers to record a payment only where one is genuinely
+        // missing — on an order that is paid for real there is nothing to
+        // record, and offering it leads to a payment form with no rows in it.
+        $data['settlement'] = \App\Support\Settlement::of($purchaseOrder);
+        $data['payment_count'] = \App\Models\PaymentAllocation::where('purchase_order_id', $purchaseOrder->id)->count();
+
         return response()->json(['success' => true, 'data' => $data]);
     }
 

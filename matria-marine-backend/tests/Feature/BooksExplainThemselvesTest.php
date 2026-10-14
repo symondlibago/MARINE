@@ -247,6 +247,136 @@ class BooksExplainThemselvesTest extends TestCase
     }
 
     /* ---------------------------------------------------------------- */
+    /*  2c. Putting a marked-paid document right                        */
+    /* ---------------------------------------------------------------- */
+
+    /**
+     * The dead end: the payment screen would not offer the one document that
+     * most needed a payment recorded.
+     *
+     * Marking an invoice paid sets its outstanding to nil, and the form only
+     * ever listed documents with something outstanding — so the invoice that
+     * had money missing from the books was invisible on the only screen that
+     * could put the money back. The únlock was to know to un-tick the flag
+     * first, which nobody would guess.
+     */
+    public function test_a_marked_paid_invoice_can_still_have_its_payment_recorded(): void
+    {
+        $invoice = $this->invoice([['Services', 5000.0, '4100']], markPaid: true);
+
+        $docs = $this->getJson("/api/portal/payments/open/customer/{$invoice->customer_id}")
+            ->assertOk()
+            ->json('data.documents');
+
+        $this->assertCount(1, $docs, 'the invoice has to be offered, flag or no flag');
+        $this->assertSame($invoice->id, $docs[0]['id']);
+        $this->assertEqualsWithDelta(5000.0, $docs[0]['outstanding'], 0.02, 'the whole amount is still unpaid in reality');
+        $this->assertTrue($docs[0]['assumed_paid'], 'and the form says why it is here');
+    }
+
+    /** And the payment is accepted, rather than refused as already settled. */
+    public function test_recording_the_payment_on_a_marked_paid_invoice_is_allowed(): void
+    {
+        $invoice = $this->invoice([['Services', 5000.0, '4100']], markPaid: true);
+
+        $this->postJson('/api/portal/payments', [
+            'party_type' => 'customer',
+            'party_id' => $invoice->customer_id,
+            'payment_date' => '2026-06-20',
+            'currency' => 'SGD',
+            'amount' => 5000,
+            'method' => 'bank transfer',
+            'allocations' => [['document_id' => $invoice->id, 'amount' => 5000]],
+        ])->assertCreated();
+
+        // Now there is real money behind it, so it stops being reported.
+        $register = $this->section('sales-invoices');
+        $this->assertSame([], $register['assumed_paid']);
+
+        // And it cannot be paid a second time.
+        $this->assertSame([], $this->getJson("/api/portal/payments/open/customer/{$invoice->customer_id}")
+            ->json('data.documents'));
+    }
+
+    /**
+     * The document itself says whether money is actually missing, so the screen
+     * can offer to record a payment only where there is one to record.
+     *
+     * Offering it on an order that has been paid for real sends somebody to a
+     * payment form with no rows in it — the document is not listed, because
+     * there is nothing left to apply. Worse than not offering at all.
+     */
+    public function test_a_document_says_whether_its_paid_flag_has_money_behind_it(): void
+    {
+        $ticked = $this->invoice([['Services', 5000.0, '4100']], markPaid: true);
+        $real = $this->invoice([['Services', 3000.0, '4100']]);
+
+        $payment = \App\Models\Payment::create([
+            'payment_number' => 'PAY-0002',
+            'party_type' => 'customer',
+            'customer_id' => $real->customer_id,
+            'payment_date' => '2026-06-20',
+            'currency' => 'SGD',
+            'amount' => 3000,
+            'direction' => 'in',
+        ]);
+        \App\Models\PaymentAllocation::create([
+            'payment_id' => $payment->id,
+            'customer_invoice_id' => $real->id,
+            'amount' => 3000,
+        ]);
+
+        $this->assertTrue(
+            $this->getJson("/api/portal/invoices/{$ticked->id}")->json('data.settlement.assumed_paid'),
+            'ticked with nothing behind it — the screen should offer to record the payment'
+        );
+        $this->assertFalse(
+            $this->getJson("/api/portal/invoices/{$real->id}")->json('data.settlement.assumed_paid'),
+            'paid for real — there is nothing left to record'
+        );
+    }
+
+    /** A purchase order answers the same question the same way. */
+    public function test_an_order_says_whether_its_paid_tickbox_has_money_behind_it(): void
+    {
+        $po = \App\Models\PurchaseOrder::create([
+            'po_number' => 'MMS-PO-2026-000902',
+            'vendor_id' => \App\Models\Vendor::factory()->create()->id,
+            'currency' => 'SGD',
+            'exchange_rate' => 1,
+            'status' => 'received',
+            'issued_date' => '2026-06-15',
+            'account_code' => '5000',
+            'subtotal' => 2000,
+            'paid_at' => '2026-06-20',   // ticked, with nothing recorded
+        ]);
+
+        $shown = $this->getJson("/api/portal/purchase-orders/{$po->id}")->assertOk();
+
+        $this->assertTrue($shown->json('data.settlement.assumed_paid'));
+        $this->assertSame(0, $shown->json('data.payment_count'));
+    }
+
+    /** A genuinely settled document is still protected from a double payment. */
+    public function test_a_document_already_paid_for_real_cannot_be_paid_again(): void
+    {
+        $invoice = $this->invoice([['Services', 5000.0, '4100']]);
+
+        $body = [
+            'party_type' => 'customer',
+            'party_id' => $invoice->customer_id,
+            'payment_date' => '2026-06-20',
+            'currency' => 'SGD',
+            'amount' => 5000,
+            'method' => 'bank transfer',
+            'allocations' => [['document_id' => $invoice->id, 'amount' => 5000]],
+        ];
+
+        $this->postJson('/api/portal/payments', $body)->assertCreated();
+        $this->postJson('/api/portal/payments', $body)->assertStatus(422);
+    }
+
+    /* ---------------------------------------------------------------- */
     /*  3. Cash to Master held on a client's behalf                     */
     /* ---------------------------------------------------------------- */
 

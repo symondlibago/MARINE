@@ -34,6 +34,9 @@ class CustomerInvoiceController extends Controller
         $data = $invoices->map(fn (CustomerInvoice $inv) => [
             'id' => $inv->id,
             'invoice_number' => $inv->invoice_number,
+            // The account, not just its name: a payment is recorded against a
+            // customer, so the list needs the id to send anyone there.
+            'customer_id' => $inv->customer_id,
             'customer_name' => $inv->customer_name,
             'currency' => $inv->currency,
             'grand_total' => (float) $inv->grand_total,

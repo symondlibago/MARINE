@@ -23,14 +23,42 @@ const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionD
  * orders. Both reduce to the same question — what was transacted and what is
  * still outstanding — so one screen answers it for either side.
  */
+/**
+ * Arriving from an invoice or an order whose payment is being recorded.
+ *
+ * ?type=vendor&party=12&name=RMS&pay=1&doc=212 — open that account with the
+ * payment form already up and the document ticked. Dropping somebody on this
+ * page to find the party and then the button is how "Mark as paid" stayed the
+ * easier option.
+ *
+ * Read synchronously, as the opening value of the state it feeds, rather than
+ * applied afterwards in an effect: set after mount it raced the effect that
+ * clears the party when the side changes, and lost.
+ */
+function arrivedFromDocument() {
+  const params = new URLSearchParams(window.location.search);
+  const party = Number(params.get("party"));
+  if (! party) return null;
+
+  return {
+    type: params.get("type") === "vendor" ? "vendor" : "customer",
+    party: { id: party, name: params.get("name") || "" },
+    pay: !! params.get("pay"),
+    doc: Number(params.get("doc")) || null,
+  };
+}
+
 export default function Statements() {
+  // Read once, at mount, before anything can clear it.
+  const [arrival] = useState(arrivedFromDocument);
+
   // "party" = one account at a time; "open" = everybody with a balance at once.
   const [view, setView] = useState("party");
-  const [type, setType] = useState("customer");
+  const [type, setType] = useState(arrival?.type || "customer");
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [onlyOutstanding, setOnlyOutstanding] = useState(false);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(arrival?.party || null);
   const [range, setRange] = useState({ from: "", to: "" });
   // A draft is not money owed, so it is off by default — but staff still want
   // to see work in progress on an account sometimes.
@@ -42,8 +70,27 @@ export default function Statements() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Switching side clears the open statement — a customer id is not a vendor id.
-  useEffect(() => { setSelected(null); }, [type]);
+  /**
+   * Switching side clears the open statement — a customer id is not a vendor id.
+   *
+   * Skips the first run. An effect with a dependency fires on mount as well as
+   * on change, so this used to wipe a party that had just been opened from a
+   * link: the payment screen came up empty with "pick a vendor on the left",
+   * which is precisely what the link was there to avoid.
+   */
+  const settled = useRef(false);
+  useEffect(() => {
+    if (! settled.current) { settled.current = true; return; }
+    setSelected(null);
+  }, [type]);
+
+  // The link is consumed once the party and the pay flag have been read off it,
+  // so a refresh does not reopen the form over a payment already recorded.
+  const [autoPay, setAutoPay] = useState(arrival?.pay ? { documentId: arrival.doc } : null);
+
+  useEffect(() => {
+    if (arrival) window.history.replaceState({}, "", window.location.pathname);
+  }, [arrival]);
 
   const { data: list, isFetching } = useQuery({
     queryKey: ["statement-parties", type, query, onlyOutstanding],
@@ -217,6 +264,8 @@ export default function Statements() {
               includeDrafts={includeDrafts}
               setIncludeDrafts={setIncludeDrafts}
               onBack={() => setSelected(null)}
+              autoPay={autoPay}
+              onAutoPayHandled={() => setAutoPay(null)}
             />
           )}
         </div>
@@ -428,7 +477,7 @@ function StatsPanel({ stats, isCustomer }) {
   );
 }
 
-function StatementPanel({ data, type, party: listParty, range, setRange, includeDrafts, setIncludeDrafts, onBack }) {
+function StatementPanel({ data, type, party: listParty, range, setRange, includeDrafts, setIncludeDrafts, onBack, autoPay, onAutoPayHandled }) {
   const { party, lines, credits, payments = [], totals, aging, stats } = data;
   const draftsAvailable = data.drafts_available || 0;
   const isCustomer = type === "customer";
@@ -436,6 +485,19 @@ function StatementPanel({ data, type, party: listParty, range, setRange, include
   const confirm = useConfirm();
   const [payOpen, setPayOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+
+  // Sent here by an invoice or order whose payment is being recorded — open
+  // the form without making them hunt for the button, and tick the document
+  // they came from. Held locally because the trigger is cleared straight away,
+  // so a refresh cannot reopen the form over a payment already recorded.
+  const [preselect, setPreselect] = useState(null);
+
+  useEffect(() => {
+    if (!autoPay) return;
+    setPreselect(autoPay.documentId);
+    setPayOpen(true);
+    onAutoPayHandled?.();
+  }, [autoPay, onAutoPayHandled]);
 
   /** The chase letter: open items only, honouring whatever date range is set. */
   const downloadPdf = async () => {
@@ -569,9 +631,10 @@ function StatementPanel({ data, type, party: listParty, range, setRange, include
 
       <PaymentModal
         open={payOpen}
-        onClose={() => setPayOpen(false)}
+        onClose={() => { setPayOpen(false); setPreselect(null); }}
         type={type}
         party={listParty || party}
+        preselectId={preselect}
       />
 
       {/* Balances are kept per currency — a USD and an SGD balance are not

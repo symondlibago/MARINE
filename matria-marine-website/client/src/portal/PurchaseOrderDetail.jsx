@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2, RefreshCw, Truck } from "lucide-react";
+import { ArrowLeft, Download, Mail, Trash2, Plus, X, Save, Send, PackageCheck, Ban, Copy, CheckCircle2, Eye, Undo2, FileText, UploadCloud, Paperclip, Loader2, RefreshCw, Truck, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import { purchaseOrdersAPI, returnNotesAPI, fxAPI } from "@/pages/api";
 import { Spinner, PageLoader } from "./ui/Loading";
@@ -205,6 +205,56 @@ export default function PurchaseOrderDetail({ params }) {
   const vendorCharge = receiptAmount === "" ? Number(po?.subtotal) || 0 : Number(receiptAmount) || 0;
   const vendorCredit = hasCreditNote ? Number(creditNoteAmount) || 0 : 0;
   const netVendorCost = Math.max(vendorCharge - vendorCredit, 0);
+
+  /**
+   * Explain what ticking "paid" does, then go and record the money.
+   *
+   * The same answer the invoice gives, for the same reason: the tickbox takes
+   * the order out of payables but puts nothing into cash, so the amount leaves
+   * the books. Three live orders were sitting exactly like that.
+   *
+   * @returns true when we have sent them to the payment form.
+   */
+  const offerToRecordPayment = async () => {
+    if (!po?.vendor_id) {
+      toast.error("This order has no vendor — a payment is recorded against an account.");
+      return false;
+    }
+
+    const ok = await confirm({
+      title: `Record the payment for ${po.po_number}`,
+      message:
+        "Ticking an order as paid on its own records no money — it only stops it showing as a payable, and the "
+        + "amount then goes missing from the books.\n\n"
+        + "The next screen asks for the amount paid, the date and the method. Save it and this order is marked "
+        + "paid automatically, with the money behind it.",
+      confirmText: "Enter the amount",
+    });
+    if (!ok) return false;
+
+    const q = new URLSearchParams({
+      type: "vendor",
+      party: String(po.vendor_id),
+      name: po.vendor?.name || "",
+      pay: "1",
+      doc: String(po.id),
+    });
+    setLocation(`/statements?${q}`);
+
+    return true;
+  };
+
+  /** Saving with the paid box newly ticked is the same act, so same answer. */
+  const saveReconciliation = async () => {
+    if (paidAt && !po?.paid_at) {
+      const went = await offerToRecordPayment();
+      // Left unticked either way on purpose — the payment is what should set it.
+      setPaidAt("");
+      if (went) return;
+    }
+
+    save.mutate();
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -893,8 +943,17 @@ export default function PurchaseOrderDetail({ params }) {
 
           {/* Vendor payment (A/P) — feeds the Accounting report's payables */}
           <div className="mt-3 flex flex-wrap items-center gap-3">
+            {/* Ticking it ASKS FOR THE PAYMENT rather than setting the flag —
+                the same behaviour as Mark as paid on an invoice. Un-ticking
+                still just un-ticks: taking a wrong flag off is not something to
+                put a dialog in front of. */}
             <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={!!paidAt} onChange={(e) => setPaidAt(e.target.checked ? new Date().toISOString().slice(0, 10) : "")} className="h-4 w-4 rounded border-slate-300" />
+              <input
+                type="checkbox"
+                checked={!!paidAt}
+                onChange={(e) => (e.target.checked ? offerToRecordPayment() : setPaidAt(""))}
+                className="h-4 w-4 rounded border-slate-300"
+              />
               Paid to vendor
             </label>
             {paidAt ? (
@@ -904,6 +963,20 @@ export default function PurchaseOrderDetail({ params }) {
               </>
             ) : (
               <span className="text-xs text-amber-600">Unpaid — shows as a payable in the Accounting report.</span>
+            )}
+            {/* Offered only where the money is genuinely missing: an order
+                ticked paid with no payment behind it. One that has been paid
+                for real has nothing left to record, and sending somebody to a
+                payment form with no rows in it is worse than not offering. */}
+            {paidAt && po?.settlement?.assumed_paid && (
+              <button
+                type="button"
+                onClick={offerToRecordPayment}
+                title="Record the money actually paid to this vendor"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <Banknote className="h-3.5 w-3.5" /> Record payment out
+              </button>
             )}
           </div>
 
@@ -986,7 +1059,7 @@ export default function PurchaseOrderDetail({ params }) {
           <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
             <span className="text-xs text-slate-400">Saves the receipt, vendor credit note &amp; expenses for the Accounting report.</span>
             <button
-              onClick={() => save.mutate()}
+              onClick={saveReconciliation}
               disabled={save.isLoading}
               className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63] disabled:opacity-70"
             >
@@ -1016,7 +1089,7 @@ export default function PurchaseOrderDetail({ params }) {
           )}
         </div>
         {!isCancelled && (
-          <button onClick={() => save.mutate()} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-4 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70">
+          <button onClick={saveReconciliation} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg border border-[#28364b] px-4 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:bg-slate-50 disabled:opacity-70">
             {save.isLoading ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save changes
           </button>
         )}

@@ -100,7 +100,11 @@ export default function DatePicker({ value, onChange, placeholder = "Select date
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.98 }}
                 transition={{ duration: 0.14 }}
-                style={{ position: "fixed", top: coords.top, bottom: coords.bottom, left: coords.left, zIndex: 60 }}
+                // Above the modal overlay (z-70), not below it. Both are
+                // portaled to <body>, so at 60 the calendar opened behind the
+                // dialog that asked for it — the field looked dead, and on the
+                // payment screen it meant the date could not be set at all.
+                style={{ position: "fixed", top: coords.top, bottom: coords.bottom, left: coords.left, zIndex: 80 }}
                 className="rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
               >
                 <DayPicker

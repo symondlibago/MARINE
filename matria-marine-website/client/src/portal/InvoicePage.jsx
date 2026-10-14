@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send, ArrowLeftRight, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Mail, Save, Heading, CheckCircle2, FileMinus, Send, ArrowLeftRight, RefreshCw, Banknote } from "lucide-react";
 import { toast } from "sonner";
 import { invoicesAPI, customersAPI, fxAPI } from "@/pages/api";
 import Select from "./ui/Select";
@@ -143,7 +143,57 @@ export default function InvoicePage({ params }) {
       if (!ok) return;
     }
 
+    // Setting the status to Paid by hand is the same act as pressing the
+    // button, so it gets the same answer: the amount, not just a flag.
+    if (form.status === "paid" && data?.status !== "paid") {
+      const went = await offerToRecordPayment();
+      // Either they have gone to record it, or they backed out. Both leave the
+      // flag unsaved on purpose — the payment is what should set it.
+      setField("status", data?.status || "sent");
+      if (went) return;
+    }
+
     save.mutate();
+  };
+
+  /**
+   * Explain what "paid" alone does, then go and record the money.
+   *
+   * Both ways into this — the button and the status dropdown — end up here, so
+   * there is one explanation and one destination. Marking an invoice paid
+   * stops it being chased but records nothing, so the amount leaves what
+   * customers owe and never arrives in cash; four live documents were sitting
+   * exactly like that and the balance sheet was out by them.
+   *
+   * @returns true when we have sent them to the payment form.
+   */
+  const offerToRecordPayment = async () => {
+    if (!data?.customer_id) {
+      toast.error("Add the customer to this invoice first — a payment is recorded against an account.");
+      return false;
+    }
+
+    const ok = await confirm({
+      title: `Record the payment for ${data.invoice_number}`,
+      message:
+        "Marking an invoice paid on its own records no money — it only stops it being chased, and the amount "
+        + "then goes missing from the books.\n\n"
+        + "The next screen asks for the amount received, the date and the method. Save it and this invoice is "
+        + "marked paid automatically, with the money behind it.",
+      confirmText: "Enter the amount",
+    });
+    if (!ok) return false;
+
+    const q = new URLSearchParams({
+      type: "customer",
+      party: String(data.customer_id),
+      name: data.customer_name || "",
+      pay: "1",
+      doc: String(data.id),
+    });
+    setLocation(`/statements?${q}`);
+
+    return true;
   };
 
   const emailIt = useMutation({
@@ -313,12 +363,42 @@ export default function InvoicePage({ params }) {
             </button>
           ) : null}
           {data.status === "paid" ? (
-            <button onClick={() => markPaid.mutate("sent")} disabled={markPaid.isLoading} title="Undo — mark as unpaid" className="inline-flex items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 disabled:opacity-70">
-              {markPaid.isLoading ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} Paid{data.paid_at ? ` · ${ymd(data.paid_at)}` : ""}
-            </button>
-          ) : (
-            <button onClick={() => markPaid.mutate("paid")} disabled={markPaid.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-70">
-              {markPaid.isLoading ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} Mark as paid
+            <>
+              <button onClick={() => markPaid.mutate("sent")} disabled={markPaid.isLoading} title="Undo — mark as unpaid" className="inline-flex items-center gap-1 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-100 disabled:opacity-70">
+                {markPaid.isLoading ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />} Paid{data.paid_at ? ` · ${ymd(data.paid_at)}` : ""}
+              </button>
+              {/* Marked paid, but no money was ever recorded — so it is out of
+                  receivables and never arrived in cash. Offered here so an old
+                  one can be put right without having to un-mark it first, which
+                  is what the dead end used to force. Absent once a real payment
+                  exists: there would be nothing left to record. */}
+              {data.settlement?.assumed_paid && (
+                <button
+                  onClick={offerToRecordPayment}
+                  title="This invoice is marked paid but no payment was ever recorded"
+                  className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100"
+                >
+                  <Banknote className="h-4 w-4" /> No payment recorded
+                </button>
+              )}
+            </>
+          ) : data.status === "draft" ? null : (
+            /* The same words as before, because that is what staff look for —
+               but it now asks for the money rather than just setting a flag.
+               Ticking "paid" on its own is how four live documents ended up out
+               of receivables with nothing in cash to answer for them. The
+               dialog explains that once, then this goes to the account, opens
+               the payment form and ticks this invoice; saving it sets the paid
+               status by itself, with real money behind it.
+
+               Not offered on a draft: a draft is not a receivable, so there is
+               nothing to pay yet — send it first. */
+            <button
+              onClick={offerToRecordPayment}
+              title="Record the money received against this invoice"
+              className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-70"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Mark as paid
             </button>
           )}
           <button onClick={saveWithDateCheck} disabled={save.isLoading} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3c4a63] disabled:opacity-70">

@@ -46,6 +46,12 @@ class PaymentController extends Controller
 
         $rows = $docs->map(function ($d) use ($type) {
             $s = Settlement::of($d);
+            // What a real payment can still be applied to. For an ordinary
+            // document this is its outstanding balance. For one somebody ticked
+            // as paid without recording any money it is the whole amount —
+            // which is the point: that document used to be filtered out here,
+            // so the only screen that could put it right would not show it.
+            $room = Settlement::unallocated($d);
 
             return [
                 'id' => $d->id,
@@ -59,8 +65,14 @@ class PaymentController extends Controller
                 'billed' => $s['billed'],
                 'credited' => $s['credited'],
                 'allocated' => $s['allocated'],
-                'outstanding' => $s['outstanding'],
+                // The amount the form may apply. Named `outstanding` because
+                // that is what it is for every normal document; the two only
+                // differ when the manual flag has been used.
+                'outstanding' => $room,
                 'paid' => $s['paid'],
+                // Ticked paid with nothing behind it. The form says so, so
+                // nobody wonders why a "paid" invoice is asking for money.
+                'assumed_paid' => $s['assumed_paid'],
             ];
         })->filter(fn ($r) => $r['outstanding'] > Settlement::EPSILON)->values();
 
@@ -325,7 +337,13 @@ class PaymentController extends Controller
                 ));
             }
 
-            $room = Settlement::room($doc);
+            // Measured against what no money has been recorded against, not
+            // against what the paid flag claims — otherwise a document ticked
+            // paid by hand could never have its real payment entered, which is
+            // exactly the position four live documents were stuck in. A
+            // document with genuine allocations still comes back zero here, so
+            // nothing can be paid twice.
+            $room = Settlement::unallocated($doc);
             if ($amount > $room + Settlement::EPSILON) {
                 abort(422, sprintf(
                     '%s only has %s %s outstanding — you tried to apply %s.',

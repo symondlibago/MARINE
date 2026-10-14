@@ -36,7 +36,7 @@ const METHODS = [
  * caps at that balance, so the screen cannot build a payment the server will
  * reject. The server re-checks all of it regardless.
  */
-export default function PaymentModal({ open, onClose, type, party, onSaved }) {
+export default function PaymentModal({ open, onClose, type, party, onSaved, preselectId = null }) {
   const qc = useQueryClient();
   const isCustomer = type === "customer";
 
@@ -90,14 +90,33 @@ export default function PaymentModal({ open, onClose, type, party, onSaved }) {
   }, [open, party?.id]);
 
   // Pick what is actually owed; if nothing is, this party's own currency; if
-  // they have none, the house default.
+  // they have none, the house default. Arriving from a particular document,
+  // that document's currency wins — it is the one being paid.
   useEffect(() => {
     if (!open) return;
-    setCurrency(openCurrencies[0] || data?.party?.currency || DEFAULT_CURRENCY);
-  }, [open, openCurrencies, data?.party?.currency]);
+    const arrivedOn = preselectId && documents.find((d) => d.id === preselectId);
+    setCurrency(arrivedOn?.currency || openCurrencies[0] || data?.party?.currency || DEFAULT_CURRENCY);
+  }, [open, openCurrencies, data?.party?.currency, preselectId, documents]);
 
   // Switching currency invalidates every tick — those documents are gone.
   useEffect(() => { setPicks({}); }, [currency]);
+
+  /**
+   * Came here from one document: tick it and fill the amount in.
+   *
+   * The whole point of the journey is to settle THAT invoice, so making
+   * somebody find it in the list and retype a figure already on the screen
+   * they left is how they end up reaching for "Mark as paid" instead.
+   */
+  useEffect(() => {
+    if (!open || !preselectId) return;
+
+    const doc = documents.find((d) => d.id === preselectId);
+    if (!doc || doc.currency !== currency) return;
+
+    setPicks((prev) => (prev[doc.id] ? prev : { ...prev, [doc.id]: String(doc.outstanding) }));
+    setAmount((prev) => (prev ? prev : String(doc.outstanding)));
+  }, [open, preselectId, documents, currency]);
 
   const visible = documents.filter((d) => d.currency === currency);
 
@@ -330,6 +349,17 @@ export default function PaymentModal({ open, onClose, type, party, onSaved }) {
                               {d.allocated > 0 && (
                                 <span className="ml-1.5 rounded bg-blue-50 px-1 py-0.5 text-[10px] font-semibold text-blue-700">
                                   part-paid
+                                </span>
+                              )}
+                              {/* Ticked paid with no money behind it. Said
+                                  outright, or a "paid" invoice appearing in a
+                                  list of things to pay reads as a bug. */}
+                              {d.assumed_paid && (
+                                <span
+                                  className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-700"
+                                  title="Marked paid by hand, but no payment was ever recorded — this is the money that was never entered"
+                                >
+                                  marked paid · no payment
                                 </span>
                               )}
                               {d.vessel && <span className="block text-[11px] text-slate-400">{d.vessel}</span>}
