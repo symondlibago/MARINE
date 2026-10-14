@@ -156,6 +156,15 @@ class ReportsController extends Controller
             $gross = round($billed - $passThrough, 2);
             $invoicePaid = $inv->status === 'paid' || $inv->paid_at !== null;
 
+            // The vendor costs below are already converted to base. The revenue
+            // was not, so every margin on this report was a foreign invoice
+            // minus a Singapore-dollar cost — a USD 10,000 job against SGD
+            // 9,000 of purchases read as 1,000 of profit when it was nearer
+            // 3,700. The whole row goes into base, so the subtraction is
+            // between two figures in the same money.
+            $invRate = \App\Support\AccountingBooks::rateOf($inv);
+            $toBase = fn (float $amount) => $invRate === null ? null : round($amount * $invRate, 2);
+
             $pos = ($inv->rfq_id && ! isset($costedRfq[$inv->rfq_id]))
                 ? $posByRfq->get($inv->rfq_id, collect())
                 : collect();
@@ -169,8 +178,18 @@ class ReportsController extends Controller
             $received = 0;
             $posPaid = 0;
 
-            $vendors = $pos->map(function (PurchaseOrder $po) use (&$vendorCost, &$expenses, &$costPaid, &$received, &$posPaid) {
-                $rate = (float) ($po->exchange_rate ?: 1);
+            $unratedPos = 0;
+
+            $vendors = $pos->map(function (PurchaseOrder $po) use (&$vendorCost, &$expenses, &$costPaid, &$received, &$posPaid, &$unratedPos) {
+                // No rate is NOT a rate of one. An unrated EUR order used to go
+                // in at its face value, so the job looked to have cost far less
+                // than it did and the margin on it was overstated.
+                $rate = \App\Support\AccountingBooks::rateOf($po);
+                if ($rate === null) {
+                    $unratedPos++;
+                    $rate = 0.0;    // contributes nothing; the row is flagged
+                }
+
                 $cost = $po->vendorNetAmount() * $rate;
                 $expRate = $po->expense_currency ? (float) ($po->expense_rate ?: 1) : $rate;
                 $exp = (float) $po->expenses * $expRate;
@@ -212,23 +231,31 @@ class ReportsController extends Controller
                 'vessel' => $inv->rfq?->ship_name,
                 'date' => optional($inv->issue_date)->toDateString(),
                 'currency' => $inv->currency,
-                'gross' => round($gross, 2),
+                'exchange_rate' => $invRate,
+                // Every money field below is in the reporting currency. The
+                // invoice's own figure is kept beside it so the row can still
+                // be tied back to the document it came from.
+                'face_gross' => round($gross, 2),
+                'gross' => $toBase($gross),
                 // What the customer was actually billed, and the part of it
                 // that was never ours. Equal unless the invoice carries a
                 // pass-through line such as a CTM principal.
-                'billed' => round($billed, 2),
-                'pass_through' => $passThrough,
-                'credits' => round($credits, 2),
+                'billed' => $toBase($billed),
+                'pass_through' => $toBase($passThrough),
+                'credits' => $toBase($credits),
                 'credit_memo' => $inv->creditMemos->where('status', 'issued')->pluck('cm_number')->implode(', ') ?: null,
                 'vendor_cost' => round($vendorCost, 2),
                 'expenses' => round($expenses, 2),
-                'markup' => round($gross - $vendorCost, 2),
-                'net' => round($gross - $costIncurred, 2),
+                'markup' => $invRate === null ? null : round($toBase($gross) - $vendorCost, 2),
+                'net' => $invRate === null ? null : round($toBase($gross) - $costIncurred, 2),
                 'invoice_paid' => $invoicePaid,
-                'collected' => round($collected, 2),
-                'receivable' => round($billed - $collected, 2),
+                'collected' => $toBase($collected),
+                'receivable' => $toBase(round($billed - $collected, 2)),
                 'cost_paid' => round($costPaid, 2),
                 'payable' => round($costIncurred - $costPaid, 2),
+                // Flags for the two ways a figure here can be incomplete.
+                'unrated' => $invRate === null,
+                'unrated_pos' => $unratedPos,
                 'received' => $received,
                 'pos_paid' => $posPaid,
                 'po_count' => $poCount,
@@ -241,7 +268,10 @@ class ReportsController extends Controller
         // Cash to Master is raised as an ordinary invoice now, so its fee is
         // already in the rows below: the handling line sits on an income
         // account, the principal on a liability one and never counts.
-        $sum = fn ($k) => round($rows->sum($k), 2);
+        // Null means "could not be converted", and null adds as nothing — so
+        // an unrated document is left out of the totals rather than counted at
+        // its face value. The count below says how many.
+        $sum = fn ($k) => round($rows->sum(fn ($r) => (float) ($r[$k] ?? 0)), 2);
         $revenue = $sum('gross');
         $cogs = $sum('vendor_cost');
         $jobExpenses = $sum('expenses');
@@ -252,14 +282,20 @@ class ReportsController extends Controller
             'multi_base' => $invoices->pluck('currency')->filter()->unique()->count() > 1,
             'rows' => $rows,
             'overhead_items' => $overheadItems,
+            // Documents the figures below could not include. Without this an
+            // understated profit reads exactly like a complete one.
+            'unrated' => $rows->where('unrated', true)
+                ->map(fn ($r) => ['number' => $r['invoice_number'], 'currency' => $r['currency']])
+                ->values()->all(),
+            'unrated_pos' => (int) $rows->sum('unrated_pos'),
             'totals' => [
                 'jobs' => $rows->count(),
                 'revenue' => $revenue,
                 // What clients were billed in total, against the part of it
                 // that is ours. They differ when an invoice carries a
                 // pass-through line such as a Cash to Master principal.
-                'billed' => round($rows->sum('billed'), 2),
-                'pass_through' => round($rows->sum('pass_through'), 2),
+                'billed' => $sum('billed'),
+                'pass_through' => $sum('pass_through'),
                 'cogs' => $cogs,
                 'job_expenses' => $jobExpenses,
                 'gross_profit' => $grossProfit,

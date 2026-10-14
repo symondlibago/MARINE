@@ -20,6 +20,7 @@
         .num { text-align: right; }
         .sub { color: #28364b; font-size: 10px; }
         .partno { color: #6b7280; font-size: 10px; }
+        .itemno { color: #28364b; font-weight: bold; }
         .tot td { padding: 3px 8px; font-size: 11px; }
     </style>
 </head>
@@ -93,13 +94,18 @@
          theirs, and the note under the totals says so outright. --}}
     @php
         $fx = $fx ?? null;
-        $cols = $fx ? 6 : 5;
+        $cols = $fx ? 7 : 6;
         $money = fn ($amount) => number_format((float) $amount, 2);
         $conv = fn ($amount) => number_format((float) $amount * ($fx['rate'] ?? 0), 2);
+        // Counts ITEMS, not rows — a heading is a label over a group and takes
+        // no number of its own, so the numbers the customer quotes back at us
+        // mean the same lines we see.
+        $itemNo = 0;
     @endphp
     <table class="items">
         <thead>
             <tr>
+                <th style="text-align:left; width:34px;">Item</th>
                 <th style="text-align:left;">Description</th>
                 <th class="num" style="width:50px;">Qty</th>
                 <th style="text-align:left; width:50px;">Unit</th>
@@ -119,7 +125,9 @@
                 @if($line->is_heading)
                     <tr><td colspan="{{ $cols }}" style="font-weight:bold; padding-top:9px; border-bottom:none;" class="navy">{{ $line->description }}</td></tr>
                 @else
+                    @php $itemNo++; @endphp
                     <tr>
+                        <td class="itemno">{{ $itemNo }}</td>
                         <td>
                             {!! nl2br(e($line->description)) !!}
                             @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif

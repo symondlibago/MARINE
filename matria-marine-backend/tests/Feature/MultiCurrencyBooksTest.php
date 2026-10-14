@@ -99,7 +99,10 @@ class MultiCurrencyBooksTest extends TestCase
 
         // 536,185 x 0.368521 = 197,595.43, not 536,185.
         $this->assertEqualsWithDelta(197595.43, $totals['base_net'], 0.02);
-        $this->assertSame(536185.0, (float) $totals['net']);
+        // And `net` is that same converted figure. No total a register
+        // publishes is a face value — asking a register for its total can only
+        // be asking for one that can be added to something else.
+        $this->assertEqualsWithDelta(197595.43, $totals['net'], 0.02);
         $this->assertSame([], $totals['unrated']);
     }
 
@@ -117,8 +120,10 @@ class MultiCurrencyBooksTest extends TestCase
             ->json('data.totals');
 
         $this->assertEqualsWithDelta(2710.00, $totals['base_net'], 0.02);
-        // The face-value sum is still reported, and is still meaningless.
-        $this->assertSame(3000.0, (float) $totals['net']);
+        $this->assertEqualsWithDelta(2710.00, $totals['net'], 0.02);
+        // The face-value sum is published only under a name nobody can read as
+        // money by accident.
+        $this->assertSame(3000.0, (float) $totals['face_value_do_not_total']);
     }
 
     /**

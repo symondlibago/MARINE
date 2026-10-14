@@ -380,7 +380,23 @@ function AccountingReport() {
       ) : !data ? null : (
         <>
           {data.multi_base && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Invoices span multiple currencies; totals are summed as {cur}-equivalent.</p>
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Invoices span multiple currencies. Every figure below is converted to {cur} at the
+              rate recorded on its own document.
+            </p>
+          )}
+          {(data.unrated?.length > 0 || data.unrated_pos > 0) && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {data.unrated?.length > 0 && (
+                <>
+                  {data.unrated.length} invoice(s) have no exchange rate and are NOT in the figures
+                  below — {data.unrated.slice(0, 6).map((r) => `${r.number} (${r.currency})`).join(", ")}
+                  {data.unrated.length > 6 ? ` and ${data.unrated.length - 6} more` : ""}.{" "}
+                </>
+              )}
+              {data.unrated_pos > 0 && `${data.unrated_pos} purchase order(s) have no rate either, so the cost of those jobs is understated. `}
+              Convert them on the Accounting page.
+            </p>
           )}
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

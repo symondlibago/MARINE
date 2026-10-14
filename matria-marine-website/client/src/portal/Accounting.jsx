@@ -130,6 +130,31 @@ const Amount = ({ value, bold, zeroDash }) => {
   );
 };
 
+/**
+ * A converted figure — the twin of a native money column.
+ *
+ * Shaded, so it reads as a different kind of number from the one beside it,
+ * and amber-dashed when the document carries no rate. That dash is the point:
+ * the row is genuinely absent from the total at the foot of the column, and a
+ * blank or a zero would hide a gap in a figure that looks complete.
+ */
+const BaseTD = ({ value, zeroDash }) => (
+  <TD right className="bg-slate-50/60 font-medium">
+    {value == null ? (
+      <span className="text-amber-600" title="No exchange rate on this document — it is not in the total below">—</span>
+    ) : (
+      <Amount value={value} zeroDash={zeroDash} />
+    )}
+  </TD>
+);
+
+/** The foot of a native money column: never a total, because it cannot be one. */
+const NoTotal = () => (
+  <TD right>
+    <span className="text-slate-300" title="Four currencies in this column — the total is under the converted one beside it">—</span>
+  </TD>
+);
+
 function Badge({ children, tone = "slate" }) {
   const tones = {
     slate: "bg-slate-100 text-slate-600",
@@ -485,7 +510,7 @@ function SalesRegister({ range }) {
             <Stat label="Documents" value={`${d.totals.invoices} inv · ${d.totals.credit_notes} CN`} />
             <Stat label={`Net of GST (${d.base_currency})`} value={money(d.totals.base_net)} />
             <Stat label={`GST charged (${d.base_currency})`} value={money(d.totals.base_tax)} />
-            <Stat label="Outstanding" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
+            <Stat label={`Outstanding (${d.base_currency})`} value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
           </div>
 
           <Card
@@ -508,12 +533,16 @@ function SalesRegister({ range }) {
                         "Currency", "Rate", "Account", "Account name", "GST code", "F5 box", "Subtotal", "Delivery",
                         "Net", "GST %", "GST amount", "Gross",
                         `Net (${d.base_currency})`, `GST (${d.base_currency})`, `Gross (${d.base_currency})`,
-                        "Status", "Settled", "Outstanding"],
+                        "Status", "Billed", `Billed (${d.base_currency})`,
+                        "Settled", `Settled (${d.base_currency})`,
+                        "Outstanding", `Outstanding (${d.base_currency})`],
                       d.rows.map((r) => [r.date, r.kind_label, r.number, r.party_no, r.party_name, r.party_reference,
                         r.reference, r.vessel, r.currency, r.exchange_rate, r.account_code, r.account_name, r.gst_code, r.f5_box,
                         r.subtotal, r.delivery, r.net, r.tax_rate, r.tax_amount, r.gross,
                         r.base_net, r.base_tax, r.base_gross,
-                        r.status, r.settled, r.outstanding])
+                        r.status, r.billed_gross, r.base_billed_gross,
+                        r.settled, r.base_settled,
+                        r.outstanding, r.base_outstanding])
                     )
                   }
                 />
@@ -540,8 +569,16 @@ function SalesRegister({ range }) {
                           customer was actually invoiced and how much of that
                           was never ours — a CTM principal, for instance. */}
                       <TH right title="What the customer was invoiced, including anything only passing through">Billed</TH>
+                      <TH right>Billed ({d.base_currency})</TH>
                       <TH right title="Collected on someone else's behalf — not a sale, not in any GST box">Pass-thru</TH>
-                      <TH>Status</TH><TH right>Settled</TH><TH right>Outstanding</TH>
+                      <TH right>Pass-thru ({d.base_currency})</TH>
+                      <TH>Status</TH>
+                      {/* Every money column has a converted twin, and only the
+                          twin is totalled. The money the customer still owes
+                          had no twin, so the figure underneath it was adding
+                          536,185 dirhams to a column of US dollars. */}
+                      <TH right>Settled</TH><TH right>Settled ({d.base_currency})</TH>
+                      <TH right>Outstanding</TH><TH right>Outstanding ({d.base_currency})</TH>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -571,37 +608,29 @@ function SalesRegister({ range }) {
                         <TD right><Amount value={r.subtotal} /></TD>
                         <TD right><Amount value={r.delivery} zeroDash /></TD>
                         <TD right><Amount value={r.net} bold /></TD>
-                        <TD right className="bg-slate-50/60 font-medium">
-                          {r.base_net == null
-                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
-                            : <Amount value={r.base_net} />}
-                        </TD>
+                        <BaseTD value={r.base_net} />
                         <TD right className="text-slate-500">{Number(r.tax_rate || 0)}%</TD>
                         <TD right><Amount value={r.tax_amount} zeroDash /></TD>
-                        <TD right className="bg-slate-50/60 font-medium">
-                          {r.base_tax == null
-                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
-                            : <Amount value={r.base_tax} zeroDash />}
-                        </TD>
+                        <BaseTD value={r.base_tax} zeroDash />
                         <TD right><Amount value={r.gross} /></TD>
-                        <TD right className="bg-slate-50/60 font-medium">
-                          {r.base_gross == null
-                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
-                            : <Amount value={r.base_gross} />}
-                        </TD>
+                        <BaseTD value={r.base_gross} />
                         <TD right className={Number(r.pass_through_net) ? "" : "text-slate-400"}>
                           <Amount value={r.billed_gross ?? r.gross} />
                         </TD>
+                        <BaseTD value={r.base_billed_gross ?? r.base_gross} />
                         <TD right>
                           {Number(r.pass_through_net)
                             ? <span className="font-medium text-amber-700"><Amount value={r.pass_through_net} /></span>
                             : <span className="text-slate-300">—</span>}
                         </TD>
+                        <BaseTD value={r.base_pass_through} zeroDash />
                         <TD>
                           <Badge tone={r.paid ? "green" : r.status === "draft" ? "slate" : "amber"}>{r.status}</Badge>
                         </TD>
                         <TD right><Amount value={r.settled} zeroDash /></TD>
+                        <BaseTD value={r.base_settled} zeroDash />
                         <TD right><Amount value={r.outstanding} zeroDash /></TD>
+                        <BaseTD value={r.base_outstanding} zeroDash />
                       </tr>
                     ))}
                   </tbody>
@@ -614,27 +643,31 @@ function SalesRegister({ range }) {
                       <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={12}>
                         Total <span className="font-normal normal-case text-slate-400">· converted to {d.base_currency}</span>
                       </TD>
-                      {/* 25 columns, and they have to line up exactly. Every
+                      {/* 30 columns, and they have to line up exactly. Every
                           NATIVE money column shows a dash — four currencies in
                           one column cannot be added, which is what started all
                           this — and the totals live under their converted
                           twins. Subtotal, Delivery, GST %. */}
                       <TD right colSpan={2} />
-                      <TD right><span className="text-slate-300">—</span></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.base_net} bold /></TD>
                       <TD right />
-                      <TD right><span className="text-slate-300">—</span></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.base_tax} bold /></TD>
-                      <TD right><span className="text-slate-300">—</span></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.base_gross} bold /></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.billed} bold /></TD>
+                      <NoTotal />
                       <TD right>
                         {Number(d.totals.pass_through)
                           ? <span className="font-bold text-amber-700"><Amount value={d.totals.pass_through} /></span>
                           : <span className="text-slate-300">—</span>}
                       </TD>
                       <TD />
+                      <NoTotal />
                       <TD right><Amount value={d.totals.settled} bold /></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.outstanding} bold /></TD>
                     </tr>
                   </tfoot>
@@ -643,7 +676,7 @@ function SalesRegister({ range }) {
             )}
           </Card>
 
-          <ByAccount rows={d.by_account} />
+          <ByAccount rows={d.by_account} currency={d.base_currency} />
         </div>
       )}
     </Section>
@@ -664,14 +697,14 @@ function PurchaseRegister({ range }) {
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Documents" value={`${d.totals.orders} PO · ${d.totals.expenses} overhead`} />
-            <Stat label="Net of GST" value={money(d.totals.net)} />
-            <Stat label="GST paid" value={money(d.totals.tax)} />
-            <Stat label="Unpaid" value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
+            <Stat label={`Net of GST (${d.base_currency})`} value={money(d.totals.net)} />
+            <Stat label={`GST paid (${d.base_currency})`} value={money(d.totals.tax)} />
+            <Stat label={`Unpaid (${d.base_currency})`} value={money(d.totals.outstanding)} tone={d.totals.outstanding > 0 ? "amber" : "green"} />
           </div>
 
           <Card
             title="Purchase invoices"
-            subtitle={`${d.totals.count} document(s) · job expenses ${money(d.totals.job_expenses)}`}
+            subtitle={`${d.totals.count} document(s) · job expenses ${money(d.totals.job_expenses)} ${d.base_currency}`}
             action={
               <div className="flex items-center gap-2">
                 <SearchBox value={term} onChange={setTerm} placeholder="PO, vendor, vessel…" />
@@ -684,12 +717,14 @@ function PurchaseRegister({ range }) {
                         "Currency", "Rate", "Account", "Account name", "GST code", "F5 box", "Net", "Expenses",
                         "GST %", "GST amount", "Gross",
                         `Net (${d.base_currency})`, `GST (${d.base_currency})`, `Gross (${d.base_currency})`,
-                        "Status", "Settled", "Outstanding"],
+                        "Status", "Settled", `Settled (${d.base_currency})`,
+                        "Outstanding", `Outstanding (${d.base_currency})`],
                       d.rows.map((r) => [r.date, r.kind_label, r.number, r.vendor_invoice_number, r.party_no,
                         r.party_name, r.reference, r.vessel, r.currency, r.exchange_rate, r.account_code,
                         r.account_name, r.gst_code, r.f5_box, r.net, r.expenses, r.tax_rate, r.tax_amount,
                         r.gross, r.base_net, r.base_tax, r.base_gross,
-                        r.status, r.settled, r.outstanding])
+                        r.status, r.settled, r.base_settled,
+                        r.outstanding, r.base_outstanding])
                     )
                   }
                 />
@@ -707,7 +742,8 @@ function PurchaseRegister({ range }) {
                       <TH>Vendor</TH><TH>Enquiry</TH><TH>Vessel</TH><TH>Cur</TH><TH right>Rate</TH>
                       <TH>Account</TH><TH>GST</TH><TH>Box</TH>
                       <TH right>Net</TH><TH right>Net ({d.base_currency})</TH><TH right>Expenses</TH><TH right>GST %</TH><TH right>GST</TH><TH right>GST ({d.base_currency})</TH>
-                      <TH right>Gross</TH><TH right>Gross ({d.base_currency})</TH><TH>Status</TH><TH right>Outstanding</TH>
+                      <TH right>Gross</TH><TH right>Gross ({d.base_currency})</TH><TH>Status</TH>
+                      <TH right>Outstanding</TH><TH right>Outstanding ({d.base_currency})</TH>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -734,27 +770,16 @@ function PurchaseRegister({ range }) {
                         <TD>{r.gst_code ? <Badge tone={GST_TONE[r.gst_code]}>{r.gst_code}</Badge> : <Badge tone="red">?</Badge>}</TD>
                         <TD className="text-slate-500">{r.f5_box ? `Box ${r.f5_box}` : "—"}</TD>
                         <TD right><Amount value={r.net} bold /></TD>
-                        <TD right className="bg-slate-50/60 font-medium">
-                          {r.base_net == null
-                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
-                            : <Amount value={r.base_net} />}
-                        </TD>
+                        <BaseTD value={r.base_net} />
                         <TD right><Amount value={r.expenses} zeroDash /></TD>
                         <TD right className="text-slate-500">{Number(r.tax_rate || 0)}%</TD>
                         <TD right><Amount value={r.tax_amount} zeroDash /></TD>
-                        <TD right className="bg-slate-50/60 font-medium">
-                          {r.base_tax == null
-                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
-                            : <Amount value={r.base_tax} zeroDash />}
-                        </TD>
+                        <BaseTD value={r.base_tax} zeroDash />
                         <TD right><Amount value={r.gross} /></TD>
-                        <TD right className="bg-slate-50/60 font-medium">
-                          {r.base_gross == null
-                            ? <span className="text-amber-600" title="No exchange rate on this document">—</span>
-                            : <Amount value={r.base_gross} />}
-                        </TD>
+                        <BaseTD value={r.base_gross} />
                         <TD><Badge tone={r.paid ? "green" : "amber"}>{r.paid ? "paid" : r.status}</Badge></TD>
                         <TD right><Amount value={r.outstanding} zeroDash /></TD>
+                        <BaseTD value={r.base_outstanding} zeroDash />
                       </tr>
                     ))}
                   </tbody>
@@ -763,18 +788,19 @@ function PurchaseRegister({ range }) {
                       <TD className="text-xs uppercase tracking-wide text-slate-500" colSpan={13}>
                         Total <span className="font-normal normal-case text-slate-400">· converted to {d.base_currency}</span>
                       </TD>
-                      {/* 23 columns. Same rule as the sales footer: a dash
+                      {/* 24 columns. Same rule as the sales footer: a dash
                           under every native money column, the totals under the
                           converted ones. */}
-                      <TD right><span className="text-slate-300">—</span></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.base_net} bold /></TD>
                       <TD right><Amount value={d.totals.job_expenses} bold /></TD>
                       <TD right />
-                      <TD right><span className="text-slate-300">—</span></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.base_tax} bold /></TD>
-                      <TD right><span className="text-slate-300">—</span></TD>
+                      <NoTotal />
                       <TD right><Amount value={d.totals.base_gross} bold /></TD>
                       <TD />
+                      <NoTotal />
                       <TD right><Amount value={d.totals.outstanding} bold /></TD>
                     </tr>
                   </tfoot>
@@ -783,17 +809,30 @@ function PurchaseRegister({ range }) {
             )}
           </Card>
 
-          <ByAccount rows={d.by_account} />
+          <ByAccount rows={d.by_account} currency={d.base_currency} />
         </div>
       )}
     </Section>
   );
 }
 
-function ByAccount({ rows }) {
+function ByAccount({ rows, currency }) {
   if (!rows?.length) return null;
+  const unrated = rows.reduce((n, g) => n + (g.unrated || 0), 0);
+
   return (
-    <Card title="Subtotals by account" subtitle="Where each figure above was booked">
+    <Card
+      title="Subtotals by account"
+      subtitle={`Where each figure above was booked · ${currency || rows[0]?.currency || ""}`}
+    >
+      {unrated > 0 && (
+        <div className="px-5 pt-4">
+          <Note tone="amber">
+            {unrated} document(s) on these accounts have no exchange rate, so they are not in the
+            subtotals below. Convert them and the figures will include them.
+          </Note>
+        </div>
+      )}
       <Scroller>
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 bg-slate-50/60">
@@ -851,8 +890,8 @@ function GstSummary({ range }) {
           <CurrencyWarning data={d} range={range} />
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <Stat label="Output tax (sales)" value={money(d.output.tax)} />
-            <Stat label="Input tax (purchases)" value={money(d.input.tax)} />
+            <Stat label={`Output tax (sales, ${d.base_currency})`} value={money(d.output.tax)} />
+            <Stat label={`Input tax (purchases, ${d.base_currency})`} value={money(d.input.tax)} />
             <Stat
               label={d.payable ? "Net GST payable" : "Net GST refundable"}
               value={money(Math.abs(d.net_gst))}
@@ -895,9 +934,11 @@ function GstSummary({ range }) {
             </Scroller>
             <div className="border-t border-slate-100 px-5 py-3">
               <Note>
-                Each box is built from the account code on the document, so a zero-rated sale
-                always reaches Box 2. Anything on an unrecognised account is excluded and reported
-                above rather than added to a box.
+                Every box is in {d.base_currency}, converted at the rate recorded on each document —
+                which is the currency the F5 is filed in. Each box is built from the account code on
+                the document, so a zero-rated sale always reaches Box 2. Anything on an unrecognised
+                account, or with no exchange rate, is excluded and reported above rather than added
+                to a box.
               </Note>
             </div>
           </Card>
@@ -988,8 +1029,17 @@ function IncomeStatement({ range }) {
     <Section query={q}>
       {(d) => (
         <div className="space-y-4">
+          {d.unrated_count > 0 && (
+            <Note tone="amber">
+              {d.unrated_count} document(s) have no exchange rate and are NOT in the profit below —{" "}
+              {d.unrated.slice(0, 6).map((r) => `${r.number} (${r.currency})`).join(", ")}
+              {d.unrated.length > 6 ? ` and ${d.unrated.length - 6} more` : ""}. Convert them on the
+              Sales or Purchases tab and this statement will include them.
+            </Note>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Revenue" value={money(d.revenue.total)} />
+            <Stat label={`Revenue (${d.base_currency})`} value={money(d.revenue.total)} />
             <Stat label="Cost of sales" value={money(d.cost_of_sales.total)} />
             <Stat label="Gross profit" value={`${money(d.gross_profit)} (${pct(d.gross_margin)})`} tone={d.gross_profit >= 0 ? "green" : "amber"} />
             <Stat label="Net profit" value={money(d.net_profit)} tone={d.net_profit >= 0 ? "green" : "amber"} />
@@ -1096,18 +1146,27 @@ function TrialBalance({ range }) {
     <Section query={q}>
       {(d) => (
         <div className="space-y-4">
+          {d.unrated_count > 0 && (
+            <Note tone="amber">
+              {d.unrated_count} document(s) have no exchange rate and are not posted below —{" "}
+              {d.unrated.slice(0, 6).map((r) => `${r.number} (${r.currency})`).join(", ")}
+              {d.unrated.length > 6 ? ` and ${d.unrated.length - 6} more` : ""}. That alone will put
+              the balance out.
+            </Note>
+          )}
           {!d.totals.balanced && (
             <Note tone="amber">
               The trial balance is out by {money(d.totals.difference)}. Every figure is derived from
-              documents, so a difference means something is recorded that the chart has no account
-              for.
+              documents, so the usual causes are an opening position that was never entered (see
+              below), a document on an account the chart does not have, or one with no exchange
+              rate.
             </Note>
           )}
           <Note>{d.note}</Note>
 
           <Card
             title="Trial balance"
-            subtitle={`Balance-sheet accounts as at ${d.as_of} · income and expenses for the period`}
+            subtitle={`Balance-sheet accounts as at ${d.as_of} · income and expenses for the period · all figures in ${d.base_currency}`}
             action={
               <ExportButton
                 onClick={() =>
@@ -1215,8 +1274,21 @@ function BalanceSheet({ range }) {
                   <tr className="bg-slate-50/60">
                     <TD colSpan={3} className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assets</TD>
                   </tr>
+                  {/* A foreign cash account shows what it actually holds beside
+                      what that is worth today — "1010 Cash USD · USD 4,000 at
+                      1.2691" — so the SGD figure in the column is not mistaken
+                      for the balance of the account. */}
                   {d.assets.cash.map((c) => (
-                    <BsRow key={c.code} code={c.code} name={c.name} amount={c.amount} />
+                    <BsRow
+                      key={c.code}
+                      code={c.code}
+                      name={
+                        c.face_currency && c.face_currency !== d.base_currency && Number(c.face_value)
+                          ? `${c.name} · ${c.face_currency} ${money(c.face_value)} at ${Number(c.exchange_rate || 0).toFixed(4)}`
+                          : c.name
+                      }
+                      amount={c.amount}
+                    />
                   ))}
                   <BsRow code={d.assets.receivables.code} name={d.assets.receivables.name} amount={d.assets.receivables.amount} />
                   <BsTotal label="Total assets" amount={d.assets.total} />
@@ -1305,8 +1377,18 @@ function Ageing({ range, type }) {
     <Section query={q}>
       {(d) => (
         <div className="space-y-4">
+          {d.unrated > 0 && (
+            <Note tone="amber">
+              {d.unrated} document(s) have no exchange rate, so they are not in the buckets below.
+              The amount owed is understated until they are converted.
+            </Note>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <Stat label={isAr ? "Total receivable" : "Total payable"} value={money(d.total)} />
+            <Stat
+              label={`${isAr ? "Total receivable" : "Total payable"} (${d.base_currency})`}
+              value={money(d.total)}
+            />
             {BUCKETS.map((b) => (
               <Stat
                 key={b.key}
@@ -1319,7 +1401,16 @@ function Ageing({ range, type }) {
 
           <Card
             title={isAr ? "AR ageing" : "AP ageing"}
-            subtitle={`${d.party_count} ${isAr ? "customer" : "vendor"}(s) as at ${d.as_of} · account ${d.account}`}
+            subtitle={
+              `${d.party_count} ${isAr ? "customer" : "vendor"}(s) as at ${d.as_of} · account ${d.account}` +
+              // Buckets are added across every party, so they are stated in one
+              // currency. What each party owes in their OWN currency is on
+              // their row when it is opened.
+              ` · buckets in ${d.base_currency}` +
+              (d.by_currency?.length > 1
+                ? ` (${d.by_currency.map((c) => c.currency).join(", ")} converted)`
+                : "")
+            }
             action={
               <ExportButton
                 disabled={!d.parties.length}

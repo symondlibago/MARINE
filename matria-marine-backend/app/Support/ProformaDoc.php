@@ -100,6 +100,12 @@ class ProformaDoc
     {
         return collect($items)->map(fn ($i) => [
             'description' => (string) $i->description,
+            // Carried through so the printed item numbers can skip headings. A
+            // heading is a label over a group, not something anybody orders —
+            // numbering it makes the customer's "item 3" a different line to
+            // ours. The offer path already filters headings out; the delivery
+            // order path does not, so the flag has to survive the mapping.
+            'is_heading' => (bool) ($i->is_heading ?? false),
             'unit' => (string) $i->unit,
             'qty' => (float) $i->qty,
             'unit_price' => (float) $i->unit_price,

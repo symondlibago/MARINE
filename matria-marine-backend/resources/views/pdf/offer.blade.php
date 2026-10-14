@@ -21,6 +21,7 @@
         .num { text-align: right; }
         .sub { color: #28364b; font-size: 10px; }
         .partno { color: #6b7280; font-size: 10px; }
+        .itemno { color: #28364b; font-weight: bold; }
         .tot td { padding: 3px 8px; font-size: 11px; }
     </style>
 </head>
@@ -130,9 +131,17 @@
     </div>
 
     {{-- Line items (customer-facing: no base price / markup shown) --}}
+    @php
+        // Counts ITEMS, not rows. A heading is a label over a group, so it does
+        // not take a number — otherwise a quotation with a heading reads 1, 3,
+        // 4 and the customer's "please supply item 3" means a different line to
+        // each of us.
+        $itemNo = 0;
+    @endphp
     <table class="items">
         <thead>
             <tr>
+                <th style="text-align:left; width:34px;">Item</th>
                 <th style="text-align:left;">Description</th>
                 <th class="num" style="width:55px;">Qty</th>
                 <th style="text-align:left; width:55px;">Unit</th>
@@ -143,9 +152,10 @@
         <tbody>
             @forelse($offer->items as $line)
                 @if($line->is_heading)
-                    <tr><td colspan="5" style="font-weight:bold; padding-top:9px; border-bottom:none;" class="navy">{{ $line->description }}</td></tr>
+                    <tr><td colspan="6" style="font-weight:bold; padding-top:9px; border-bottom:none;" class="navy">{{ $line->description }}</td></tr>
                 @else
                     @php
+                        $itemNo++;
                         $qty = (float) $line->qty;
                         $custDisc = (float) ($line->cust_discount_amount ?? 0);
                         // With a discount the quoted unit price is shown as it
@@ -158,6 +168,7 @@
                             : ($qty > 0 ? (float) $line->line_total / $qty : (float) $line->unit_price);
                     @endphp
                     <tr>
+                        <td class="itemno">{{ $itemNo }}</td>
                         <td>
                             {!! nl2br(e($line->description)) !!}
                             @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
@@ -173,7 +184,7 @@
                     </tr>
                 @endif
             @empty
-                <tr><td colspan="5">No line items.</td></tr>
+                <tr><td colspan="6">No line items.</td></tr>
             @endforelse
         </tbody>
     </table>

@@ -14,6 +14,8 @@
         table.items thead th { background: #28364b; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; }
         table.items tbody td { padding: 5px 8px; font-size: 11px; border-bottom: 1px solid #eee; vertical-align: top; }
         .num { text-align: right; }
+
+        .itemno { color: #28364b; font-weight: bold; }
         .sub { color: #6b7280; font-size: 10px; }
         .tot td { padding: 3px 8px; font-size: 11px; }
         .page-footer { position: fixed; bottom: -86px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #555; line-height: 1.5; }
@@ -80,9 +82,15 @@
     @endif
 
     {{-- Credited lines --}}
+    @php
+        // Counts ITEMS, not rows: a heading is a label over a group and takes
+        // no number, so the item numbers match the invoice being credited.
+        $itemNo = 0;
+    @endphp
     <table class="items">
         <thead>
             <tr>
+                <th style="text-align:left; width:34px;">Item</th>
                 <th style="text-align:left;">Description</th>
                 <th class="num" style="width:55px;">Qty</th>
                 <th style="text-align:left; width:55px;">Unit</th>
@@ -92,7 +100,12 @@
         </thead>
         <tbody>
             @forelse($cm->items as $line)
+                @php
+                    $isHeading = (bool) ($line->is_heading ?? false);
+                    $isHeading ?: $itemNo++;
+                @endphp
                 <tr>
+                    <td class="itemno">{{ $isHeading ? '' : $itemNo }}</td>
                     <td>
                         {!! nl2br(e($line->description)) !!}
                         @if($line->reason)<br><span class="sub">{{ $line->reason }}</span>@endif
@@ -103,7 +116,7 @@
                     <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
                 </tr>
             @empty
-                <tr><td colspan="5">No credited lines.</td></tr>
+                <tr><td colspan="6">No credited lines.</td></tr>
             @endforelse
         </tbody>
     </table>

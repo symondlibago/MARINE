@@ -92,6 +92,7 @@ class OpenEntries
                     'entries' => $entries->all(),
                     'unapplied' => $credits->all(),
                     'totals' => self::totalsFor($entries, $credits),
+                    'base_total' => self::baseTotalFor($entries, $credits),
                 ];
             })
             // A party whose unapplied credit exactly cancels their invoices has
@@ -106,6 +107,14 @@ class OpenEntries
             'include_unapplied' => $includeUnapplied,
             'parties' => $parties->all(),
             'grand_totals' => self::grandTotals($parties),
+            // The one figure a balance sheet can use.
+            'base_grand_total' => [
+                'currency' => AccountingBooks::baseCurrency(),
+                'outstanding' => round($parties->sum(fn ($p) => $p['base_total']['outstanding']), 2),
+                'unapplied' => round($parties->sum(fn ($p) => $p['base_total']['unapplied']), 2),
+                'balance' => round($parties->sum(fn ($p) => $p['base_total']['balance']), 2),
+                'unrated' => (int) $parties->sum(fn ($p) => $p['base_total']['unrated']),
+            ],
             'party_count' => $parties->count(),
             'entry_count' => $parties->sum(fn ($p) => count($p['entries']) + count($p['unapplied'])),
             // Context for the empty state. "Nobody owes anything" and "there was
@@ -151,7 +160,10 @@ class OpenEntries
                 ->whereNotNull('customer_id')
                 ->whereDate('issue_date', '<=', $asOf)
                 ->with('rfq:id,reference,ship_name')
-                ->get(['id', 'customer_id', 'invoice_number', 'rfq_id', 'currency',
+                // exchange_rate comes along because a receivable has to be
+                // reportable in the reporting currency. Without it the balance
+                // sheet adds a dirham invoice to a dollar one.
+                ->get(['id', 'customer_id', 'invoice_number', 'rfq_id', 'currency', 'exchange_rate',
                     'grand_total', 'status', 'paid_at', 'issue_date', 'due_date']);
         }
 
@@ -161,7 +173,7 @@ class OpenEntries
             ->where(fn ($q) => $q->whereDate('issued_date', '<=', $asOf)
                 ->orWhere(fn ($w) => $w->whereNull('issued_date')->whereDate('created_at', '<=', $asOf)))
             ->with('rfq:id,reference,ship_name')
-            ->get(['id', 'vendor_id', 'po_number', 'rfq_id', 'ship_name', 'currency',
+            ->get(['id', 'vendor_id', 'po_number', 'rfq_id', 'ship_name', 'currency', 'exchange_rate',
                 'subtotal', 'receipt_amount', 'has_credit_note', 'credit_note_number', 'credit_note_amount',
                 'status', 'paid_at', 'issued_date', 'expected_date', 'created_at']);
     }
@@ -231,6 +243,13 @@ class OpenEntries
             ->map(function ($p) use ($partyColumn, $visible) {
                 $left = round((float) $p->amount - ($visible[$p->id] ?? 0.0), 2);
 
+                // Money on account carries no rate of its own — there is no
+                // document to have stamped one on. Valued at today's rate,
+                // which is the ordinary treatment for a cash balance anyway:
+                // what is sitting there is worth what it is worth now, not
+                // what it was worth when it arrived.
+                $rate = AccountingBooks::stampRate((string) $p->currency);
+
                 return [
                     'party_id' => (int) $p->{$partyColumn},
                     'kind' => 'payment',
@@ -240,6 +259,10 @@ class OpenEntries
                     'date' => optional($p->payment_date)->toDateString(),
                     'currency' => $p->currency,
                     'amount' => $left,
+                    'exchange_rate' => $rate,
+                    'base_currency' => AccountingBooks::baseCurrency(),
+                    'base_amount' => $rate === null ? null : round($left * $rate, 2),
+                    'rate_is_current' => true,
                 ];
             })
             ->filter(fn ($r) => $r['amount'] > Settlement::EPSILON)
@@ -268,7 +291,20 @@ class OpenEntries
         $due = $isCustomer ? $d->due_date : $d->expected_date;
         $dueDate = $due ? Carbon::parse($due) : null;
 
+        // The rate stored on the document, so a statement, an ageing and the
+        // balance sheet all value the same invoice at the same figure — and at
+        // the figure the sales register already reported it at. Null when there
+        // is none, which keeps it out of the converted totals instead of adding
+        // its face value to them.
+        $rate = AccountingBooks::rateOf($d);
+        $base = fn (float $amount) => $rate === null ? null : round($amount * $rate, 2);
+
         return [
+            'exchange_rate' => $rate,
+            'base_currency' => AccountingBooks::baseCurrency(),
+            'base_amount' => $base($s['billed']),
+            'base_settled' => $base($s['settled']),
+            'base_outstanding' => $base($s['outstanding']),
             'party_id' => (int) ($isCustomer ? $d->customer_id : $d->vendor_id),
             'id' => $d->id,
             'kind' => $isCustomer ? 'invoice' : 'po',
@@ -300,6 +336,33 @@ class OpenEntries
         }
 
         return ($d->status ?? null) === 'paid';
+    }
+
+    /**
+     * One party's whole balance in the reporting currency.
+     *
+     * The per-currency breakdown below stays — chasing a customer, you want to
+     * see "USD 4,000 and EUR 600", not one blended figure. But the balance
+     * sheet and the ageing need something addable, and adding the per-currency
+     * lines together was how a dirham balance landed on a Singapore-dollar
+     * report at face value.
+     *
+     * @return array{outstanding: float, unapplied: float, balance: float, unrated: int}
+     */
+    public static function baseTotalFor(Collection $entries, Collection $unapplied): array
+    {
+        $outstanding = round($entries->sum(fn ($e) => (float) ($e['base_outstanding'] ?? 0)), 2);
+        $credit = round($unapplied->sum(fn ($u) => (float) ($u['base_amount'] ?? 0)), 2);
+
+        return [
+            'currency' => AccountingBooks::baseCurrency(),
+            'outstanding' => $outstanding,
+            'unapplied' => $credit,
+            'balance' => round($outstanding - $credit, 2),
+            // Entries with no rate are absent from the three figures above.
+            'unrated' => $entries->filter(fn ($e) => ($e['base_outstanding'] ?? null) === null)->count()
+                + $unapplied->filter(fn ($u) => ($u['base_amount'] ?? null) === null)->count(),
+        ];
     }
 
     /** Per-currency balance for one party: what is owed, less money on account. */
@@ -358,6 +421,10 @@ class OpenEntries
             'include_unapplied' => $includeUnapplied,
             'parties' => [],
             'grand_totals' => [],
+            'base_grand_total' => [
+                'currency' => AccountingBooks::baseCurrency(),
+                'outstanding' => 0.0, 'unapplied' => 0.0, 'balance' => 0.0, 'unrated' => 0,
+            ],
             'party_count' => 0,
             'entry_count' => 0,
             'documents_seen' => 0,

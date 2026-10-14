@@ -23,14 +23,42 @@ use Illuminate\Support\Collection;
  * return can be traced back to the document that produced it without anybody
  * re-deriving anything.
  *
- * On currency: purchase orders and operating expenses carry an exchange rate to
- * base; customer invoices do not have that column yet, so their base amount is
- * their face value. Every payload says which currencies it saw and whether more
- * than one was involved, so a screen can warn rather than quietly add dollars
- * to euros.
+ * On currency: every document carries the rate it was posted at, and EVERY
+ * money field on a row is published twice — once at face value, once converted.
+ * Nothing anywhere is totalled on the face value. A row with no rate converts
+ * to null rather than to its face value, so it falls out of the totals and is
+ * named in `unrated` instead of being quietly counted at par.
  */
 class AccountingBooks
 {
+    /**
+     * Every money field on a row, and what its converted twin is called.
+     *
+     * The list is the point. For a while only net, tax, gross and revenue were
+     * converted, so the sales register's own NET column totalled correctly in
+     * Singapore dollars while BILLED, SETTLED and OUTSTANDING underneath it
+     * still added 536,185 dirhams to a pile of US dollars. Any money field
+     * missing from here is a total waiting to be wrong, so a new one goes in
+     * here rather than being converted wherever it happens to be summed.
+     */
+    private const CONVERTED = [
+        'subtotal' => 'base_subtotal',
+        'delivery' => 'base_delivery',
+        'expenses' => 'base_expenses',
+        'net' => 'base_net',
+        'tax_amount' => 'base_tax',
+        'gross' => 'base_gross',
+        'revenue_net' => 'base_revenue',
+        'cost_net' => 'base_cost',
+        'pass_through_net' => 'base_pass_through',
+        'billed_net' => 'base_billed_net',
+        'billed_gross' => 'base_billed_gross',
+        'vendor_gross_amount' => 'base_vendor_gross',
+        'credit_note_amount' => 'base_credit_note_amount',
+        'settled' => 'base_settled',
+        'outstanding' => 'base_outstanding',
+    ];
+
     /**
      * Credit notes reduce a sale. They go into the register as NEGATIVE rows
      * rather than a separate list, because that is exactly how they behave on
@@ -73,6 +101,24 @@ class AccountingBooks
     public static function unrated(Collection $rows): Collection
     {
         return $rows->filter(fn ($r) => ($r['exchange_rate'] ?? null) === null)->values();
+    }
+
+    /**
+     * Total a converted column.
+     *
+     * The ONLY way anything in the books is added up. Summing a face-value
+     * column across a set that holds AED, EUR, SGD and USD produces a number
+     * with no meaning, and it produced one on every screen for a while — so the
+     * aggregates do not reach for the native field at all.
+     *
+     * A row with no rate holds null here and contributes nothing, which leaves
+     * the total understated rather than invented. Every payload that calls this
+     * publishes unrated() beside it so the gap is named rather than merely
+     * absent.
+     */
+    public static function baseSum(Collection $rows, string $field): float
+    {
+        return round($rows->sum(fn ($r) => (float) ($r[$field] ?? 0)), 2);
     }
 
     /**
@@ -474,7 +520,7 @@ class AccountingBooks
     {
         $account = Account::find_by_code($code);
 
-        return [
+        $row = [
             'id' => $run->id,
             'kind' => 'payroll',
             'kind_label' => $label ? 'Payroll — '.$label : 'Payroll',
@@ -516,9 +562,17 @@ class AccountingBooks
             'taxable' => false,
             'unclassified' => $code === null,
             'base_currency' => self::baseCurrency(),
-            'base_net' => $cost,
-            'base_tax' => 0.0,
-            'base_gross' => $cost,
+        // The same defaults classify() hands every other row. Payroll does not
+        // go through it — its GST treatment comes from what it IS rather than
+        // from an account — but the aggregates read these fields on every row
+        // alike, so a payroll row that lacks them silently drops the wage bill
+        // out of whichever total it was meant to be in.
+            'revenue_net' => $cost,
+            'cost_net' => $cost,
+            'pass_through_net' => 0.0,
+            'billed_net' => $cost,
+            'billed_gross' => $cost,
+            'account_breakdown' => $code ? [$code => $cost] : [],
         // Context the payroll screens already show, carried through
         // so the register can explain the figure without a join.
             'headcount' => $t['headcount'] ?? 0,
@@ -526,6 +580,8 @@ class AccountingBooks
             'employer_cpf' => $t['employer_cpf'] ?? 0,
             'sdl' => $t['sdl'] ?? 0,
         ];
+
+        return $row + self::converted($row);
     }
 
     private static function purchaseRow(PurchaseOrder $p): array
@@ -656,7 +712,13 @@ class AccountingBooks
             ? GstCodes::chargesOutputTax($gst)
             : GstCodes::claimsInputTax($gst);
 
-        return $row + [
+        // Defaults FIRST, conversion second, and in that order on purpose. The
+        // converter can only convert fields it can see, so when it ran against
+        // the bare $row it never saw billed_gross, settled or outstanding —
+        // those arrived from the defaults below, after it had finished. The
+        // register footers then had nothing converted to total and fell back to
+        // adding face values across four currencies.
+        $full = $row + [
             'account_code' => $code,
             'account_name' => $account?->name,
             'account_type' => $account?->type,
@@ -676,7 +738,9 @@ class AccountingBooks
             'billed_gross' => $row['gross'],
             'account_breakdown' => [],
             'base_currency' => self::baseCurrency(),
-        ] + self::converted($row);
+        ];
+
+        return $full + self::converted($full);
     }
 
     /**
@@ -688,30 +752,36 @@ class AccountingBooks
      * as zero. Multiplying by a null rate would have given exactly that — a
      * row worth nothing, sitting in a total that looked complete.
      *
-     * @return array<string, float|null>
+     * @return array<string, float|array|null>
      */
     private static function converted(array $row): array
     {
         $rate = $row['exchange_rate'] ?? null;
+        $rate = ($rate !== null && (float) $rate > 0) ? (float) $rate : null;
 
-        if ($rate === null || (float) $rate <= 0) {
-            return [
-                'exchange_rate' => null,
-                'base_revenue' => null,
-                'base_net' => null,
-                'base_tax' => null,
-                'base_gross' => null,
-            ];
+        $out = [
+            'exchange_rate' => $rate,
+            'base_currency' => self::baseCurrency(),
+        ];
+
+        foreach (self::CONVERTED as $native => $converted) {
+            $value = $row[$native] ?? null;
+
+            $out[$converted] = ($rate === null || $value === null)
+                ? null
+                : round((float) $value * $rate, 2);
         }
 
-        $rate = (float) $rate;
+        // The per-account split a row contributes to the income statement and
+        // the trial balance. Converted member by member, because those two
+        // reports are built by adding these up across documents — so leaving
+        // them at face value puts dirhams into a Singapore-dollar account
+        // balance, which is what the accountant found in the trial balance.
+        $out['base_account_breakdown'] = $rate === null
+            ? []
+            : array_map(fn ($v) => round((float) $v * $rate, 2), $row['account_breakdown'] ?? []);
 
-        return [
-            'base_revenue' => round(($row['revenue_net'] ?? $row['net']) * $rate, 2),
-            'base_net' => round($row['net'] * $rate, 2),
-            'base_tax' => round($row['tax_amount'] * $rate, 2),
-            'base_gross' => round($row['gross'] * $rate, 2),
-        ];
+        return $out;
     }
 
     /**

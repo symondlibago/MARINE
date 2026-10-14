@@ -13,6 +13,8 @@
         table.items thead th { background: #28364b; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; }
         table.items tbody td { padding: 4px 8px; font-size: 11px; border-bottom: 1px solid #eee; vertical-align: top; }
         .num { text-align: right; }
+
+        .itemno { color: #28364b; font-weight: bold; }
         .totals td { padding: 3px 8px; font-size: 11px; }
     </style>
 </head>
@@ -89,9 +91,16 @@
     </table>
 
     {{-- Line items --}}
+    @php
+        // Counts ITEMS, not rows, so the numbers on the delivery note line up
+        // with the numbers on the quotation and the invoice for the same job —
+        // which is the whole reason for having them.
+        $itemNo = 0;
+    @endphp
     <table class="items">
         <thead>
             <tr>
+                <th style="text-align:left; width:34px;">Item</th>
                 <th style="text-align:left;">Description</th>
                 <th style="text-align:left; width:80px;">Unit</th>
                 <th class="num" style="width:80px;">Qty</th>
@@ -99,13 +108,18 @@
         </thead>
         <tbody>
             @forelse($do->items as $line)
+                @php
+                    $isHeading = (bool) ($line->is_heading ?? false);
+                    $isHeading ?: $itemNo++;
+                @endphp
                 <tr>
+                    <td class="itemno">{{ $isHeading ? '' : $itemNo }}</td>
                     <td>{!! nl2br(e($line->description)) !!}@if($line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif</td>
                     <td>{{ $line->unit }}</td>
                     <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
                 </tr>
             @empty
-                <tr><td colspan="3">No line items.</td></tr>
+                <tr><td colspan="4">No line items.</td></tr>
             @endforelse
         </tbody>
     </table>

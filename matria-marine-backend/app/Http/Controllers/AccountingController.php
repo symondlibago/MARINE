@@ -141,8 +141,12 @@ class AccountingController extends Controller
                 'invoices' => $rows->where('kind', 'invoice')->count(),
                 'credit_notes' => $rows->whereIn('kind', ['credit_memo', 'vendor_credit_note'])->count(),
                 'vendor_credit_notes' => $rows->where('kind', 'vendor_credit_note')->count(),
-                'outstanding' => round($rows->sum('outstanding'), 2),
-                'settled' => round($rows->sum('settled'), 2),
+                // Converted, like everything else in a register footer. These
+                // two were the figures the accountant circled: an AED 536,185
+                // invoice was adding its face value straight into a Singapore
+                // dollar outstanding balance.
+                'outstanding' => AccountingBooks::baseSum($rows, 'base_outstanding'),
+                'settled' => AccountingBooks::baseSum($rows, 'base_settled'),
             ],
             'by_account' => $this->groupByAccount($rows),
             'unclassified' => $rows->where('unclassified', true)->count(),
@@ -168,30 +172,48 @@ class AccountingController extends Controller
                 'orders' => $rows->where('kind', 'purchase_order')->count(),
                 'expenses' => $rows->where('kind', 'operating_expense')->count(),
                 'payroll' => $rows->where('kind', 'payroll')->count(),
-                'outstanding' => round($rows->sum('outstanding'), 2),
-                'settled' => round($rows->sum('settled'), 2),
-                'job_expenses' => round($rows->sum(fn ($r) => (float) ($r['expenses'] ?? 0)), 2),
+                'outstanding' => AccountingBooks::baseSum($rows, 'base_outstanding'),
+                'settled' => AccountingBooks::baseSum($rows, 'base_settled'),
+                'job_expenses' => AccountingBooks::baseSum($rows, 'base_expenses'),
             ],
             'by_account' => $this->groupByAccount($rows),
             'unclassified' => $rows->where('unclassified', true)->count(),
         ] + AccountingBooks::currencyNote($rows));
     }
 
+    /**
+     * The foot of a register — every figure in the reporting currency.
+     *
+     * There is no face-value total here and there must never be one. The rows
+     * above hold AED, EUR, SGD and USD in the same column, so `net` and `billed`
+     * below are the CONVERTED sums despite their plain names: a caller asking a
+     * register for its total can only sensibly be asking for one it can add to
+     * something else. The `base_` keys are the same numbers under the name the
+     * screens use for a converted column.
+     */
     private function registerTotals(Collection $rows): array
     {
+        $base = fn (string $field) => AccountingBooks::baseSum($rows, $field);
+
         return [
             'count' => $rows->count(),
-            'net' => round($rows->sum('net'), 2),
-            'tax' => round($rows->sum('tax_amount'), 2),
-            'gross' => round($rows->sum('gross'), 2),
+            'net' => $base('base_net'),
+            'tax' => $base('base_tax'),
+            'gross' => $base('base_gross'),
             // What was invoiced, against the part of it that was never a sale.
             // Equal to gross unless something passed through — a Cash to Master
             // principal collected for a vessel master, say.
-            'billed' => round($rows->sum('billed_gross'), 2),
-            'pass_through' => round($rows->sum('pass_through_net'), 2),
-            'base_net' => round($rows->sum('base_net'), 2),
-            'base_tax' => round($rows->sum('base_tax'), 2),
-            'base_gross' => round($rows->sum('base_gross'), 2),
+            'billed' => $base('base_billed_gross'),
+            'pass_through' => $base('base_pass_through'),
+            'base_net' => $base('base_net'),
+            'base_tax' => $base('base_tax'),
+            'base_gross' => $base('base_gross'),
+            'base_billed' => $base('base_billed_gross'),
+            'base_pass_through' => $base('base_pass_through'),
+            // Face value, kept ONLY so a screen can say "these rows are in four
+            // currencies" — never to be presented as a total. Named so that
+            // reading it as money is a deliberate act.
+            'face_value_do_not_total' => round($rows->sum('gross'), 2),
             // A row with no rate contributes nothing to the converted totals,
             // which makes those totals understated rather than wrong. The
             // screen has to say so, or an incomplete figure reads as a
@@ -209,7 +231,17 @@ class AccountingController extends Controller
         ];
     }
 
-    /** Subtotals per account, so a register footer explains where a total came from. */
+    /**
+     * Subtotals per account, so a register footer explains where a total came
+     * from — and so the income statement and the trial balance have something
+     * to be built out of.
+     *
+     * Converted, which matters more here than anywhere. These subtotals are not
+     * only displayed: the trial balance posts them to accounts and the income
+     * statement adds them into revenue and cost. At face value they put dirhams
+     * into a Singapore-dollar account balance, which is exactly what "sa trial
+     * balance mali japon ang total, wala siya na convert" was pointing at.
+     */
     private function groupByAccount(Collection $rows): array
     {
         return $rows->groupBy(fn ($r) => $r['account_code'] ?? '—')
@@ -229,9 +261,14 @@ class AccountingController extends Controller
                     'gst_code' => $g->first()['gst_code'],
                     'gst_label' => $g->first()['gst_label'],
                     'count' => $g->count(),
-                    'net' => round($g->sum('net'), 2),
-                    'tax' => round($g->sum('tax_amount'), 2),
-                    'gross' => round($g->sum('gross'), 2),
+                    'net' => AccountingBooks::baseSum($g, 'base_net'),
+                    'tax' => AccountingBooks::baseSum($g, 'base_tax'),
+                    'gross' => AccountingBooks::baseSum($g, 'base_gross'),
+                    'currency' => AccountingBooks::baseCurrency(),
+                    // Documents on this account that had no rate and so are not
+                    // in the figures above. A subtotal that is short by a
+                    // document has to say which one.
+                    'unrated' => AccountingBooks::unrated($g)->count(),
                 ];
             })
             // Sub-accounts sort directly beneath their parent, because "5100"
@@ -270,8 +307,11 @@ class AccountingController extends Controller
         );
         $inputSide = $this->gstSide($purchases, 'purchase');
 
-        $box = fn (array $side, int $n) => round(
-            collect($side['rows'])->where('f5_box', $n)->sum('net'), 2
+        // Every box in the reporting currency, because that is the one IRAS
+        // takes the return in. A box built from face values declares a sum of
+        // dirhams and dollars as a Singapore-dollar supply.
+        $box = fn (array $side, int $n) => AccountingBooks::baseSum(
+            collect($side['rows'])->where('f5_box', $n), 'base_net'
         );
 
         $box1 = $box($outputSide, 1);
@@ -313,6 +353,14 @@ class AccountingController extends Controller
                     $inputSide['unclassified']['count'],
                     number_format($inputSide['unclassified']['net'], 2)
                 ) : null,
+                // Not in any box either, for a different reason: the boxes are
+                // in SGD and these have no rate to get there with.
+                count($outputSide['unrated']) + count($inputSide['unrated']) ? sprintf(
+                    '%d document(s) have no exchange rate and are NOT in any box — %s. Convert them before filing.',
+                    count($outputSide['unrated']) + count($inputSide['unrated']),
+                    collect($outputSide['unrated'])->concat($inputSide['unrated'])
+                        ->map(fn ($r) => $r['number'].' ('.$r['currency'].')')->take(8)->implode(', ')
+                ) : null,
             ])),
         ] + AccountingBooks::currencyNote($sales->concat($purchases)));
     }
@@ -334,15 +382,16 @@ class AccountingController extends Controller
                 'description' => GstCodes::DESCRIPTIONS[$code] ?? null,
                 'f5_box' => $side === 'sales' ? GstCodes::salesBox($code) : GstCodes::purchaseBox($code),
                 'count' => $g->count(),
-                'net' => round($g->sum('net'), 2),
-                'tax' => round($g->sum('tax_amount'), 2),
-                'gross' => round($g->sum('gross'), 2),
+                'net' => AccountingBooks::baseSum($g, 'base_net'),
+                'tax' => AccountingBooks::baseSum($g, 'base_tax'),
+                'gross' => AccountingBooks::baseSum($g, 'base_gross'),
+                'unrated' => AccountingBooks::unrated($g)->count(),
                 'accounts' => $g->groupBy('account_code')->map(fn ($a, $code) => [
                     'account_code' => $code,
                     'account_name' => $a->first()['account_name'],
                     'count' => $a->count(),
-                    'net' => round($a->sum('net'), 2),
-                    'tax' => round($a->sum('tax_amount'), 2),
+                    'net' => AccountingBooks::baseSum($a, 'base_net'),
+                    'tax' => AccountingBooks::baseSum($a, 'base_tax'),
                 ])->values()->all(),
             ])
             // The return reads in box order; codes on no box come last.
@@ -354,14 +403,25 @@ class AccountingController extends Controller
             'groups' => $groups->all(),
             'rows' => $classified->values()->all(),
             'count' => $classified->count(),
-            'net' => round($classified->sum('net'), 2),
+            'base_currency' => AccountingBooks::baseCurrency(),
+            'net' => AccountingBooks::baseSum($classified, 'base_net'),
             // Only standard-rated documents actually carry tax; summing the
             // column is safe because everything else records zero.
-            'tax' => round($classified->sum('tax_amount'), 2),
+            'tax' => AccountingBooks::baseSum($classified, 'base_tax'),
+            // A document with no rate is not in any box. On a filed return that
+            // is an understatement, so it is reported rather than left to be
+            // noticed.
+            'unrated' => AccountingBooks::unrated($classified)
+                ->map(fn ($r) => [
+                    'kind' => $r['kind'] ?? null,
+                    'number' => $r['number'] ?? null,
+                    'currency' => $r['currency'] ?? null,
+                    'net' => $r['net'] ?? null,
+                ])->all(),
             'unclassified' => [
                 'count' => $unclassified->count(),
-                'net' => round($unclassified->sum('net'), 2),
-                'tax' => round($unclassified->sum('tax_amount'), 2),
+                'net' => AccountingBooks::baseSum($unclassified, 'base_net'),
+                'tax' => AccountingBooks::baseSum($unclassified, 'base_tax'),
                 'rows' => $unclassified->values()->all(),
             ],
         ];
@@ -401,13 +461,21 @@ class AccountingController extends Controller
         $costOfSales = $purchases->where('kind', 'purchase_order')
             ->map(function (array $row) {
                 $net = (float) ($row['vendor_gross_amount'] ?? $row['net']);
-                $rate = (float) ($row['exchange_rate'] ?? 1);
+                $gross = $net + (float) ($row['tax_amount'] ?? 0);
+
+                // No rate means no converted figure — NOT a rate of one. The
+                // old `?? 1` here quietly booked an unrated foreign order into
+                // cost of sales at its face value, so a 10,000 EUR order became
+                // 10,000 SGD of cost and the profit was wrong by the margin
+                // between them.
+                $rate = $row['exchange_rate'] ?? null;
+                $rate = ($rate !== null && (float) $rate > 0) ? (float) $rate : null;
 
                 return array_replace($row, [
                     'net' => round($net, 2),
-                    'gross' => round($net + (float) ($row['tax_amount'] ?? 0), 2),
-                    'base_net' => round($net * $rate, 2),
-                    'base_gross' => round(($net + (float) ($row['tax_amount'] ?? 0)) * $rate, 2),
+                    'gross' => round($gross, 2),
+                    'base_net' => $rate === null ? null : round($net * $rate, 2),
+                    'base_gross' => $rate === null ? null : round($gross * $rate, 2),
                 ]);
             });
         // Wages are an overhead like any other. Matching on "not a purchase
@@ -417,21 +485,40 @@ class AccountingController extends Controller
 
         // Per-job expenses ride on the purchase order rather than on a document
         // of their own, so they are cost of sales too.
-        $jobExpenses = round($costOfSales->sum(fn ($r) => (float) ($r['expenses'] ?? 0)), 2);
+        $jobExpenses = AccountingBooks::baseSum($costOfSales, 'base_expenses');
 
-        $revenue = round($sales->sum('net'), 2);
-        $cogs = round($costOfSales->sum('net'), 2) + $jobExpenses;
-        $overhead = round($overheads->sum('net'), 2);
+        // Every one of these is converted. The income statement is the report
+        // the whole thing exists to produce, and a profit figure built by
+        // subtracting euros from dirhams is not a profit figure.
+        $revenue = AccountingBooks::baseSum($sales, 'base_net');
+        $purchased = AccountingBooks::baseSum($costOfSales, 'base_net');
+        $cogs = round($purchased + $jobExpenses, 2);
+        $overhead = AccountingBooks::baseSum($overheads, 'base_net');
         $grossProfit = round($revenue - $cogs, 2);
 
+        // Anything that could not be converted is missing from the figures
+        // above, so it travels with them. Silence here is how an incomplete
+        // profit reads as a complete one.
+        $unrated = AccountingBooks::unrated($sales)
+            ->concat(AccountingBooks::unrated($purchases))
+            ->map(fn ($r) => [
+                'kind' => $r['kind'] ?? null,
+                'number' => $r['number'] ?? null,
+                'currency' => $r['currency'] ?? null,
+                'net' => $r['net'] ?? null,
+            ])
+            ->values();
+
         return [
+            'unrated' => $unrated->all(),
+            'unrated_count' => $unrated->count(),
             'revenue' => [
                 'total' => $revenue,
                 'by_account' => $this->groupByAccount($sales),
             ],
             'cost_of_sales' => [
-                'total' => round($cogs, 2),
-                'purchases' => round($costOfSales->sum('net'), 2),
+                'total' => $cogs,
+                'purchases' => $purchased,
                 'job_expenses' => $jobExpenses,
                 'by_account' => $this->groupByAccount($costOfSales),
             ],
@@ -467,9 +554,11 @@ class AccountingController extends Controller
 
         $movements = [];
 
-        // Balance sheet side, as at the end date.
-        foreach ($positions['cash'] as $code => $amount) {
-            $movements[$code] = $amount;
+        // Balance sheet side, as at the end date. The TRANSLATED cash figures:
+        // a trial balance is one column of one currency, so the US dollar cash
+        // account goes in at what it is worth in SGD, not at its dollar figure.
+        foreach ($positions['cash_in_base'] as $code => $amount) {
+            $movements[$code] = (float) ($amount ?? 0);
         }
         $movements[self::RECEIVABLES] = $positions['receivables'];
         $movements[self::PAYABLES] = -$positions['payables'];
@@ -554,6 +643,11 @@ class AccountingController extends Controller
             ],
             'note' => $positions['note'],
             'base_currency' => AccountingBooks::baseCurrency(),
+            // Documents absent from the figures above because they could not be
+            // converted. A trial balance that is out needs to say whether the
+            // reason is a missing rate before anyone goes looking elsewhere.
+            'unrated' => $pl['unrated'],
+            'unrated_count' => $pl['unrated_count'],
         ]);
     }
 
@@ -572,7 +666,9 @@ class AccountingController extends Controller
         $pl = $this->profitAndLoss(null, $asOf);
         $retained = $pl['net_profit'];
 
-        $cash = collect($positions['cash']);
+        // Translated, for the same reason the trial balance uses them: the
+        // statement has one currency across it.
+        $cash = collect($positions['cash_in_base'])->map(fn ($v) => (float) ($v ?? 0));
         $assets = round($cash->sum() + $positions['receivables'], 2);
         $liabilities = round($positions['payables'] + $positions['gst_payable'] + $positions['accrued_expenses'], 2);
         $equity = round($positions['equity'] + $retained, 2);
@@ -590,7 +686,14 @@ class AccountingController extends Controller
         return $this->ok([
             'as_of' => $asOf->toDateString(),
             'assets' => [
-                'cash' => $cash->map(fn ($amt, $code) => $accountRow($code, $amt))->values()->all(),
+                // Each cash account shows what it actually holds beside what
+                // that is worth, so "1010 Cash USD" does not read as Singapore
+                // dollars just because the column it sits in is in SGD.
+                'cash' => $cash->map(fn ($amt, $code) => $accountRow($code, $amt) + [
+                    'face_value' => round((float) ($positions['cash'][$code] ?? 0), 2),
+                    'face_currency' => array_search($code, self::CASH_ACCOUNTS, true) ?: null,
+                    'exchange_rate' => $positions['cash_rates'][$code] ?? null,
+                ])->values()->all(),
                 'cash_total' => round($cash->sum(), 2),
                 'receivables' => $accountRow(self::RECEIVABLES, $positions['receivables']),
                 'total' => $assets,
@@ -648,6 +751,16 @@ class AccountingController extends Controller
             $cash[$code] = 0.0;
         }
 
+        // A USD cash account really does hold US dollars, so each account is
+        // accumulated in its own currency and TRANSLATED at the closing rate
+        // before the three are added into one total. That is the ordinary
+        // treatment of a foreign bank balance — unlike a sale, which is fixed
+        // at the rate on the day, cash is worth what it is worth now.
+        $cashRate = [];
+        foreach (self::CASH_ACCOUNTS as $currency => $code) {
+            $cashRate[$code] = AccountingBooks::stampRate($currency);
+        }
+
         $otherCurrency = 0.0;
         foreach ($payments as $p) {
             $signed = ((float) $p->amount) * ($p->direction === 'in' ? 1 : -1);
@@ -661,6 +774,12 @@ class AccountingController extends Controller
         }
 
         $cash = array_map(fn ($v) => round($v, 2), $cash);
+
+        $cashInBase = [];
+        foreach ($cash as $code => $amount) {
+            $rate = $cashRate[$code] ?? null;
+            $cashInBase[$code] = $rate === null ? null : round($amount * $rate, 2);
+        }
 
         $receivables = round($this->openTotal('customer', $asOf), 2);
         // Payables are taken GROSS. OpenEntries values a purchase order at
@@ -681,12 +800,17 @@ class AccountingController extends Controller
         }
 
         return [
+            // Each account in its own currency, and the same accounts
+            // translated. Nothing adds the first of these up.
             'cash' => $cash,
+            'cash_in_base' => $cashInBase,
+            'cash_rates' => $cashRate,
             'receivables' => $receivables,
             'payables' => $payables,
             'accrued_expenses' => $accrued,
             'equity' => 0.0,
             'gst_payable' => $this->gstPayableAt($asOf),
+            'base_currency' => AccountingBooks::baseCurrency(),
             'note' => $note,
         ];
     }
@@ -708,10 +832,12 @@ class AccountingController extends Controller
      */
     private function gstPayableAt(Carbon $asOf): float
     {
-        $output = AccountingBooks::sales(null, $asOf)
-            ->where('unclassified', false)->sum('tax_amount');
-        $input = AccountingBooks::purchases(null, $asOf)
-            ->where('unclassified', false)->sum('tax_amount');
+        $output = AccountingBooks::baseSum(
+            AccountingBooks::sales(null, $asOf)->where('unclassified', false), 'base_tax'
+        );
+        $input = AccountingBooks::baseSum(
+            AccountingBooks::purchases(null, $asOf)->where('unclassified', false), 'base_tax'
+        );
 
         return round($output - $input, 2);
     }
@@ -736,9 +862,21 @@ class AccountingController extends Controller
         $tax = \App\Models\PurchaseOrder::whereIn('id', $entries->pluck('id'))
             ->pluck('tax_amount', 'id');
 
-        return (float) $entries->sum(
-            fn ($e) => (float) ($tax[$e['id']] ?? 0) * ((float) $e['outstanding'] / (float) $e['amount'])
-        );
+        // The proportion is dimensionless, but the tax itself is in the order's
+        // own currency, so it is converted at the order's rate before being
+        // added to a payable the balance sheet states in SGD. An order with no
+        // rate contributes nothing rather than its face value.
+        return (float) $entries->sum(function ($e) use ($tax) {
+            $rate = $e['exchange_rate'] ?? null;
+
+            if ($rate === null || (float) $e['amount'] == 0.0) {
+                return 0.0;
+            }
+
+            return (float) ($tax[$e['id']] ?? 0)
+                * ((float) $e['outstanding'] / (float) $e['amount'])
+                * (float) $rate;
+        });
     }
 
     /**
@@ -754,27 +892,34 @@ class AccountingController extends Controller
      */
     private function accruedExpensesAt(Carbon $asOf): float
     {
-        $overheads = (float) \App\Models\OperatingExpense::with('items')
-            ->whereDate('period_start', '<=', $asOf)
-            ->get()
-            ->sum(fn ($g) => $g->total() + (float) $g->tax_amount);
+        // Through AccountingBooks rather than off the model, so these arrive
+        // already converted. Read straight from OperatingExpense they are face
+        // values, and a euro-denominated overhead went onto a Singapore-dollar
+        // balance sheet at its face amount.
+        $overheads = AccountingBooks::baseSum(
+            AccountingBooks::expenses(null, $asOf), 'base_gross'
+        );
 
         // Payroll is the same story: a cost recorded with no payment against
         // it. Left out, the balance sheet goes out by the whole wage bill the
         // moment a month is finalised.
-        $wages = (float) AccountingBooks::payroll(null, $asOf)->sum('net');
+        $wages = AccountingBooks::baseSum(AccountingBooks::payroll(null, $asOf), 'base_net');
 
         return $overheads + $wages;
     }
 
-    /** Total still outstanding across every party of a kind, as at a date. */
+    /**
+     * Total still outstanding across every party of a kind, as at a date, in
+     * the reporting currency.
+     *
+     * Each document is valued at the rate stamped on it, so a receivable on the
+     * balance sheet is the same figure the sales register reported for that
+     * invoice. It used to sum the face values, which put dirhams, euros and US
+     * dollars into one Singapore-dollar line.
+     */
     private function openTotal(string $type, Carbon $asOf): float
     {
-        $book = OpenEntries::build($type, $asOf, false);
-
-        return collect($book['parties'])->sum(
-            fn ($p) => collect($p['entries'])->sum('outstanding')
-        );
+        return (float) OpenEntries::build($type, $asOf, false)['base_grand_total']['outstanding'];
     }
 
     /* ------------------------------------------------------------------ */
@@ -823,11 +968,22 @@ class AccountingController extends Controller
         $empty = ['current' => 0.0, 'd1_30' => 0.0, 'd31_60' => 0.0, 'd61_90' => 0.0, 'd90_plus' => 0.0];
         $grand = $empty;
 
-        $parties = collect($book['parties'])->map(function ($p) use ($bucketOf, $empty, &$grand) {
+        $unrated = 0;
+
+        $parties = collect($book['parties'])->map(function ($p) use ($bucketOf, $empty, &$grand, &$unrated) {
             $buckets = $empty;
-            $entries = collect($p['entries'])->map(function ($e) use ($bucketOf, &$buckets) {
+            $entries = collect($p['entries'])->map(function ($e) use ($bucketOf, &$buckets, &$unrated) {
                 $bucket = $bucketOf((int) $e['overdue_days']);
-                $buckets[$bucket] += (float) $e['outstanding'];
+
+                // Bucketed on the CONVERTED amount. The buckets are added
+                // across every party on the report, so a dirham invoice and a
+                // dollar one landing in the same bucket have to be in the same
+                // money first.
+                if (($e['base_outstanding'] ?? null) === null) {
+                    $unrated++;
+                } else {
+                    $buckets[$bucket] += (float) $e['base_outstanding'];
+                }
 
                 return $e + ['bucket' => $bucket];
             });
@@ -844,6 +1000,9 @@ class AccountingController extends Controller
                 'entries' => $entries->all(),
                 'buckets' => $buckets,
                 'total' => round(array_sum($buckets), 2),
+                // What the party owes in their own currencies, kept for the
+                // chase: "USD 4,000 and EUR 600" is what you say on the phone.
+                'by_currency' => $p['totals'],
                 'oldest_days' => (int) $entries->max('overdue_days'),
             ];
         })->sortByDesc('total')->values();
@@ -862,6 +1021,9 @@ class AccountingController extends Controller
             'parties' => $parties->all(),
             'buckets' => array_map(fn ($v) => round($v, 2), $grand),
             'total' => round(array_sum($grand), 2),
+            'by_currency' => $book['grand_totals'],
+            // Documents with no rate, absent from every bucket above.
+            'unrated' => $unrated,
             'party_count' => $parties->count(),
             'account' => $type === 'customer' ? self::RECEIVABLES : self::PAYABLES,
             'base_currency' => AccountingBooks::baseCurrency(),
