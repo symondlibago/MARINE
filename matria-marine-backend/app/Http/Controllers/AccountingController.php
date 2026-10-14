@@ -40,9 +40,34 @@ class AccountingController extends Controller
 
     private const EQUITY = '3000';
 
+    /**
+     * The books, loaded once per request.
+     *
+     * A balance sheet asks for them five times over — the profit, the GST
+     * liability, the accruals, the client funds held — and each ask was a fresh
+     * pass over every invoice and order in the period. The controller is built
+     * per request, so holding them here cannot go stale: nothing in this class
+     * writes, and the next request starts with an empty one.
+     *
+     * @var array<string, Collection>
+     */
+    private array $books = [];
+
     /* ------------------------------------------------------------------ */
     /*  Shared                                                            */
     /* ------------------------------------------------------------------ */
+
+    private function sales(?Carbon $from, ?Carbon $to): Collection
+    {
+        return $this->books['sales|'.$from?->toDateString().'|'.$to?->toDateString()]
+            ??= AccountingBooks::sales($from, $to);
+    }
+
+    private function purchases(?Carbon $from, ?Carbon $to): Collection
+    {
+        return $this->books['purchases|'.$from?->toDateString().'|'.$to?->toDateString()]
+            ??= AccountingBooks::purchases($from, $to);
+    }
 
     /** @return array{0: ?Carbon, 1: ?Carbon} */
     private function range(Request $request): array
@@ -129,7 +154,7 @@ class AccountingController extends Controller
     public function salesInvoices(Request $request)
     {
         [$from, $to] = $this->range($request);
-        $rows = $this->search(AccountingBooks::sales($from, $to), $request->query('q'));
+        $rows = $this->search($this->sales($from, $to), $request->query('q'));
 
         if ($code = $request->query('account_code')) {
             $rows = $rows->where('account_code', $code)->values();
@@ -149,8 +174,7 @@ class AccountingController extends Controller
                 'settled' => AccountingBooks::baseSum($rows, 'base_settled'),
             ],
             'by_account' => $this->groupByAccount($rows),
-            'unclassified' => $rows->where('unclassified', true)->count(),
-        ] + AccountingBooks::currencyNote($rows));
+        ] + $this->problems($rows) + AccountingBooks::currencyNote($rows));
     }
 
     /* ------------------------------------------------------------------ */
@@ -160,7 +184,7 @@ class AccountingController extends Controller
     public function purchaseInvoices(Request $request)
     {
         [$from, $to] = $this->range($request);
-        $rows = $this->search(AccountingBooks::purchases($from, $to), $request->query('q'));
+        $rows = $this->search($this->purchases($from, $to), $request->query('q'));
 
         if ($code = $request->query('account_code')) {
             $rows = $rows->where('account_code', $code)->values();
@@ -177,8 +201,34 @@ class AccountingController extends Controller
                 'job_expenses' => AccountingBooks::baseSum($rows, 'base_expenses'),
             ],
             'by_account' => $this->groupByAccount($rows),
-            'unclassified' => $rows->where('unclassified', true)->count(),
-        ] + AccountingBooks::currencyNote($rows));
+        ] + $this->problems($rows) + AccountingBooks::currencyNote($rows));
+    }
+
+    /**
+     * The documents standing between these figures and a complete set.
+     *
+     * Each one is NAMED, not counted. A register that says "6 purchase
+     * documents are on an account outside the chart" has told somebody there is
+     * a problem and nothing about which six — and hunting them through the list
+     * screens is how they stay unfixed for a year.
+     */
+    private function problems(Collection $rows): array
+    {
+        $unclassified = AccountingBooks::unclassified($rows);
+        $assumedPaid = AccountingBooks::assumedPaid($rows);
+
+        return [
+            // Count kept at the old key so nothing that reads it breaks; the
+            // documents themselves are beside it.
+            'unclassified' => $unclassified->count(),
+            'unclassified_rows' => AccountingBooks::identify($unclassified)->all(),
+            'unclassified_total' => AccountingBooks::baseSum($unclassified, 'base_net'),
+            // Ticked paid with nothing recorded against them. This money is in
+            // neither receivables nor cash, which is most of why the balance
+            // sheet does not balance.
+            'assumed_paid' => AccountingBooks::identify($assumedPaid)->all(),
+            'assumed_paid_total' => AccountingBooks::baseSum($assumedPaid, 'base_unrecorded'),
+        ];
     }
 
     /**
@@ -296,8 +346,8 @@ class AccountingController extends Controller
     {
         [$from, $to] = $this->range($request);
 
-        $sales = AccountingBooks::sales($from, $to);
-        $purchases = AccountingBooks::purchases($from, $to);
+        $sales = $this->sales($from, $to);
+        $purchases = $this->purchases($from, $to);
 
         // Vendor credits are income, but are not supplies made to customers.
         // They belong in the Sales register and income statement, never F5.
@@ -342,6 +392,16 @@ class AccountingController extends Controller
             ],
             'net_gst' => round($box6 - $box7, 2),
             'payable' => $box6 >= $box7,
+            // Named, so the documents keeping GST out of the boxes can be
+            // opened and fixed rather than merely counted.
+            'unclassified_rows' => AccountingBooks::identify(
+                AccountingBooks::unclassified($sales->concat($purchases))
+            )->all(),
+            // What the unclassified purchases are holding back from Box 7. On
+            // the live books this was 379.71 of input tax going unclaimed.
+            'unclaimed_input_tax' => AccountingBooks::baseSum(
+                AccountingBooks::unclassified($purchases), 'base_tax'
+            ),
             'warnings' => array_values(array_filter([
                 $outputSide['unclassified']['count'] ? sprintf(
                     '%d sales document(s) totalling %s are on an account outside the chart and are NOT in any box.',
@@ -451,8 +511,8 @@ class AccountingController extends Controller
      */
     private function profitAndLoss(?Carbon $from, ?Carbon $to): array
     {
-        $sales = AccountingBooks::sales($from, $to);
-        $purchases = AccountingBooks::purchases($from, $to);
+        $sales = $this->sales($from, $to);
+        $purchases = $this->purchases($from, $to);
 
         // The purchase register is net of vendor credits. For the income
         // statement, show the original purchase on its expense account and the
@@ -509,9 +569,30 @@ class AccountingController extends Controller
             ])
             ->values();
 
+        // Amounts on no account at all. The income statement counts them — a
+        // cost is a cost whether or not somebody coded it — but the trial
+        // balance has no account to post them to, which is why the two reports
+        // can disagree by exactly this much.
+        $unclassified = AccountingBooks::unclassified($sales->concat($purchases));
+
+        // Money ticked paid with no payment behind it: out of receivables and
+        // never into cash, so it is missing from both sides of the books.
+        $assumedPaid = AccountingBooks::assumedPaid($sales->concat($purchases));
+
         return [
             'unrated' => $unrated->all(),
             'unrated_count' => $unrated->count(),
+            'unclassified_rows' => AccountingBooks::identify($unclassified)->all(),
+            'assumed_paid' => AccountingBooks::identify($assumedPaid)->all(),
+            'assumed_paid_total' => AccountingBooks::baseSum($assumedPaid, 'base_unrecorded'),
+            'unclassified_revenue' => AccountingBooks::baseSum(
+                AccountingBooks::unclassified($sales), 'base_net'
+            ),
+            'unclassified_cost' => round(
+                AccountingBooks::baseSum(AccountingBooks::unclassified($costOfSales), 'base_net')
+                + AccountingBooks::baseSum(AccountingBooks::unclassified($overheads), 'base_net'),
+                2
+            ),
             'revenue' => [
                 'total' => $revenue,
                 'by_account' => $this->groupByAccount($sales),
@@ -564,6 +645,13 @@ class AccountingController extends Controller
         $movements[self::PAYABLES] = -$positions['payables'];
         $movements[self::EQUITY] = -$positions['equity'];
 
+        // Client funds held and anything else the documents post straight to a
+        // balance-sheet account. Credit-positive there, and this view is
+        // debit-positive, so the sign flips.
+        foreach ($positions['other_accounts'] as $code => $balance) {
+            $movements[$code] = ($movements[$code] ?? 0) - $balance;
+        }
+
         // Income statement side, for the period. Income is credit-normal, so a
         // sale is a negative movement in this signed view; expenses are debits.
         foreach ($pl['revenue']['by_account'] as $g) {
@@ -602,12 +690,24 @@ class AccountingController extends Controller
             ];
         });
 
-        // Two real liabilities with no account on the chart — see gstPayableAt()
-        // and accruedExpensesAt(). Shown last and flagged, so it is obvious they
-        // are derived rather than posted.
+        // Real liabilities and real amounts with no account on the chart — see
+        // gstPayableAt() and accruedExpensesAt(). Shown last and flagged, so it
+        // is obvious they are derived rather than posted.
+        //
+        // The unclassified pair is the important addition. Those amounts ARE in
+        // the income statement, because a cost is a cost whether or not anybody
+        // coded it — but they have no account to post to here, so the loop above
+        // skipped them and the trial balance came out short by exactly that
+        // much while the balance sheet did not. Shown rather than dropped: a
+        // figure missing from one report and present in another is the kind of
+        // difference nobody can ever track down.
         foreach ([
             ['GST payable to IRAS (derived, not on chart)', $positions['gst_payable']],
             ['Accrued expenses — overheads not paid (derived)', $positions['accrued_expenses']],
+            // Signs follow the loop below: positive is a credit. Income is
+            // credit-normal, a cost is a debit, so the cost goes in negative.
+            ['Income on no account code — give these documents an account', $pl['unclassified_revenue']],
+            ['Costs on no account code — give these documents an account', -$pl['unclassified_cost']],
         ] as [$name, $amount]) {
             if (abs($amount) <= 0.005) {
                 continue;
@@ -648,6 +748,13 @@ class AccountingController extends Controller
             // reason is a missing rate before anyone goes looking elsewhere.
             'unrated' => $pl['unrated'],
             'unrated_count' => $pl['unrated_count'],
+            // And the ones on no account code, named so they can be fixed.
+            'unclassified_rows' => $pl['unclassified_rows'],
+            // Money ticked paid with nothing recorded against it: out of
+            // receivables, never into cash, so it is missing from both sides.
+            // Usually the largest single reason this report does not balance.
+            'assumed_paid' => $pl['assumed_paid'],
+            'assumed_paid_total' => $pl['assumed_paid_total'],
         ]);
     }
 
@@ -669,8 +776,20 @@ class AccountingController extends Controller
         // Translated, for the same reason the trial balance uses them: the
         // statement has one currency across it.
         $cash = collect($positions['cash_in_base'])->map(fn ($v) => (float) ($v ?? 0));
-        $assets = round($cash->sum() + $positions['receivables'], 2);
-        $liabilities = round($positions['payables'] + $positions['gst_payable'] + $positions['accrued_expenses'], 2);
+
+        // Client funds held and the like. Credit-positive, so a positive
+        // balance is a liability and a negative one an asset — more has been
+        // paid out on the account than was ever collected for it, which is
+        // worth seeing rather than netting away.
+        $other = collect($positions['other_accounts']);
+        $otherLiabilities = round($other->filter(fn ($v) => $v > 0)->sum(), 2);
+        $otherAssets = round(-$other->filter(fn ($v) => $v < 0)->sum(), 2);
+
+        $assets = round($cash->sum() + $positions['receivables'] + $otherAssets, 2);
+        $liabilities = round(
+            $positions['payables'] + $positions['gst_payable']
+            + $positions['accrued_expenses'] + $otherLiabilities, 2
+        );
         $equity = round($positions['equity'] + $retained, 2);
 
         $accountRow = function (string $code, float $amount) {
@@ -696,10 +815,20 @@ class AccountingController extends Controller
                 ])->values()->all(),
                 'cash_total' => round($cash->sum(), 2),
                 'receivables' => $accountRow(self::RECEIVABLES, $positions['receivables']),
+                // An account that has paid out more than it collected sits on
+                // this side; usually empty.
+                'other' => $other->filter(fn ($v) => $v < 0)
+                    ->map(fn ($v, $code) => $accountRow((string) $code, -$v))->values()->all(),
                 'total' => $assets,
             ],
             'liabilities' => [
                 'payables' => $accountRow(self::PAYABLES, $positions['payables']),
+                // CTM Client Funds Held and anything like it: money collected
+                // from a client that belongs to somebody else. Reported at last
+                // — previously it was billed as an asset with nothing on this
+                // side to answer for it.
+                'other' => $other->filter(fn ($v) => $v > 0)
+                    ->map(fn ($v, $code) => $accountRow((string) $code, $v))->values()->all(),
                 'gst_payable' => [
                     'code' => null,
                     'name' => 'GST payable to IRAS',
@@ -725,9 +854,70 @@ class AccountingController extends Controller
                 'difference' => round($assets - $liabilities - $equity, 2),
                 'balanced' => abs($assets - $liabilities - $equity) < 0.01,
             ],
+            // Why it does not balance, in order of size, rather than leaving
+            // the reader to guess. Each of these is money the books cannot see
+            // both sides of.
+            'assumed_paid' => $pl['assumed_paid'],
+            'assumed_paid_total' => $pl['assumed_paid_total'],
+            'unclassified_rows' => $pl['unclassified_rows'],
+            'unclassified_total' => round($pl['unclassified_revenue'] + $pl['unclassified_cost'], 2),
             'note' => $positions['note'],
             'base_currency' => AccountingBooks::baseCurrency(),
         ]);
+    }
+
+    /**
+     * Balances on the OTHER balance-sheet accounts — the ones documents post to
+     * directly rather than through cash, receivables or payables.
+     *
+     * 2100 CTM Client Funds Held is the one that matters today. A Cash to
+     * Master principal is billed to the client, so it lands in receivables as
+     * an asset, and the matching obligation to the vessel master is coded to
+     * 2100 on the invoice line. But this report only ever knew six accounts, so
+     * that obligation was reported nowhere: the asset was on the books and the
+     * liability was not, and the balance sheet was out by the difference.
+     *
+     * Derived from the line codes rather than a hardcoded list, so an account
+     * added to the chart later is picked up without anybody remembering to come
+     * back here. Cash, receivables, payables and equity are excluded because
+     * they are already measured, properly, from payments and open documents.
+     *
+     * @return array<string, float> account code => credit-positive balance
+     */
+    private function otherBalanceSheetAccounts(Carbon $asOf): array
+    {
+        $handled = array_merge(array_values(self::CASH_ACCOUNTS), [
+            self::RECEIVABLES, self::PAYABLES, self::EQUITY,
+        ]);
+
+        $balances = [];
+
+        // A sale coded to a liability RAISES it — money collected to hand on.
+        // A purchase coded to the same account PAYS IT DOWN again.
+        foreach ([
+            [$this->sales(null, $asOf), 1],
+            [$this->purchases(null, $asOf), -1],
+        ] as [$rows, $sign]) {
+            foreach ($rows as $row) {
+                foreach (($row['base_account_breakdown'] ?? []) as $code => $amount) {
+                    if (in_array((string) $code, $handled, true)) {
+                        continue;
+                    }
+
+                    $account = Account::find_by_code((string) $code);
+
+                    if ($account === null || $account->statement() !== 'balance_sheet') {
+                        continue;   // income and expense belong to the P&L
+                    }
+
+                    $balances[(string) $code] = round(
+                        ($balances[(string) $code] ?? 0) + $sign * (float) $amount, 2
+                    );
+                }
+            }
+        }
+
+        return array_filter($balances, fn ($v) => abs($v) > 0.005);
     }
 
     /**
@@ -810,6 +1000,9 @@ class AccountingController extends Controller
             'accrued_expenses' => $accrued,
             'equity' => 0.0,
             'gst_payable' => $this->gstPayableAt($asOf),
+            // Liabilities and assets the documents post to directly — client
+            // funds held, chiefly. Credit-positive.
+            'other_accounts' => $this->otherBalanceSheetAccounts($asOf),
             'base_currency' => AccountingBooks::baseCurrency(),
             'note' => $note,
         ];
@@ -833,10 +1026,10 @@ class AccountingController extends Controller
     private function gstPayableAt(Carbon $asOf): float
     {
         $output = AccountingBooks::baseSum(
-            AccountingBooks::sales(null, $asOf)->where('unclassified', false), 'base_tax'
+            $this->sales(null, $asOf)->where('unclassified', false), 'base_tax'
         );
         $input = AccountingBooks::baseSum(
-            AccountingBooks::purchases(null, $asOf)->where('unclassified', false), 'base_tax'
+            $this->purchases(null, $asOf)->where('unclassified', false), 'base_tax'
         );
 
         return round($output - $input, 2);

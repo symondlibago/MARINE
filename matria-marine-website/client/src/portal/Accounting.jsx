@@ -482,12 +482,81 @@ function CurrencyWarning({ data, range = {} }) {
   );
 }
 
-function UnclassifiedWarning({ count, what }) {
+/**
+ * The documents behind a warning, each one a link to itself.
+ *
+ * Naming a count tells somebody there is a problem and nothing about where it
+ * is. Six purchase orders hunted through four list screens is how they stay
+ * unfixed, so every "these figures are incomplete" message ends in this.
+ */
+function DocumentList({ rows, action = "Open", showParty = true }) {
+  if (!rows?.length) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
+      {rows.map((r) => {
+        const amount = Number(r.net ?? 0).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        const party = showParty && r.party_name ? ` · ${r.party_name}` : "";
+        const label = `${r.number} · ${r.currency || ""} ${amount}${party}`;
+        const href = docHref(r);
+        const key = `${r.kind}-${r.id}`;
+
+        return href ? (
+          <Link
+            key={key}
+            href={href}
+            className="inline-flex items-center gap-1 underline decoration-amber-400 underline-offset-2 hover:text-amber-900"
+            title={`${action} ${r.number}`}
+          >
+            {label} <ExternalLink className="h-3 w-3 shrink-0" />
+          </Link>
+        ) : (
+          <span key={key}>{label}</span>
+        );
+      })}
+    </div>
+  );
+}
+
+function UnclassifiedWarning({ count, rows, total, currency, what }) {
   if (!count) return null;
+
   return (
     <Note tone="amber">
-      {count} {what} {count === 1 ? "is" : "are"} on an account code outside the chart. They appear
-      here but are left out of every GST box — pick a real account on the document to bring them in.
+      <strong>
+        {count} {what} {count === 1 ? "is" : "are"} on an account code outside the chart
+        {total ? ` — ${money(total)} ${currency || ""}` : ""}.
+      </strong>{" "}
+      They appear here but are left out of every GST box and of the trial balance — open each one
+      and pick a real account to bring it in.
+      <DocumentList rows={rows} action="Set an account on" />
+    </Note>
+  );
+}
+
+/**
+ * Documents ticked "paid" with no payment recorded against them.
+ *
+ * Marking paid takes the invoice out of what customers owe, but with no payment
+ * entered nothing arrives in cash — so the money is in neither place and the
+ * balance sheet is out by exactly that much. Worth saying plainly, because from
+ * the invoice screen it looks like the job is done.
+ */
+function AssumedPaidWarning({ rows, total, currency, what = "document(s)" }) {
+  if (!rows?.length) return null;
+
+  return (
+    <Note tone="amber">
+      <strong>
+        {rows.length} {what} {rows.length === 1 ? "is" : "are"} marked paid with no payment recorded
+        {total ? ` — ${money(total)} ${currency || ""}` : ""}.
+      </strong>{" "}
+      The amount is no longer owed, but no money was ever entered against it, so it is missing from
+      cash as well. Record the payment on each one and the books will balance by that much more.
+      <DocumentList rows={rows} action="Record the payment on" />
     </Note>
   );
 }
@@ -502,7 +571,19 @@ function SalesRegister({ range }) {
       {(d) => (
         <div className="space-y-4">
           <CurrencyWarning data={d} range={range} />
-          <UnclassifiedWarning count={d.unclassified} what="sales document(s)" />
+          <UnclassifiedWarning
+            count={d.unclassified}
+            rows={d.unclassified_rows}
+            total={d.unclassified_total}
+            currency={d.base_currency}
+            what="sales document(s)"
+          />
+          <AssumedPaidWarning
+            rows={d.assumed_paid}
+            total={d.assumed_paid_total}
+            currency={d.base_currency}
+            what="invoice(s)"
+          />
 
           {/* Headline figures are the converted ones. A sum of face values
               across currencies is not a number anybody can file. */}
@@ -693,7 +774,19 @@ function PurchaseRegister({ range }) {
       {(d) => (
         <div className="space-y-4">
           <CurrencyWarning data={d} range={range} />
-          <UnclassifiedWarning count={d.unclassified} what="purchase document(s)" />
+          <UnclassifiedWarning
+            count={d.unclassified}
+            rows={d.unclassified_rows}
+            total={d.unclassified_total}
+            currency={d.base_currency}
+            what="purchase document(s)"
+          />
+          <AssumedPaidWarning
+            rows={d.assumed_paid}
+            total={d.assumed_paid_total}
+            currency={d.base_currency}
+            what="purchase order(s)"
+          />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Documents" value={`${d.totals.orders} PO · ${d.totals.expenses} overhead`} />
@@ -885,7 +978,19 @@ function GstSummary({ range }) {
       {(d) => (
         <div className="space-y-4">
           {d.warnings.map((w, i) => (
-            <Note key={i} tone="amber">{w}</Note>
+            <Note key={i} tone="amber">
+              {w}
+              {/* The documents, under the first warning — which is the one
+                  about accounts outside the chart. A number on its own cannot
+                  be acted on. */}
+              {i === 0 && <DocumentList rows={d.unclassified_rows} action="Set an account on" />}
+              {i === 0 && d.unclaimed_input_tax > 0 && (
+                <p className="mt-1.5 font-semibold">
+                  That is also {money(d.unclaimed_input_tax)} {d.base_currency} of input tax missing
+                  from Box 7 — GST you have paid and are not claiming back.
+                </p>
+              )}
+            </Note>
           ))}
           <CurrencyWarning data={d} range={range} />
 
@@ -1154,12 +1259,18 @@ function TrialBalance({ range }) {
               the balance out.
             </Note>
           )}
+          <AssumedPaidWarning
+            rows={d.assumed_paid}
+            total={d.assumed_paid_total}
+            currency={d.base_currency}
+          />
           {!d.totals.balanced && (
             <Note tone="amber">
               The trial balance is out by {money(d.totals.difference)}. Every figure is derived from
-              documents, so the usual causes are an opening position that was never entered (see
-              below), a document on an account the chart does not have, or one with no exchange
-              rate.
+              documents, so the causes are above and below: money marked paid with no payment
+              recorded, a document with no exchange rate, or an opening position that was never
+              entered. Amounts on no account code are now posted as their own line rather than
+              dropped, so they are no longer part of this difference.
             </Note>
           )}
           <Note>{d.note}</Note>
@@ -1240,6 +1351,20 @@ function BalanceSheet({ range }) {
     <Section query={q}>
       {(d) => (
         <div className="space-y-4">
+          {/* Why it does not balance, before the statement rather than after
+              it — the reader's first question, answered where they ask it. */}
+          <AssumedPaidWarning
+            rows={d.assumed_paid}
+            total={d.assumed_paid_total}
+            currency={d.base_currency}
+          />
+          <UnclassifiedWarning
+            count={d.unclassified_rows?.length}
+            rows={d.unclassified_rows}
+            total={d.unclassified_total}
+            currency={d.base_currency}
+            what="document(s)"
+          />
           <Note tone={d.check.balanced ? "slate" : "amber"}>{d.note}</Note>
 
           <Card
@@ -1254,8 +1379,10 @@ function BalanceSheet({ range }) {
                     [
                       ...d.assets.cash.map((c) => ["Assets", c.code, c.name, c.amount]),
                       ["Assets", d.assets.receivables.code, d.assets.receivables.name, d.assets.receivables.amount],
+                      ...(d.assets.other || []).map((a) => ["Assets", a.code, a.name, a.amount]),
                       ["Assets", "", "Total assets", d.assets.total],
                       ["Liabilities", d.liabilities.payables.code, d.liabilities.payables.name, d.liabilities.payables.amount],
+                      ...(d.liabilities.other || []).map((l) => ["Liabilities", l.code, l.name, l.amount]),
                       ["Liabilities", "", d.liabilities.gst_payable.name, d.liabilities.gst_payable.amount],
                       ["Liabilities", "", d.liabilities.accrued_expenses?.name, d.liabilities.accrued_expenses?.amount],
                       ["Liabilities", "", "Total liabilities", d.liabilities.total],
@@ -1291,12 +1418,21 @@ function BalanceSheet({ range }) {
                     />
                   ))}
                   <BsRow code={d.assets.receivables.code} name={d.assets.receivables.name} amount={d.assets.receivables.amount} />
+                  {d.assets.other?.map((a) => (
+                    <BsRow key={a.code} code={a.code} name={a.name} amount={a.amount} />
+                  ))}
                   <BsTotal label="Total assets" amount={d.assets.total} />
 
                   <tr className="bg-slate-50/60">
                     <TD colSpan={3} className="text-xs font-semibold uppercase tracking-wide text-slate-500">Liabilities</TD>
                   </tr>
                   <BsRow code={d.liabilities.payables.code} name={d.liabilities.payables.name} amount={d.liabilities.payables.amount} />
+                  {/* Client funds held — money billed to a customer that
+                      belongs to a vessel master. Billed as an asset, so it has
+                      to appear here too or the statement cannot balance. */}
+                  {d.liabilities.other?.map((l) => (
+                    <BsRow key={l.code} code={l.code} name={l.name} amount={l.amount} />
+                  ))}
                   <BsRow code="—" name={d.liabilities.gst_payable.name} amount={d.liabilities.gst_payable.amount} derived />
                   {d.liabilities.accrued_expenses && (
                     <BsRow code="—" name={d.liabilities.accrued_expenses.name} amount={d.liabilities.accrued_expenses.amount} derived />

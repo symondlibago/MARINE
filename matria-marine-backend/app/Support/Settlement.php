@@ -70,13 +70,21 @@ class Settlement
      *                                         index, still "now"
      *   · OpenEntries                       — many documents, bounded to a date
      *
-     * @return array{billed: float, credited: float, allocated: float, settled: float, outstanding: float, paid: bool, partial: bool}
+     * @return array{billed: float, credited: float, allocated: float, settled: float, outstanding: float, paid: bool, partial: bool, assumed_paid: bool, unrecorded: float}
      */
     public static function resolve(float $billed, float $credited, float $allocated, bool $manuallyPaid): array
     {
         // Legacy fallback: nothing allocated and nothing credited, so the only
         // information available is the manual "mark as paid" flag.
-        if ($allocated <= self::EPSILON && $credited <= self::EPSILON && $manuallyPaid) {
+        //
+        // Worth naming, because the books cannot see through it. Ticking "paid"
+        // takes the document out of receivables, but with no payment recorded
+        // nothing arrives in cash — so the money leaves the books entirely and
+        // the balance sheet goes out by exactly that much. The flag travels with
+        // the figure so the screens can say which documents did it.
+        $assumed = $allocated <= self::EPSILON && $credited <= self::EPSILON && $manuallyPaid;
+
+        if ($assumed) {
             $allocated = $billed;
         }
 
@@ -93,6 +101,10 @@ class Settlement
             // Something has been paid, but not all of it — the case the old
             // paid/unpaid flag could never express.
             'partial' => ! $paid && $allocated > self::EPSILON,
+            // Marked paid by hand with no payment behind it, and how much money
+            // that is.
+            'assumed_paid' => $assumed,
+            'unrecorded' => $assumed ? round($billed, 2) : 0.0,
         ];
     }
 

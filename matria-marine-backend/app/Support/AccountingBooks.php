@@ -57,6 +57,7 @@ class AccountingBooks
         'credit_note_amount' => 'base_credit_note_amount',
         'settled' => 'base_settled',
         'outstanding' => 'base_outstanding',
+        'unrecorded' => 'base_unrecorded',
     ];
 
     /**
@@ -119,6 +120,47 @@ class AccountingBooks
     public static function baseSum(Collection $rows, string $field): float
     {
         return round($rows->sum(fn ($r) => (float) ($r[$field] ?? 0)), 2);
+    }
+
+    /**
+     * A document named so it can be found and fixed.
+     *
+     * Every "these figures are incomplete" message publishes its documents
+     * through this, because a count on its own — "6 purchase documents are on
+     * an account outside the chart" — tells somebody there is a problem and
+     * nothing about where it is. Six numbers hunted through four list screens
+     * is how they stay unfixed.
+     */
+    public static function identify(Collection $rows): Collection
+    {
+        return $rows->map(fn ($r) => [
+            'id' => $r['id'] ?? null,
+            'kind' => $r['kind'] ?? null,
+            'kind_label' => $r['kind_label'] ?? null,
+            'number' => $r['number'] ?? null,
+            'date' => $r['date'] ?? null,
+            'party_name' => $r['party_name'] ?? null,
+            'currency' => $r['currency'] ?? null,
+            'net' => $r['net'] ?? null,
+            'base_net' => $r['base_net'] ?? null,
+        ])->values();
+    }
+
+    /** Documents on an account code the chart does not have. */
+    public static function unclassified(Collection $rows): Collection
+    {
+        return $rows->where('unclassified', true)->values();
+    }
+
+    /**
+     * Documents ticked "paid" with no payment recorded against them.
+     *
+     * The money left receivables and never arrived in cash, so it is missing
+     * from the books entirely — see Settlement::resolve().
+     */
+    public static function assumedPaid(Collection $rows): Collection
+    {
+        return $rows->filter(fn ($r) => ! empty($r['assumed_paid']))->values();
     }
 
     /**
@@ -298,6 +340,10 @@ class AccountingBooks
             'paid' => $i->status === 'paid' || $i->paid_at !== null,
             'settled' => $settlement['settled'],
             'outstanding' => $settlement['outstanding'],
+            // Ticked paid with no payment recorded, so the money is in neither
+            // receivables nor cash.
+            'assumed_paid' => $settlement['assumed_paid'],
+            'unrecorded' => $settlement['unrecorded'],
             'sign' => self::INVOICE,
         ], $i->account_code, 'sales');
     }
@@ -573,6 +619,8 @@ class AccountingBooks
             'billed_net' => $cost,
             'billed_gross' => $cost,
             'account_breakdown' => $code ? [$code => $cost] : [],
+            'assumed_paid' => false,
+            'unrecorded' => 0.0,
         // Context the payroll screens already show, carried through
         // so the register can explain the figure without a join.
             'headcount' => $t['headcount'] ?? 0,
@@ -633,6 +681,8 @@ class AccountingBooks
             'paid' => $p->paid_at !== null,
             'settled' => $settlement['settled'],
             'outstanding' => $settlement['outstanding'],
+            'assumed_paid' => $settlement['assumed_paid'],
+            'unrecorded' => $settlement['unrecorded'],
             'sign' => self::INVOICE,
         ], $p->account_code, 'purchase');
     }
@@ -737,6 +787,10 @@ class AccountingBooks
             'billed_net' => $row['net'],
             'billed_gross' => $row['gross'],
             'account_breakdown' => [],
+            // Only documents that can be settled carry these; a credit note or
+            // an overhead has nothing to mark paid.
+            'assumed_paid' => false,
+            'unrecorded' => 0.0,
             'base_currency' => self::baseCurrency(),
         ];
 
