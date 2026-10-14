@@ -545,6 +545,52 @@ function UnclassifiedWarning({ count, rows, total, currency, what }) {
  * balance sheet is out by exactly that much. Worth saying plainly, because from
  * the invoice screen it looks like the job is done.
  */
+/**
+ * Lines coded to the wrong side of the books.
+ *
+ * Money that really passes through you sits on a balance-sheet account — a
+ * Cash to Master principal is held for a vessel master, never earned and never
+ * spent. A sales line put on Cost of Sales instead is taken out of revenue and
+ * put nowhere, so the invoice reads as nil income and the receivable has
+ * nothing behind it. Invisible before this: the figures just came out low.
+ */
+function MiscodedWarning({ rows, total, currency }) {
+  if (!rows?.length) return null;
+
+  return (
+    <Note tone="amber">
+      <strong>
+        {rows.length} document(s) have lines on an account that cannot hold them
+        {total ? ` — ${money(total)} ${currency || ""}` : ""}.
+      </strong>{" "}
+      The amount is treated as money passing through you rather than as your own, so it is in
+      neither revenue nor cost. Open each one and put the lines on a sales account.
+      <div className="mt-1.5 flex flex-col gap-1 font-mono text-xs">
+        {rows.map((r) => {
+          const href = docHref(r);
+          const label = `${r.number} · ${currency || ""} ${Number(r.amount ?? 0).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} on ${r.accounts}`;
+
+          return href ? (
+            <Link
+              key={`${r.kind}-${r.id}`}
+              href={href}
+              className="inline-flex w-fit items-center gap-1 underline decoration-amber-400 underline-offset-2 hover:text-amber-900"
+              title={`Fix the line accounts on ${r.number}`}
+            >
+              {label} <ExternalLink className="h-3 w-3 shrink-0" />
+            </Link>
+          ) : (
+            <span key={`${r.kind}-${r.id}`}>{label}</span>
+          );
+        })}
+      </div>
+    </Note>
+  );
+}
+
 function AssumedPaidWarning({ rows, total, currency, what = "document(s)" }) {
   if (!rows?.length) return null;
 
@@ -578,6 +624,7 @@ function SalesRegister({ range }) {
             currency={d.base_currency}
             what="sales document(s)"
           />
+          <MiscodedWarning rows={d.miscoded} total={d.miscoded_total} currency={d.base_currency} />
           <AssumedPaidWarning
             rows={d.assumed_paid}
             total={d.assumed_paid_total}
@@ -781,6 +828,7 @@ function PurchaseRegister({ range }) {
             currency={d.base_currency}
             what="purchase document(s)"
           />
+          <MiscodedWarning rows={d.miscoded} total={d.miscoded_total} currency={d.base_currency} />
           <AssumedPaidWarning
             rows={d.assumed_paid}
             total={d.assumed_paid_total}
@@ -1259,6 +1307,7 @@ function TrialBalance({ range }) {
               the balance out.
             </Note>
           )}
+          <MiscodedWarning rows={d.miscoded} total={d.miscoded_total} currency={d.base_currency} />
           <AssumedPaidWarning
             rows={d.assumed_paid}
             total={d.assumed_paid_total}
@@ -1353,6 +1402,7 @@ function BalanceSheet({ range }) {
         <div className="space-y-4">
           {/* Why it does not balance, before the statement rather than after
               it — the reader's first question, answered where they ask it. */}
+          <MiscodedWarning rows={d.miscoded} total={d.miscoded_total} currency={d.base_currency} />
           <AssumedPaidWarning
             rows={d.assumed_paid}
             total={d.assumed_paid_total}

@@ -216,8 +216,18 @@ class AccountingController extends Controller
     {
         $unclassified = AccountingBooks::unclassified($rows);
         $assumedPaid = AccountingBooks::assumedPaid($rows);
+        $miscoded = AccountingBooks::miscoded($rows);
 
         return [
+            // Lines coded to the wrong side of the books: taken out of revenue
+            // (or cost) and put on an account that cannot hold them.
+            'miscoded' => AccountingBooks::identify($miscoded)
+                ->zip($miscoded)
+                ->map(fn ($pair) => $pair[0] + [
+                    'accounts' => AccountingBooks::miscodedAccounts($pair[1]),
+                    'amount' => $pair[1]['base_pass_through'] ?? null,
+                ])->all(),
+            'miscoded_total' => AccountingBooks::baseSum($miscoded, 'base_pass_through'),
             // Count kept at the old key so nothing that reads it breaks; the
             // documents themselves are beside it.
             'unclassified' => $unclassified->count(),
@@ -579,7 +589,19 @@ class AccountingController extends Controller
         // never into cash, so it is missing from both sides of the books.
         $assumedPaid = AccountingBooks::assumedPaid($sales->concat($purchases));
 
+        // Lines coded to an account that cannot hold money passing through, so
+        // the amount is out of revenue and out of cost and on neither side of
+        // the balance sheet.
+        $miscoded = AccountingBooks::miscoded($sales->concat($purchases));
+
         return [
+            'miscoded' => AccountingBooks::identify($miscoded)
+                ->zip($miscoded)
+                ->map(fn ($pair) => $pair[0] + [
+                    'accounts' => AccountingBooks::miscodedAccounts($pair[1]),
+                    'amount' => $pair[1]['base_pass_through'] ?? null,
+                ])->all(),
+            'miscoded_total' => AccountingBooks::baseSum($miscoded, 'base_pass_through'),
             'unrated' => $unrated->all(),
             'unrated_count' => $unrated->count(),
             'unclassified_rows' => AccountingBooks::identify($unclassified)->all(),
@@ -755,6 +777,10 @@ class AccountingController extends Controller
             // Usually the largest single reason this report does not balance.
             'assumed_paid' => $pl['assumed_paid'],
             'assumed_paid_total' => $pl['assumed_paid_total'],
+            // Lines on the wrong side of the books — out of revenue, out of
+            // cost, and on no balance-sheet account either.
+            'miscoded' => $pl['miscoded'],
+            'miscoded_total' => $pl['miscoded_total'],
         ]);
     }
 
@@ -859,6 +885,8 @@ class AccountingController extends Controller
             // both sides of.
             'assumed_paid' => $pl['assumed_paid'],
             'assumed_paid_total' => $pl['assumed_paid_total'],
+            'miscoded' => $pl['miscoded'],
+            'miscoded_total' => $pl['miscoded_total'],
             'unclassified_rows' => $pl['unclassified_rows'],
             'unclassified_total' => round($pl['unclassified_revenue'] + $pl['unclassified_cost'], 2),
             'note' => $positions['note'],

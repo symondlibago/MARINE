@@ -153,6 +153,42 @@ class AccountingBooks
     }
 
     /**
+     * Documents whose lines are coded to the wrong side of the books.
+     *
+     * Money that genuinely passes through us lands on a BALANCE-SHEET account:
+     * a Cash to Master principal is held for a vessel master, never earned and
+     * never spent. A line that takes money out of revenue and puts it on an
+     * income-statement account instead is a coding mistake, and an expensive
+     * one — three sales lines coded to 5000 Cost of Sales turned a 290.00
+     * invoice into nil revenue AND left a receivable with nothing behind it.
+     *
+     * Visible nowhere before this: the figures simply came out low, and the
+     * only clue was a "pass-thru" column nobody expected to be filled.
+     */
+    public static function miscoded(Collection $rows): Collection
+    {
+        return $rows->filter(function ($r) {
+            foreach (array_keys($r['pass_through_accounts'] ?? []) as $code) {
+                $account = Account::find_by_code((string) $code);
+
+                if ($account !== null && $account->statement() === 'income_statement') {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+    }
+
+    /** The accounts a row's pass-through landed on, named for a message. */
+    public static function miscodedAccounts(array $row): string
+    {
+        return collect(array_keys($row['pass_through_accounts'] ?? []))
+            ->map(fn ($code) => trim($code.' '.(Account::find_by_code((string) $code)?->name ?? '')))
+            ->implode(', ');
+    }
+
+    /**
      * Documents ticked "paid" with no payment recorded against them.
      *
      * The money left receivables and never arrived in cash, so it is missing
@@ -252,13 +288,20 @@ class AccountingBooks
      * code is an oversight, and quietly dropping the amount from the totals
      * would be worse than counting it.
      *
-     * @return array{kept: float, pass_through: float, by_account: array<string, float>}
+     * @return array{kept: float, pass_through: float, by_account: array<string, float>, passed_accounts: array<string, float>}
      */
     private static function lineSplit(iterable $lines, string $amountField, ?string $fallbackCode, string $wantType): array
     {
         $kept = 0.0;
         $passed = 0.0;
         $byAccount = [];
+        // WHICH accounts caused money to be treated as passing through, so a
+        // line put on the wrong one can be found. Money genuinely passing
+        // through lands on a balance-sheet account — it is held, not earned and
+        // not spent. Anything else is a miscode: three sales lines on 5000 Cost
+        // of Sales made a 290.00 invoice read as nil revenue and 290.00 of
+        // somebody else's money.
+        $passedAccounts = [];
 
         foreach ($lines as $line) {
             if (! empty($line->is_heading)) {
@@ -269,13 +312,15 @@ class AccountingBooks
             $code = $line->account_code ?: $fallbackCode;
             $account = Account::find_by_code($code);
 
+            $key = $code ?: '—';
+
             if ($account === null || $account->type === $wantType) {
                 $kept += $amount;
             } else {
                 $passed += $amount;
+                $passedAccounts[$key] = round(($passedAccounts[$key] ?? 0) + $amount, 2);
             }
 
-            $key = $code ?: '—';
             $byAccount[$key] = round(($byAccount[$key] ?? 0) + $amount, 2);
         }
 
@@ -283,6 +328,7 @@ class AccountingBooks
             'kept' => round($kept, 2),
             'pass_through' => round($passed, 2),
             'by_account' => $byAccount,
+            'passed_accounts' => $passedAccounts,
         ];
     }
 
@@ -306,6 +352,7 @@ class AccountingBooks
         return self::classify([
             'revenue_net' => round($saleNet, 2),
             'account_breakdown' => $split['by_account'],
+            'pass_through_accounts' => $split['passed_accounts'],
             'id' => $i->id,
             'kind' => 'invoice',
             'kind_label' => 'Invoice',
@@ -651,6 +698,7 @@ class AccountingBooks
         return self::classify([
             'cost_net' => $cost,
             'pass_through_net' => $split['pass_through'],
+            'pass_through_accounts' => $split['passed_accounts'],
             'account_breakdown' => $split['by_account'],
             'id' => $p->id,
             'kind' => 'purchase_order',
@@ -782,6 +830,7 @@ class AccountingBooks
             'revenue_net' => $row['net'],
             'cost_net' => $row['net'],
             'pass_through_net' => 0.0,
+            'pass_through_accounts' => [],
             // Documents with nothing passing through were billed exactly what
             // they sold, so these default to the same figures.
             'billed_net' => $row['net'],

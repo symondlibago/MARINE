@@ -191,6 +191,62 @@ class BooksExplainThemselvesTest extends TestCase
     }
 
     /* ---------------------------------------------------------------- */
+    /*  2b. Lines coded to the wrong side of the books                  */
+    /* ---------------------------------------------------------------- */
+
+    /**
+     * MMS-INV-2026-000423, exactly as it stands on the live books: three sales
+     * lines — Agency Fee, Crew Handling, Crew Transport — every one of them
+     * coded to 5000 Cost of Sales.
+     *
+     * Because 5000 is an expense account, the split reads the whole invoice as
+     * money passing through rather than as a sale: nil revenue, 290.00 of
+     * pass-through, and a receivable with nothing behind it. Nothing on any
+     * screen said so — the figures simply came out low.
+     */
+    public function test_a_sales_line_coded_to_cost_of_sales_is_reported(): void
+    {
+        $miscoded = $this->invoice([
+            ['Agency Fee', 150.0, '5000'],
+            ['Crew Handling', 40.0, '5000'],
+            ['Crew Transport', 100.0, '5000'],
+        ]);
+
+        $register = $this->section('sales-invoices');
+
+        $this->assertCount(1, $register['miscoded']);
+        $this->assertSame($miscoded->invoice_number, $register['miscoded'][0]['number']);
+        $this->assertEqualsWithDelta(290.0, $register['miscoded_total'], 0.02);
+
+        // The message names the account, because "it is on the wrong account"
+        // without saying which is not something anybody can act on.
+        $this->assertStringContainsString('5000', $register['miscoded'][0]['accounts']);
+
+        // And the damage: the sale is not in revenue at all.
+        $this->assertEqualsWithDelta(0.0, $register['totals']['net'], 0.02);
+        $this->assertEqualsWithDelta(290.0, $register['totals']['billed'], 0.02);
+    }
+
+    /** A line correctly on a liability is money held, and is NOT flagged. */
+    public function test_a_line_on_a_liability_account_is_not_flagged(): void
+    {
+        $this->invoice([
+            ['CTM handling fee', 500.0, '4200'],
+            ['Cash to Master principal', 10000.0, '2100'],
+        ]);
+
+        $this->assertSame([], $this->section('sales-invoices')['miscoded']);
+    }
+
+    public function test_the_statements_report_miscoded_lines_too(): void
+    {
+        $this->invoice([['Agency Fee', 150.0, '5000']]);
+
+        $this->assertCount(1, $this->section('trial-balance')['miscoded']);
+        $this->assertCount(1, $this->section('balance-sheet')['miscoded']);
+    }
+
+    /* ---------------------------------------------------------------- */
     /*  3. Cash to Master held on a client's behalf                     */
     /* ---------------------------------------------------------------- */
 
