@@ -38,7 +38,11 @@ class ReturnNoteMail extends Mailable
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
-        $pdf = Pdf::loadView('pdf.return-note', ['rn' => $this->rn, 'logo' => $logo]);
+        $pdf = Pdf::loadView('pdf.return-note', [
+            'rn' => $this->rn,
+            'logo' => $logo,
+            'company' => config('procurement.company'),
+        ]);
 
         return [
             Attachment::fromData(fn () => $pdf->output(), ($this->rn->rtn_number ?: 'return-note').'.pdf')

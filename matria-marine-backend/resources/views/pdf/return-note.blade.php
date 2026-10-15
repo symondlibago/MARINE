@@ -14,6 +14,7 @@
         table.items th { background: #28364b; color: #fff; }
         .num { text-align: right; }
         tfoot td { font-weight: bold; }
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -99,5 +100,7 @@
         This return note is issued by Matria Marine Services and reduces the amount payable on
         purchase order {{ optional($rn->purchaseOrder)->po_number }}.
     </p>
+    @include('pdf.partials.footer')
+
 </body>
 </html>

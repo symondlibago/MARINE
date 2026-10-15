@@ -3,9 +3,7 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px 104px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
-        .page-footer { position: fixed; bottom: -86px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #555; line-height: 1.5; }
         .navy { color: #28364b; }
         .doc-title { font-size: 24px; font-weight: bold; letter-spacing: 1px; color: #28364b; }
         .bar { background: #28364b; color: #fff; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
@@ -20,6 +18,7 @@
         .bank { border: 1px solid #ddd; padding: 8px 10px; font-size: 10px; line-height: 1.6; }
         .aging td { padding: 4px 8px; font-size: 10px; border: 1px solid #eee; text-align: center; }
         .aging .h { background: #f3f4f6; color: #374151; font-weight: bold; }
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -224,14 +223,10 @@
         please disregard it for that item and accept our thanks.
     </p>
 
-    <div class="page-footer">
-        <div style="border-top:1px solid #ddd; padding-top:6px;">
-            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
-            UEN No. {{ $company['uen'] }}<br>
-            EMAIL: {{ $company['email'] ?? '' }} &nbsp;·&nbsp; {{ $company['website'] ?? '' }}<br>
-            Bank: {{ $company['bank_name'] ?? '' }} | Account number: {{ $company['bank_account'] ?? '' }} | Swift: {{ $company['bank_swift'] ?? '' }}
-        </div>
-    </div>
+    {{-- A statement to a vendor is a list of what WE owe THEM, so our own
+         account number has no business on it — its old footer printed the bank
+         line on both, contradicting the "Please remit to" block above. --}}
+    @include('pdf.partials.footer', ['bank' => $isCustomer])
 
 </body>
 </html>

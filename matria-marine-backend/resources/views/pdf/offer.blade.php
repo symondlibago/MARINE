@@ -3,12 +3,10 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px 100px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
         /* Fixed page footer — repeats at the bottom of every page. DomPDF measures
            a fixed element's `bottom` from the content box, so the negative offset
            pulls it down into the page margin, flush to the bottom edge. */
-        .page-footer { position: fixed; bottom: -82px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #777; line-height: 1.45; }
         .cover { margin-top: 14px; font-size: 11px; color: #333; line-height: 1.5; }
         .navy { color: #28364b; }
         .doc-title { font-size: 27px; font-weight: bold; letter-spacing: 1px; color: #28364b; }
@@ -23,6 +21,7 @@
         .partno { color: #6b7280; font-size: 10px; }
         .itemno { color: #28364b; font-weight: bold; }
         .tot td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -250,13 +249,7 @@
     @endif
 
     {{-- Footer: full company details — fixed to the bottom of every page --}}
-    <div class="page-footer">
-        <div style="border-top:1px solid #ddd; padding-top:6px;">
-            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
-            {!! nl2br(e($company['address'])) !!}<br>
-            email: {{ $company['email'] }} &nbsp;·&nbsp; UEN: {{ $company['uen'] }}
-        </div>
-    </div>
+    @include('pdf.partials.footer')
 
 </body>
 </html>

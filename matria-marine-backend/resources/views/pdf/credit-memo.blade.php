@@ -3,7 +3,6 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px 104px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
         .navy { color: #28364b; }
         .doc-title { font-size: 25px; font-weight: bold; letter-spacing: 1px; color: #28364b; }
@@ -18,7 +17,7 @@
         .itemno { color: #28364b; font-weight: bold; }
         .sub { color: #6b7280; font-size: 10px; }
         .tot td { padding: 3px 8px; font-size: 11px; }
-        .page-footer { position: fixed; bottom: -86px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #555; line-height: 1.5; }
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -159,13 +158,7 @@
     @endif
 
     {{-- Footer: company details — fixed to the bottom of every page --}}
-    <div class="page-footer">
-        <div style="border-top:1px solid #ddd; padding-top:6px;">
-            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
-            UEN No. {{ $company['uen'] }}<br>
-            EMAIL: {{ $company['email'] ?? '' }} &nbsp;·&nbsp; {{ $company['website'] ?? '' }}
-        </div>
-    </div>
+    @include('pdf.partials.footer')
 
 </body>
 </html>

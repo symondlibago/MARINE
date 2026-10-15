@@ -182,7 +182,12 @@ class ReturnNoteController extends Controller
         $logoPath = public_path('logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
 
-        return Pdf::loadView('pdf.return-note', ['rn' => $returnNote, 'logo' => $logo])
+        return Pdf::loadView('pdf.return-note', [
+            'rn' => $returnNote,
+            'logo' => $logo,
+            // The return note went out with no company details on it at all.
+            'company' => config('procurement.company'),
+        ])
             ->download(($returnNote->rtn_number ?: 'return-note').'.pdf');
     }
 

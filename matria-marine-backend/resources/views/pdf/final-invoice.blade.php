@@ -3,7 +3,6 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
         .navy { color: #28364b; }
         .doc-title { font-size: 27px; font-weight: bold; letter-spacing: 1px; color: #28364b; }
@@ -17,6 +16,7 @@
         .sub { color: #28364b; font-size: 10px; }
         .credit { color: #b45309; }
         .tot td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -175,6 +175,9 @@
         @if($logo)<img src="{{ $logo }}" style="height:30px;"><br>@endif
         <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
     </div>
+
+    @include('pdf.partials.footer')
+
 
 </body>
 </html>

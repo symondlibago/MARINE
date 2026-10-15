@@ -4,12 +4,10 @@
     <meta charset="utf-8">
     <style>
         /* Bottom margin leaves room for the fixed footer below. */
-        @page { margin: 28px 34px 100px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
         /* Fixed page footer — repeats at the bottom of every page. DomPDF measures
            a fixed element's `bottom` from the content box, so the negative offset
            pulls it down into the page margin, flush to the bottom edge. */
-        .page-footer { position: fixed; bottom: -82px; left: 34px; right: 34px; text-align: center; font-size: 9px; color: #777; line-height: 1.45; }
         .navy { color: #28364b; }
         .bar { background: #28364b; color: #fff; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
         .val { padding: 4px 8px; font-size: 11px; }
@@ -21,6 +19,7 @@
 
         .itemno { color: #28364b; font-weight: bold; }
         .totals td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -181,13 +180,7 @@
         </div>
     @endif
 
-    <div class="page-footer">
-        <div style="border-top:1px solid #ddd; padding-top:6px;">
-            <strong class="navy" style="font-size:10px;">{{ $company['name'] }}</strong><br>
-            {!! nl2br(e($company['address'])) !!}<br>
-            email: {{ $company['email'] }} &nbsp;·&nbsp; UEN: {{ $company['uen'] }}
-        </div>
-    </div>
+    @include('pdf.partials.footer', ['bank' => true])
 
 </body>
 </html>
