@@ -39,6 +39,7 @@ class PdfFooterTest extends TestCase
         'final-invoice',
         'return-note',
         'statement',
+        'document',
     ];
 
     /** Only where the customer is being asked to pay us. */

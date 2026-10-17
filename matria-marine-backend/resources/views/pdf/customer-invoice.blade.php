@@ -20,6 +20,7 @@
         .partno { color: #6b7280; font-size: 10px; }
         .itemno { color: #28364b; font-weight: bold; }
         .tot td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -124,20 +125,30 @@
                 @if($line->is_heading)
                     <tr><td colspan="{{ $cols }}" style="font-weight:bold; padding-top:9px; border-bottom:none;" class="navy">{{ $line->description }}</td></tr>
                 @else
-                    @php $itemNo++; @endphp
-                    <tr>
-                        <td class="itemno">{{ $itemNo }}</td>
-                        <td>
-                            {!! nl2br(e($line->description)) !!}
-                            @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
-                            @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
-                        </td>
-                        <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                        <td>{{ $line->unit }}</td>
-                        <td class="num">{{ $money($line->unit_price) }}</td>
-                        <td class="num">{{ $money($line->line_total) }}</td>
-                        @if($fx)<td class="num">{{ $conv($line->line_total) }}</td>@endif
-                    </tr>
+                    @php
+                        $itemNo++;
+                        // One row per block, so a long description can carry on
+                        // over a page break instead of jumping the page whole.
+                        $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                        $last = count($blocks) - 1;
+                    @endphp
+                    @foreach($blocks as $b => $block)
+                        <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                            <td class="itemno">{{ $b === 0 ? $itemNo : '' }}</td>
+                            <td>
+                                {!! nl2br(e($block)) !!}
+                                @if($b === $last)
+                                    @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
+                                    @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
+                                @endif
+                            </td>
+                            <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') : '' }}</td>
+                            <td>{{ $b === 0 ? $line->unit : '' }}</td>
+                            <td class="num">{{ $b === 0 ? $money($line->unit_price) : '' }}</td>
+                            <td class="num">{{ $b === 0 ? $money($line->line_total) : '' }}</td>
+                            @if($fx)<td class="num">{{ $b === 0 ? $conv($line->line_total) : '' }}</td>@endif
+                        </tr>
+                    @endforeach
                 @endif
             @empty
                 <tr><td colspan="{{ $cols }}">No line items.</td></tr>

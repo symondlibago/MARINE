@@ -14,6 +14,7 @@
         table.items th { background: #28364b; color: #fff; }
         .num { text-align: right; }
         tfoot td { font-weight: bold; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -71,15 +72,23 @@
         </thead>
         <tbody>
             @forelse($rn->items as $idx => $line)
-                <tr>
-                    <td>{{ $idx + 1 }}</td>
-                    <td>{!! nl2br(e($line->description)) !!}</td>
-                    <td>{{ $line->reason ?: '—' }}</td>
-                    <td>{{ $line->unit ?: '—' }}</td>
-                    <td class="num">{{ number_format($line->qty, 2) }}</td>
-                    <td class="num">{{ number_format($line->unit_cost, 2) }}</td>
-                    <td class="num">{{ number_format($line->line_total, 2) }}</td>
-                </tr>
+                @php
+                    // One row per block, so a long description can carry on over
+                    // a page break instead of jumping the page whole.
+                    $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                    $last = count($blocks) - 1;
+                @endphp
+                @foreach($blocks as $b => $block)
+                    <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                        <td>{{ $b === 0 ? $idx + 1 : '' }}</td>
+                        <td>{!! nl2br(e($block)) !!}</td>
+                        <td>{{ $b === 0 ? ($line->reason ?: '—') : '' }}</td>
+                        <td>{{ $b === 0 ? ($line->unit ?: '—') : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format($line->qty, 2) : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format($line->unit_cost, 2) : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format($line->line_total, 2) : '' }}</td>
+                    </tr>
+                @endforeach
             @empty
                 <tr><td colspan="7">No returned items.</td></tr>
             @endforelse

@@ -19,6 +19,7 @@
 
         .itemno { color: #28364b; font-weight: bold; }
         .totals td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -120,23 +121,31 @@
                 @php
                     $isHeading = (bool) ($line['is_heading'] ?? false);
                     $isHeading ?: $itemNo++;
+                    // One row per block, so a long description can carry on over
+                    // a page break instead of jumping the page whole.
+                    $blocks = \App\Support\PdfBlocks::split($line['description']) ?: [''];
+                    $last = count($blocks) - 1;
                 @endphp
-                <tr>
-                    <td class="itemno">{{ $isHeading ? '' : $itemNo }}</td>
-                    <td>
-                        {!! nl2br(e($line['description'])) !!}
-                        @if($line['remarks'])<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line['remarks'])) !!}</span>@endif
-                        {{-- Already taken off the amount at the right; spelled
-                             out so the customer sees what they were given. --}}
-                        @if(($line['discount_amount'] ?? 0) > 0)
-                            <br><span style="color:#92400e; font-size:10px;">Less {{ rtrim(rtrim(number_format((float) $line['discount_pct'], 2), '0'), '.') }}% discount — {{ number_format((float) $line['discount_amount'], 2) }}</span>
-                        @endif
-                    </td>
-                    <td>{{ $line['unit'] }}</td>
-                    <td class="num">{{ rtrim(rtrim(number_format($line['qty'], 3), '0'), '.') }}</td>
-                    <td class="num">{{ number_format($line['unit_price'], 2) }}</td>
-                    <td class="num">{{ number_format($line['line_total'], 2) }}</td>
-                </tr>
+                @foreach($blocks as $b => $block)
+                    <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                        <td class="itemno">{{ $b === 0 && ! $isHeading ? $itemNo : '' }}</td>
+                        <td>
+                            {!! nl2br(e($block)) !!}
+                            @if($b === $last)
+                                @if($line['remarks'])<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line['remarks'])) !!}</span>@endif
+                                {{-- Already taken off the amount at the right; spelled
+                                     out so the customer sees what they were given. --}}
+                                @if(($line['discount_amount'] ?? 0) > 0)
+                                    <br><span style="color:#92400e; font-size:10px;">Less {{ rtrim(rtrim(number_format((float) $line['discount_pct'], 2), '0'), '.') }}% discount — {{ number_format((float) $line['discount_amount'], 2) }}</span>
+                                @endif
+                            @endif
+                        </td>
+                        <td>{{ $b === 0 ? $line['unit'] : '' }}</td>
+                        <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format($line['qty'], 3), '0'), '.') : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format($line['unit_price'], 2) : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format($line['line_total'], 2) : '' }}</td>
+                    </tr>
+                @endforeach
             @empty
                 <tr><td colspan="6">No line items.</td></tr>
             @endforelse
@@ -172,14 +181,9 @@
         <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $pf['notes'] }}</p>
     @endif
 
-    {{-- The logo sits with the content; the company details repeat on every
-         page below, the same as the quotation and the invoice. --}}
-    @if($logo)
-        <div style="margin-top:26px; text-align:center;">
-            <img src="{{ $logo }}" style="height:34px;">
-        </div>
-    @endif
-
+    {{-- No logo above the footer: it is already in the letterhead, and Dru
+         marked this second one "take out". It also cost a line of a page that
+         was short of them. --}}
     @include('pdf.partials.footer', ['bank' => true])
 
 </body>

@@ -15,6 +15,7 @@
 
         .itemno { color: #28364b; font-weight: bold; }
         .totals td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -111,13 +112,19 @@
                 @php
                     $isHeading = (bool) ($line->is_heading ?? false);
                     $isHeading ?: $itemNo++;
+                    // One row per block, so a long description can carry on over
+                    // a page break instead of jumping the page whole.
+                    $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                    $last = count($blocks) - 1;
                 @endphp
-                <tr>
-                    <td class="itemno">{{ $isHeading ? '' : $itemNo }}</td>
-                    <td>{!! nl2br(e($line->description)) !!}@if($line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif</td>
-                    <td>{{ $line->unit }}</td>
-                    <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                </tr>
+                @foreach($blocks as $b => $block)
+                    <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                        <td class="itemno">{{ $b === 0 && ! $isHeading ? $itemNo : '' }}</td>
+                        <td>{!! nl2br(e($block)) !!}@if($b === $last && $line->remarks)<br><span style="color:#28364b; font-size:10px;">{!! nl2br(e($line->remarks)) !!}</span>@endif</td>
+                        <td>{{ $b === 0 ? $line->unit : '' }}</td>
+                        <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') : '' }}</td>
+                    </tr>
+                @endforeach
             @empty
                 <tr><td colspan="4">No line items.</td></tr>
             @endforelse
@@ -141,12 +148,8 @@
         </div>
     @endif
 
-    {{-- Footer --}}
-    <div style="margin-top:26px; text-align:center;">
-        @if($logo)<img src="{{ $logo }}" style="height:34px;"><br>@endif
-        <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
-    </div>
-
+    {{-- No second logo and no second UEN: both are in the letterhead and the
+         footer already, and Dru marked the repeat "take out". --}}
     @include('pdf.partials.footer')
 
 

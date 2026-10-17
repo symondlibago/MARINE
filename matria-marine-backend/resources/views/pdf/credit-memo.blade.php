@@ -17,6 +17,7 @@
         .itemno { color: #28364b; font-weight: bold; }
         .sub { color: #6b7280; font-size: 10px; }
         .tot td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -102,18 +103,24 @@
                 @php
                     $isHeading = (bool) ($line->is_heading ?? false);
                     $isHeading ?: $itemNo++;
+                    // One row per block, so a long description can carry on over
+                    // a page break instead of jumping the page whole.
+                    $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                    $last = count($blocks) - 1;
                 @endphp
-                <tr>
-                    <td class="itemno">{{ $isHeading ? '' : $itemNo }}</td>
-                    <td>
-                        {!! nl2br(e($line->description)) !!}
-                        @if($line->reason)<br><span class="sub">{{ $line->reason }}</span>@endif
-                    </td>
-                    <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                    <td>{{ $line->unit }}</td>
-                    <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>
-                    <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
-                </tr>
+                @foreach($blocks as $b => $block)
+                    <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                        <td class="itemno">{{ $b === 0 && ! $isHeading ? $itemNo : '' }}</td>
+                        <td>
+                            {!! nl2br(e($block)) !!}
+                            @if($b === $last && $line->reason)<br><span class="sub">{{ $line->reason }}</span>@endif
+                        </td>
+                        <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') : '' }}</td>
+                        <td>{{ $b === 0 ? $line->unit : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format((float) $line->unit_price, 2) : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format((float) $line->line_total, 2) : '' }}</td>
+                    </tr>
+                @endforeach
             @empty
                 <tr><td colspan="6">No credited lines.</td></tr>
             @endforelse

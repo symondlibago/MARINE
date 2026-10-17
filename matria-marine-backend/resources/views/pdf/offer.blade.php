@@ -21,6 +21,7 @@
         .partno { color: #6b7280; font-size: 10px; }
         .itemno { color: #28364b; font-weight: bold; }
         .tot td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -165,22 +166,30 @@
                         $eff = $custDisc > 0
                             ? (float) $line->unit_price
                             : ($qty > 0 ? (float) $line->line_total / $qty : (float) $line->unit_price);
+                        // One row per block, so a long description can carry on
+                        // over a page break instead of jumping the page whole.
+                        $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                        $last = count($blocks) - 1;
                     @endphp
-                    <tr>
-                        <td class="itemno">{{ $itemNo }}</td>
-                        <td>
-                            {!! nl2br(e($line->description)) !!}
-                            @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
-                            @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
-                            @if($custDisc > 0)
-                                <br><span class="sub">Less {{ rtrim(rtrim(number_format((float) $line->cust_discount_pct, 2), '0'), '.') }}% discount — {{ number_format($custDisc, 2) }}</span>
-                            @endif
-                        </td>
-                        <td class="num">{{ rtrim(rtrim(number_format($qty, 3), '0'), '.') }}</td>
-                        <td>{{ $line->unit }}</td>
-                        <td class="num">{{ number_format($eff, 2) }}</td>
-                        <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
-                    </tr>
+                    @foreach($blocks as $b => $block)
+                        <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                            <td class="itemno">{{ $b === 0 ? $itemNo : '' }}</td>
+                            <td>
+                                {!! nl2br(e($block)) !!}
+                                @if($b === $last)
+                                    @if($line->code)<br><span class="partno">Part-No.: {{ $line->code }}</span>@endif
+                                    @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
+                                    @if($custDisc > 0)
+                                        <br><span class="sub">Less {{ rtrim(rtrim(number_format((float) $line->cust_discount_pct, 2), '0'), '.') }}% discount — {{ number_format($custDisc, 2) }}</span>
+                                    @endif
+                                @endif
+                            </td>
+                            <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format($qty, 3), '0'), '.') : '' }}</td>
+                            <td>{{ $b === 0 ? $line->unit : '' }}</td>
+                            <td class="num">{{ $b === 0 ? number_format($eff, 2) : '' }}</td>
+                            <td class="num">{{ $b === 0 ? number_format((float) $line->line_total, 2) : '' }}</td>
+                        </tr>
+                    @endforeach
                 @endif
             @empty
                 <tr><td colspan="6">No line items.</td></tr>

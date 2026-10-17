@@ -3,7 +3,6 @@
 <head>
     <meta charset="utf-8">
     <style>
-        @page { margin: 28px 34px; }
         body { font-family: DejaVu Sans, sans-serif; font-size: 11px; color: #1f2937; }
         .navy { color: #28364b; }
         .bar { background: #28364b; color: #fff; padding: 4px 8px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
@@ -14,6 +13,8 @@
         table.items tbody td { padding: 4px 8px; font-size: 11px; border-bottom: 1px solid #eee; vertical-align: top; }
         .num { text-align: right; }
         .totals td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
+        @include('pdf.partials.footer-css')
     </style>
 </head>
 <body>
@@ -89,13 +90,21 @@
                 @if($line->is_heading)
                     <tr><td colspan="5" style="font-weight:bold; padding-top:7px;">{!! nl2br(e($line->description)) !!}</td></tr>
                 @else
-                    <tr>
-                        <td>{!! nl2br(e($line->description)) !!}</td>
-                        <td>{{ $line->unit }}</td>
-                        <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                        <td class="num">{{ number_format((float) $line->unit_price, 2) }}</td>
-                        <td class="num">{{ number_format((float) $line->amount, 2) }}</td>
-                    </tr>
+                    @php
+                        // One row per block, so a long description can carry on
+                        // over a page break instead of jumping the page whole.
+                        $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                        $last = count($blocks) - 1;
+                    @endphp
+                    @foreach($blocks as $b => $block)
+                        <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                            <td>{!! nl2br(e($block)) !!}</td>
+                            <td>{{ $b === 0 ? $line->unit : '' }}</td>
+                            <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') : '' }}</td>
+                            <td class="num">{{ $b === 0 ? number_format((float) $line->unit_price, 2) : '' }}</td>
+                            <td class="num">{{ $b === 0 ? number_format((float) $line->amount, 2) : '' }}</td>
+                        </tr>
+                    @endforeach
                 @endif
             @empty
                 <tr><td colspan="5">No line items.</td></tr>
@@ -135,11 +144,9 @@
         <p style="margin-top:14px; font-size:10px; color:#444;"><strong>Notes:</strong> {{ $doc->notes }}</p>
     @endif
 
-    {{-- Footer --}}
-    <div style="margin-top:26px; text-align:center;">
-        @if($logo)<img src="{{ $logo }}" style="height:34px;"><br>@endif
-        <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
-    </div>
+    {{-- This one had no footer at all, only a logo and a UEN, so it went out
+         looking like a different company again. --}}
+    @include('pdf.partials.footer')
 
 </body>
 </html>

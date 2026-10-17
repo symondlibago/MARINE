@@ -15,6 +15,7 @@
         .num { text-align: right; }
         .sub { color: #28364b; font-size: 10px; }
         .tot td { padding: 3px 8px; font-size: 11px; }
+        @include('pdf.partials.items-css')
         @include('pdf.partials.footer-css')
     </style>
 </head>
@@ -112,18 +113,28 @@
         </thead>
         <tbody>
             @forelse($po->items as $idx => $line)
-                <tr>
-                    <td>{{ $idx + 1 }}</td>
-                    <td>
-                        {!! nl2br(e($line->description)) !!}
-                        @if($line->impa_no)<br><span class="sub">IMPA/ISSA/Part No. {{ $line->impa_no }}</span>@endif
-                        @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
-                    </td>
-                    <td>{{ $line->unit ?: '—' }}</td>
-                    <td class="num">{{ rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') }}</td>
-                    <td class="num">{{ number_format((float) $line->unit_cost, 2) }}</td>
-                    <td class="num">{{ number_format((float) $line->line_total, 2) }}</td>
-                </tr>
+                @php
+                    // One row per block, so a long description can carry on over
+                    // a page break instead of jumping the page whole.
+                    $blocks = \App\Support\PdfBlocks::split($line->description) ?: [''];
+                    $last = count($blocks) - 1;
+                @endphp
+                @foreach($blocks as $b => $block)
+                    <tr class="{{ $b < $last ? 'block-open' : '' }} {{ $b > 0 ? 'block-cont' : '' }}">
+                        <td>{{ $b === 0 ? $idx + 1 : '' }}</td>
+                        <td>
+                            {!! nl2br(e($block)) !!}
+                            @if($b === $last)
+                                @if($line->impa_no)<br><span class="sub">IMPA/ISSA/Part No. {{ $line->impa_no }}</span>@endif
+                                @if($line->remarks)<br><span class="sub">{!! nl2br(e($line->remarks)) !!}</span>@endif
+                            @endif
+                        </td>
+                        <td>{{ $b === 0 ? ($line->unit ?: '—') : '' }}</td>
+                        <td class="num">{{ $b === 0 ? rtrim(rtrim(number_format((float) $line->qty, 3), '0'), '.') : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format((float) $line->unit_cost, 2) : '' }}</td>
+                        <td class="num">{{ $b === 0 ? number_format((float) $line->line_total, 2) : '' }}</td>
+                    </tr>
+                @endforeach
             @empty
                 <tr><td colspan="6">No line items on this purchase order.</td></tr>
             @endforelse
@@ -161,11 +172,8 @@
         </div>
     @endif
 
-    {{-- Footer --}}
-    <div style="margin-top:24px; text-align:center;">
-        @if($logo)<img src="{{ $logo }}" style="height:30px;"><br>@endif
-        <span style="font-size:9px; color:#777;">UEN: {{ $company['uen'] }}</span>
-    </div>
+    {{-- No second logo and no second UEN: both are in the letterhead and the
+         footer already, and Dru marked the repeat "take out". --}}
 
     @include('pdf.partials.footer')
 
