@@ -36,6 +36,20 @@ export default function Customers() {
         { key: "currency", label: "Currency" },
         { key: "is_active", label: "Status", render: statusPill },
       ]}
+      // The whole record, not just the six columns the table shows — an export
+      // is for taking the list somewhere else, so the address and the notes
+      // have to travel with it. Status is spelled out rather than 1/0 so the
+      // file reads the same way the screen does.
+      exportColumns={[
+        { key: "customer_no", label: "Customer No." },
+        { key: "name", label: "Name" },
+        { key: "email", label: "Email" },
+        { key: "phone", label: "Phone" },
+        { key: "address", label: "Address" },
+        { key: "currency", label: "Currency" },
+        { key: "is_active", label: "Status", value: (r) => (r.is_active ? "Active" : "Inactive") },
+        { key: "notes", label: "Notes" },
+      ]}
       fields={[
         { name: "name", label: "Customer name", required: true },
         { name: "address", label: "Address (shown on quotations & orders)", type: "textarea" },

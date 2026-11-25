@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import Modal from "./ui/Modal";
 import Select from "./ui/Select";
 import { Spinner, TableSkeleton } from "./ui/Loading";
 import { useConfirm } from "./ui/confirm";
+import { downloadCsv } from "./ui/exportCsv";
 
 const inputCls =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b]";
@@ -56,7 +57,7 @@ function CheckboxGroup({ value, options, onChange, highlight = [] }) {
   );
 }
 
-export default function MasterCrud({ title, singular, queryKey, api, columns, fields, emptyRow }) {
+export default function MasterCrud({ title, singular, queryKey, api, columns, fields, emptyRow, exportColumns }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [search, setSearch] = useState("");
@@ -64,6 +65,47 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyRow);
+  const [exporting, setExporting] = useState(false);
+
+  /**
+   * Download every record as a CSV — the whole list, not the page on screen.
+   *
+   * The list endpoint paginates only when it is ASKED to (see
+   * CustomerController::index), so leaving `page` and `per_page` off returns
+   * all of them in one request. That is why this re-fetches rather than
+   * exporting `rows`: `rows` is the fifty the table is showing, and Dru asked
+   * for all 934.
+   *
+   * The search box still applies, so a filtered view exports what it shows.
+   * Anything that goes wrong is reported and nothing is downloaded — a
+   * truncated CSV that looks complete is worse than no CSV.
+   */
+  const exportAll = async () => {
+    setExporting(true);
+
+    try {
+      const response = await api.list(search ? { search } : {});
+      const all = response?.data?.data ?? [];
+
+      if (all.length === 0) {
+        toast.error(`No ${title.toLowerCase()} to export.`);
+
+        return;
+      }
+
+      downloadCsv(
+        `${queryKey}-${new Date().toISOString().slice(0, 10)}.csv`,
+        exportColumns.map((c) => c.label),
+        all.map((row) => exportColumns.map((c) => (c.value ? c.value(row) : row[c.key] ?? ""))),
+      );
+
+      toast.success(`${all.length.toLocaleString()} ${title.toLowerCase()} exported.`);
+    } catch (e) {
+      toast.error(e?.response?.data?.message ?? `Could not export the ${title.toLowerCase()}.`);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Reset to the first page whenever the search term changes.
   useEffect(() => {
@@ -135,9 +177,22 @@ export default function MasterCrud({ title, singular, queryKey, api, columns, fi
           <h1 className="text-2xl font-bold text-[#28364b]">{title}</h1>
           <p className="text-sm text-slate-500">{total.toLocaleString()} record{total === 1 ? "" : "s"}</p>
         </div>
-        <button onClick={openCreate} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63]">
-          <Plus className="h-4 w-4" /> New {singular}
-        </button>
+        <div className="flex items-center gap-2">
+          {exportColumns && (
+            <button
+              onClick={exportAll}
+              disabled={exporting}
+              title={`Download every ${singular.toLowerCase()} as a CSV, not just this page`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-[#28364b] transition-colors hover:border-[#28364b] hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? <Spinner className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+              {exporting ? "Preparing…" : "Export CSV"}
+            </button>
+          )}
+          <button onClick={openCreate} className="inline-flex items-center gap-1 rounded-lg bg-[#28364b] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3c4a63]">
+            <Plus className="h-4 w-4" /> New {singular}
+          </button>
+        </div>
       </div>
 
       <div className="relative max-w-sm">

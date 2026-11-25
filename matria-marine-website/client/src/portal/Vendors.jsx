@@ -50,6 +50,19 @@ export default function Vendors() {
         { key: "currency", label: "Currency" },
         { key: "is_active", label: "Status", render: statusPill },
       ]}
+      // The whole record, not just the seven columns the table shows — see the
+      // note on Customers. An export is for taking the list elsewhere.
+      exportColumns={[
+        { key: "vendor_no", label: "Vendor No." },
+        { key: "name", label: "Name" },
+        { key: "contact_name", label: "Contact" },
+        { key: "email", label: "Email" },
+        { key: "phone", label: "Phone" },
+        { key: "address", label: "Address" },
+        { key: "currency", label: "Currency" },
+        { key: "is_active", label: "Status", value: (r) => (r.is_active ? "Active" : "Inactive") },
+        { key: "notes", label: "Notes" },
+      ]}
       fields={[
         { name: "name", label: "Name", required: true },
         { name: "contact_name", label: "Contact name" },
