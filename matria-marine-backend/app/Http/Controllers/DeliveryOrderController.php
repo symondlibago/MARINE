@@ -7,6 +7,7 @@ use App\Models\DeliveryOrderAttachment;
 use App\Models\Offer;
 use App\Models\PurchaseOrder;
 use App\Support\DocNumber;
+use App\Support\DocumentOrigin;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,7 @@ use Illuminate\Validation\Rule;
 
 class DeliveryOrderController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $orders = DeliveryOrder::with([
             'rfq:id,reference,ship_name',
@@ -23,6 +24,7 @@ class DeliveryOrderController extends Controller
             'creator:id,name',
             'purchaseOrder:id,po_number',
         ])
+            ->origin(DocumentOrigin::fromRequest($request))
             ->orderByDesc('id')
             ->get();
 

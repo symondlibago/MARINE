@@ -92,6 +92,10 @@ export function AccountCodeCell({ value, onChange, className = "", style, placeh
         placeholder={placeholder}
         portal
         menuWidth={300}
+        // The chart runs to dozens of accounts and the people coding lines
+        // know the numbers by heart. Type 4100, press Enter, next line.
+        searchable
+        searchPlaceholder="Type a code or name…"
         triggerClassName={`px-2 py-1.5 ${legacy ? "!border-amber-300 bg-amber-50" : ""}`}
       />
     </div>
@@ -126,6 +130,8 @@ export default function AccountSelect({
         value={value ?? ""}
         onChange={onChange}
         placeholder={isLoading ? "Loading chart…" : "Choose account…"}
+        searchable
+        searchPlaceholder="Type a code or name…"
         options={[
           ...(offChart ? [{ value, label: `${value} — not on the chart` }] : []),
           ...options.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` })),

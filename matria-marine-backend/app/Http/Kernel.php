@@ -67,6 +67,9 @@ class Kernel extends HttpKernel
         'active' => \App\Http\Middleware\EnsureUserIsActive::class,
         // Which screens an admin was given — see App\Support\PortalPages.
         'page.access' => \App\Http\Middleware\EnsurePageAccess::class,
+        // The provision module's own gate: which rank may do what, and the
+        // vessel a crew account is pinned to — see App\Support\Inventory\VesselAccess.
+        'inventory.access' => \App\Http\Middleware\EnsureInventoryAccess::class,
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,

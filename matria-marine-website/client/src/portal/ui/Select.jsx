@@ -38,6 +38,10 @@ export default function Select({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // Which option Enter would take. Typing is the fast path on a long chart of
+  // accounts — "4100", Enter, done — so there is always exactly one option
+  // armed, and the arrows move it.
+  const [highlight, setHighlight] = useState(0);
   const [coords, setCoords] = useState(null);
   const ref = useRef(null);
   const btnRef = useRef(null);
@@ -54,6 +58,13 @@ export default function Select({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Keep the armed option on screen when the arrows walk past the fold.
+  // `nearest` rather than `center` so the list does not lurch on every press.
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector(`[data-idx="${highlight}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [highlight, open]);
 
   // Keep a portaled menu pinned to its trigger while the page moves under it.
   useLayoutEffect(() => {
@@ -87,27 +98,65 @@ export default function Select({
 
   const opts = options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
   const selected = opts.find((o) => o.value === value);
-  const visibleOpts = searchable && search.trim()
-    ? opts.filter((o) => String(o.label).toLowerCase().includes(search.trim().toLowerCase()))
-    : opts;
+  const needle = search.trim().toLowerCase();
+  // Matched against the value and the short form as well as the label, so a
+  // code finds its account whichever of the three it was written into.
+  const visibleOpts =
+    searchable && needle
+      ? opts.filter((o) =>
+          [o.label, o.value, o.short].some((field) => String(field ?? "").toLowerCase().includes(needle))
+        )
+      : opts;
 
-  const items = visibleOpts.map((o) => (
+  const pick = (option) => {
+    if (!option) return;
+    onChange(option.value);
+    setOpen(false);
+  };
+
+  const items = visibleOpts.map((o, i) => (
     <li key={o.value}>
       <button
         type="button"
-        onClick={() => {
-          onChange(o.value);
-          setOpen(false);
-        }}
-        className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-slate-50 ${
-          o.value === value ? "font-medium text-[#28364b]" : "text-slate-600"
-        }`}
+        data-idx={i}
+        onClick={() => pick(o)}
+        onMouseEnter={() => setHighlight(i)}
+        className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors ${
+          i === highlight ? "bg-slate-100" : ""
+        } ${o.value === value ? "font-medium text-[#28364b]" : "text-slate-600"}`}
       >
         <span className="truncate">{o.label}</span>
         {o.value === value && <Check className="h-3.5 w-3.5 shrink-0" />}
       </button>
     </li>
   ));
+
+  /**
+   * Type, Enter, done — and the arrows for when the top match is not the one.
+   *
+   * Enter is deliberately the ONLY key that commits: a chart of accounts has
+   * near-misses in it ("5100" and "5100-01"), so arming on first keystroke and
+   * committing on blur would book a line to the wrong account without anybody
+   * pressing anything.
+   */
+  const onSearchKeyDown = (event) => {
+    event.stopPropagation();
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlight((h) => Math.min(h + 1, visibleOpts.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (event.key === "Enter") {
+      // Inside a form, Enter in this box must not submit the document.
+      event.preventDefault();
+      pick(visibleOpts[highlight]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+    }
+  };
 
   const menuContents = (
     <>
@@ -118,8 +167,13 @@ export default function Select({
             <input
               autoFocus
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              onKeyDown={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                // Every keystroke re-arms the top match, so what Enter takes
+                // is always what the list is showing first.
+                setHighlight(0);
+              }}
+              onKeyDown={onSearchKeyDown}
               placeholder={searchPlaceholder}
               className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
             />
@@ -145,6 +199,10 @@ export default function Select({
         type="button"
         onClick={() => {
           setSearch("");
+          // Opening arms whatever is already chosen, so Enter straight after
+          // opening keeps the current value instead of taking the top of the
+          // list — which on these pickers is the "choose…" placeholder.
+          setHighlight(Math.max(0, opts.findIndex((o) => o.value === value)));
           setOpen((o) => !o);
         }}
         className={`flex w-full items-center justify-between gap-1 rounded-lg border border-slate-200 bg-white text-sm transition-colors hover:border-slate-300 focus:border-[#28364b] focus:outline-none focus:ring-1 focus:ring-[#28364b] ${triggerClassName}`}

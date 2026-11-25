@@ -24,6 +24,7 @@ class User extends Authenticatable
         'username',
         'password',
         'role',
+        'vessel_id',
         'phone',
         'is_active',
     ];
@@ -38,4 +39,26 @@ class User extends Authenticatable
         'password' => 'hashed',
         'is_active' => 'boolean',
     ];
+
+    /**
+     * The ship this account sails on, for a master or a cook.
+     *
+     * Null for the office, who work across the fleet. Which ranks are which,
+     * and what each may do, is defined in App\Support\Inventory\VesselAccess —
+     * these two helpers only save every caller from importing it.
+     */
+    public function vessel()
+    {
+        return $this->belongsTo(\App\Models\Inventory\Vessel::class, 'vessel_id');
+    }
+
+    public function isOffice(): bool
+    {
+        return \App\Support\Inventory\VesselAccess::isOffice($this);
+    }
+
+    public function isOnBoard(): bool
+    {
+        return \App\Support\Inventory\VesselAccess::isOnBoard($this);
+    }
 }

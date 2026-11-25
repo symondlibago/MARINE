@@ -1,0 +1,64 @@
+# Matria Marine — what does not belong in the repository.
+#
+# A file listed here is ignored only if git is not already tracking it.
+# Anything already committed stays committed until it is removed from the
+# index with `git rm --cached <path>` — adding the line alone changes nothing.
+
+# ---------------------------------------------------------------- secrets
+#
+# .env is the live file and was never tracked. .env.example WAS tracked, and
+# its working copy on this machine holds the real production values rather
+# than placeholders — which is why it is ignored outright rather than trusted
+# to stay clean. Nothing with a credential in it goes to GitHub.
+.env
+.env.*
+*.env
+!.env.testing
+
+# ------------------------------------------------------------ dependencies
+#
+# Restored from the lockfile on every machine and by every deploy. Vercel and
+# Railway install from package.json / composer.json and never read these.
+node_modules/
+vendor/
+.pnpm-store/
+
+# ----------------------------------------------------------- build output
+#
+# Generated from source. Vercel builds its own copy; a committed one only goes
+# stale and makes every diff unreadable.
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# -------------------------------------------------------------- Laravel
+matria-marine-backend/storage/*.key
+matria-marine-backend/storage/framework/cache/data/*
+matria-marine-backend/storage/framework/sessions/*
+matria-marine-backend/storage/framework/testing/*
+matria-marine-backend/storage/framework/views/*
+matria-marine-backend/storage/logs/*
+matria-marine-backend/public/storage
+matria-marine-backend/public/hot
+matria-marine-backend/bootstrap/cache/*.php
+!**/.gitkeep
+
+# --------------------------------------------------------- source workbooks
+#
+# The spreadsheets and PDFs the system was built from — the owner's provision
+# workbook, the chart of accounts, the payroll template. Reference material,
+# some of it with real company figures in it, and none of it read by any code.
+# Kept on disk, kept out of the repository.
+for seed/
+
+# --------------------------------------------------------------- the local
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+coverage/
+.phpunit.result.cache

@@ -21,6 +21,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // The Vessel Provision Inventory module keeps its migrations in their own
+        // folder; the migrator only globs the top level, so register it here.
+        $this->loadMigrationsFrom(database_path('migrations/inventory'));
+
         // Create a symbolic link from "public/storage" to "storage/app/public"
         if (!file_exists(public_path('storage'))) {
             app('files')->link(

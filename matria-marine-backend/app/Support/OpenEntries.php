@@ -35,10 +35,26 @@ class OpenEntries
      *   parties: array, grand_totals: array, party_count: int, entry_count: int
      * }
      */
-    public static function build(string $type, ?Carbon $asOf = null, bool $includeUnapplied = true, bool $includeDrafts = false): array
-    {
+    /**
+     * @param  string|null  $origin  one operation's documents only, or null
+     *                               for the company's whole book. See
+     *                               App\Support\DocumentOrigin.
+     */
+    public static function build(
+        string $type,
+        ?Carbon $asOf = null,
+        bool $includeUnapplied = true,
+        bool $includeDrafts = false,
+        ?string $origin = null
+    ): array {
         $asOf = ($asOf ?: Carbon::today())->endOfDay();
         $isCustomer = $type === 'customer';
+
+        // Money on account belongs to no operation: it is cash banked with
+        // nothing yet applied to it. Narrowed to one operation's book it would
+        // have to appear in both or be invented for one, so it appears only in
+        // the whole book.
+        $includeUnapplied = $includeUnapplied && $origin === null;
 
         // 1. Every document that existed on the date. Settled ones are kept
         //    at this stage — they are not printed, but a payment applied to
@@ -47,7 +63,7 @@ class OpenEntries
         //    No early return when this is empty: a party can hold money on
         //    account with no document raised against it yet, and that balance
         //    still has to be reported.
-        $documents = self::documentsAsOf($isCustomer, $asOf, $includeDrafts);
+        $documents = self::documentsAsOf($isCustomer, $asOf, $includeDrafts, $origin);
         $docIds = $documents->pluck('id')->all();
 
         // 2 & 3. Payments applied and credit notes issued on or before the date.
@@ -153,11 +169,16 @@ class OpenEntries
     /* ------------------------------------------------------------------ */
 
     /** Documents that existed on the date, whatever their balance. */
-    private static function documentsAsOf(bool $isCustomer, Carbon $asOf, bool $includeDrafts = false): Collection
-    {
+    private static function documentsAsOf(
+        bool $isCustomer,
+        Carbon $asOf,
+        bool $includeDrafts = false,
+        ?string $origin = null
+    ): Collection {
         if ($isCustomer) {
             return CustomerInvoice::issued($includeDrafts)
                 ->whereNotNull('customer_id')
+                ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
                 ->whereDate('issue_date', '<=', $asOf)
                 ->with('rfq:id,reference,ship_name')
                 // exchange_rate comes along because a receivable has to be
@@ -169,6 +190,7 @@ class OpenEntries
 
         return PurchaseOrder::live()
             ->whereNotNull('vendor_id')
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             // Not every PO carries an issued date; fall back to when it was raised.
             ->where(fn ($q) => $q->whereDate('issued_date', '<=', $asOf)
                 ->orWhere(fn ($w) => $w->whereNull('issued_date')->whereDate('created_at', '<=', $asOf)))

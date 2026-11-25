@@ -43,7 +43,7 @@ class AuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'user' => $user,
+            'user' => $this->payload($user),
             'access_token' => $token,
             'token_type' => 'Bearer',
         ]);
@@ -59,16 +59,35 @@ class AuthController extends Controller
 
     public function user(Request $request)
     {
-        $user = $request->user();
-
         return response()->json([
             'success' => true,
-            'data' => array_merge($user->toArray(), [
-                // The screens this person may open, so the menu shows only
-                // those. The server enforces the same list on every request —
-                // this only decides what is drawn.
-                'pages' => \App\Support\PortalPages::visibleTo($user),
-            ]),
+            'data' => $this->payload($request->user()),
+        ]);
+    }
+
+    /**
+     * The account as the SPA needs it, from both login and /user.
+     *
+     * One shape for both, because the client makes the same two decisions off
+     * either one: which menu to draw, and where to land. Getting them from
+     * different payloads is how a vessel account ends up sent to procurement
+     * on login and to its own ship on a refresh.
+     */
+    private function payload(User $user): array
+    {
+        return array_merge($user->toArray(), [
+            // The screens this person may open, so the menu shows only those.
+            // The server enforces the same list on every request — this only
+            // decides what is drawn.
+            'pages' => \App\Support\PortalPages::visibleTo($user),
+            // A master or a cook belongs to one ship and works nowhere else;
+            // the office has no vessel and works across the fleet. The client
+            // routes on this rather than matching role strings of its own.
+            'scope' => \App\Support\Inventory\VesselAccess::scope($user),
+            'rank' => \App\Support\Inventory\VesselAccess::RANKS[$user->role] ?? null,
+            'vessel' => $user->vessel_id
+                ? $user->vessel()->get(['id', 'name', 'is_active'])->first()
+                : null,
         ]);
     }
 

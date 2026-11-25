@@ -5,8 +5,10 @@ import {
   chooseFolder,
   folderPermission,
   isSupported,
+  MAIN,
   regrantFolder,
   savedFolder,
+  scopeFor,
 } from "./localBackup";
 import { downloadBundleZip, mirrorDocument } from "./mirror";
 
@@ -41,7 +43,11 @@ export default function BackupButton({ type, id, number, className = "" }) {
     setBusy(true);
 
     try {
-      let root = await savedFolder();
+      // Payroll has a folder of its own when one has been set, because that
+      // one holds every salary in the company. Where it has not been set it
+      // falls back to the general folder, which is how this always worked.
+      const scope = scopeFor(type);
+      let root = scope === MAIN ? await savedFolder(MAIN) : (await savedFolder(scope)) ?? (await savedFolder(MAIN));
 
       if (root && (await folderPermission(root)) !== "granted") {
         // The grant lapses when the browser restarts — one click renews it.
@@ -50,7 +56,7 @@ export default function BackupButton({ type, id, number, className = "" }) {
 
       if (!root) {
         toast.info("Choose your backup folder — this browser will remember it.");
-        root = await chooseFolder();
+        root = await chooseFolder(MAIN);
       }
 
       const result = await mirrorDocument(root, type, id, {

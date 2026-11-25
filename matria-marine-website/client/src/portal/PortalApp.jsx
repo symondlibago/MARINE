@@ -1,6 +1,7 @@
 import { Route, Switch, Redirect, Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { authAPI, isAuthenticated } from "@/pages/api";
+import { homeFor } from "@/lib/home";
 import { canSee, pageForPath } from "./ui/pages";
 import PortalLayout from "./PortalLayout";
 import PortalLogin from "./PortalLogin";
@@ -63,6 +64,15 @@ function RequireAuth({ children }) {
   const user = data?.data ?? data?.user ?? data;
 
   if (!STAFF_ROLES.includes(user?.role)) {
+    // A vessel's master or cook has a system of their own, so they are sent to
+    // it rather than refused. This is the catch-all for every way into the
+    // portal — a bookmark, the steering wheel on the public site, a link
+    // somebody pasted — which is why it is here and not on each of them.
+    if (user?.scope === "vessel") {
+      window.location.assign(homeFor(user));
+      return null;
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 text-center">
         <p className="text-lg font-semibold text-[#28364b]">Not authorized</p>

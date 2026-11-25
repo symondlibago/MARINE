@@ -8,12 +8,23 @@ use Illuminate\Support\Str;
 
 class CustomerInvoice extends Model
 {
-    use HasAccountCode;
+    use Concerns\StampsOrigin, HasAccountCode;
+
+    /**
+     * Nearest parent first. An invoice raised with no offer and no enquiry
+     * behind it is a direct sale, and the chandling trade's own.
+     */
+    protected array $originParents = [
+        'delivery_order_id' => DeliveryOrder::class,
+        'offer_id' => Offer::class,
+        'rfq_id' => Rfq::class,
+    ];
 
     /** Marine supply is a zero-rated export almost every time. */
     protected string $defaultAccountCode = Account::DEFAULT_SALES;
 
     protected $fillable = [
+        'origin',
         'account_code',
         'invoice_number',
         'token',

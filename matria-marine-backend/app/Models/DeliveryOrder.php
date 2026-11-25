@@ -7,7 +7,20 @@ use Illuminate\Support\Facades\DB;
 
 class DeliveryOrder extends Model
 {
+    use Concerns\StampsOrigin;
+
+    /**
+     * The offer first, because that is what a delivery order is built from;
+     * the enquiry behind it is the same answer by a longer road.
+     */
+    protected array $originParents = [
+        'offer_id' => Offer::class,
+        'purchase_order_id' => PurchaseOrder::class,
+        'rfq_id' => Rfq::class,
+    ];
+
     protected $fillable = [
+        'origin',
         'do_number',
         'proforma_number',
         'offer_id',

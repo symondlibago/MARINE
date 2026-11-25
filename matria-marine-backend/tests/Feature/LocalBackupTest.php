@@ -76,9 +76,59 @@ class LocalBackupTest extends TestCase
 
     // ------------------------------------------------------------- the folder
 
-    public function test_folder_is_type_then_year_then_number_and_party(): void
+    public function test_folder_is_type_then_year_then_number_party_and_ship(): void
     {
         $rfq = $this->enquiry();
+
+        $this->assertSame(
+            'ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping - MV Pacific Star',
+            BackupBundle::make('enquiry', $rfq->id)->folder()
+        );
+    }
+
+    /**
+     * The ship and the customer's own reference are how a folder is recognised.
+     *
+     * A customer with twenty vessels raises twenty jobs a month, and nobody
+     * searching the backup remembers which MMS-QTN number was which. The ship
+     * narrows it to one, and their reference is what they quote back in email.
+     */
+    public function test_the_folder_names_the_ship_and_their_reference(): void
+    {
+        $rfq = $this->enquiry(['customer_reference' => 'PO-88213']);
+
+        $this->assertSame(
+            'ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping - MV Pacific Star [PO-88213]',
+            BackupBundle::make('enquiry', $rfq->id)->folder()
+        );
+    }
+
+    /**
+     * A long company name is trimmed before the ship is, not after it.
+     *
+     * Everything shares one budget — Windows gives up at 260 characters for a
+     * whole path — and the party name is both the longest and the least useful
+     * part, so it is the one that gives way.
+     */
+    public function test_a_long_customer_name_never_pushes_the_ship_off_the_end(): void
+    {
+        $rfq = $this->enquiry(['customer_reference' => 'PO-88213']);
+        $rfq->customer->update([
+            'name' => 'Pacific International Shipmanagement and Chartering Services Private Limited',
+        ]);
+
+        $folder = BackupBundle::make('enquiry', $rfq->fresh()->id)->folder();
+
+        $this->assertStringContainsString('MV Pacific Star', $folder);
+        $this->assertStringContainsString('[PO-88213]', $folder);
+        $this->assertStringEndsWith('[PO-88213]', $folder);
+        $this->assertLessThanOrEqual(120, mb_strlen(basename($folder)));
+    }
+
+    /** A document that names no ship is simply left without one. */
+    public function test_a_document_with_no_ship_keeps_the_old_shape(): void
+    {
+        $rfq = $this->enquiry(['ship_name' => null]);
 
         $this->assertSame(
             'ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping',
@@ -111,7 +161,7 @@ class LocalBackupTest extends TestCase
         ]);
 
         $this->assertSame(
-            'PURCHASE ORDERS/2026/MMS-PO-2026-000041 (MMS-QTN-2026-00023) Sin Chew Marine',
+            'PURCHASE ORDERS/2026/MMS-PO-2026-000041 (MMS-QTN-2026-00023) Sin Chew Marine - MV Pacific Star',
             BackupBundle::make('purchase_order', $po->id)->folder()
         );
     }
@@ -176,7 +226,7 @@ class LocalBackupTest extends TestCase
             ->assertOk()
             ->json('data');
 
-        $this->assertSame('ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping', $manifest['folder']);
+        $this->assertSame('ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping - MV Pacific Star', $manifest['folder']);
         $this->assertArrayHasKey('data.json', $manifest['inline']);
         $this->assertArrayHasKey('line-items.csv', $manifest['inline']);
         $this->assertArrayHasKey('summary.txt', $manifest['inline']);
@@ -281,6 +331,82 @@ class LocalBackupTest extends TestCase
         $this->assertStringNotContainsString('"token"', $json);
     }
 
+    /**
+     * Every PDF the backup lists must actually render.
+     *
+     * The bundle calls controller methods by name with a fixed argument list,
+     * which the compiler cannot check — so a printer that grows a parameter
+     * (the invoice's did, for its second-currency column) keeps appearing in
+     * the manifest and fails only when somebody presses Mirror, as "1 file
+     * unreadable" against a folder that then has no document in it.
+     *
+     * This walks the manifest and fetches every file, which is the one thing
+     * that catches that.
+     */
+    public function test_every_file_the_manifest_lists_can_actually_be_fetched(): void
+    {
+        $this->admin(['enquiries', 'invoices', 'purchase_orders']);
+
+        $rfq = $this->enquiry();
+        $customer = Customer::factory()->create(['name' => 'Seven Seas Shipping']);
+
+        $invoice = CustomerInvoice::create([
+            'invoice_number' => 'MMS-INV-2026-000333',
+            'customer_id' => $customer->id,
+            'rfq_id' => $rfq->id,
+            'currency' => 'SGD',
+            'status' => 'sent',
+            'issue_date' => '2026-03-25',
+        ]);
+        $invoice->items()->create([
+            'description' => 'Cylinder head gasket set',
+            'qty' => 4,
+            'unit' => 'set',
+            'unit_price' => 120,
+            'line_total' => 480,
+            'sort' => 1,
+        ]);
+
+        $vendor = Vendor::factory()->create(['name' => 'Sin Chew Marine']);
+        $po = PurchaseOrder::create([
+            'po_number' => 'MMS-PO-2026-000041',
+            'rfq_id' => $rfq->id,
+            'vendor_id' => $vendor->id,
+            'currency' => 'SGD',
+            'status' => 'issued',
+            'issued_date' => '2026-03-20',
+        ]);
+
+        // Hyphenated in the URL — the only spelling the routes accept, so that
+        // page access cannot be side-stepped through a second address.
+        foreach ([['enquiry', $rfq->id], ['invoice', $invoice->id], ['purchase-order', $po->id]] as [$type, $id]) {
+            $binaries = $this->getJson("/api/portal/backup/{$type}/{$id}")
+                ->assertOk()
+                ->json('data.binaries');
+
+            $this->assertNotEmpty($binaries, "{$type} should list at least its own PDF");
+
+            foreach ($binaries as $file) {
+                $response = $this->get("/api/portal/backup/{$type}/{$id}/file/{$file['index']}");
+
+                $this->assertSame(
+                    200,
+                    $response->getStatusCode(),
+                    "{$type} file “{$file['name']}” is listed in the manifest but could not be fetched"
+                );
+
+                // A refusal comes back as JSON, so a file response that is not
+                // JSON is a real file. The body itself is a download and does
+                // not read back through getContent().
+                $this->assertStringNotContainsString(
+                    'application/json',
+                    (string) $response->headers->get('content-type'),
+                    "{$type} file “{$file['name']}” came back as an error, not a file"
+                );
+            }
+        }
+    }
+
     public function test_the_csv_carries_a_bom_so_excel_reads_it_correctly(): void
     {
         $this->admin(['enquiries']);
@@ -317,7 +443,7 @@ class LocalBackupTest extends TestCase
         $zip->close();
         @unlink($path);
 
-        $folder = 'ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping';
+        $folder = 'ENQUIRIES/2026/MMS-QTN-2026-00023 Seven Seas Shipping - MV Pacific Star';
         $this->assertContains($folder.'/data.json', $inside);
         $this->assertContains($folder.'/summary.txt', $inside);
         $this->assertContains($folder.'/line-items.csv', $inside);
@@ -656,6 +782,72 @@ class LocalBackupTest extends TestCase
 
         // If these two ever disagree, every document reads as changed for ever.
         $this->assertSame($listed['fingerprint'], $manifest['index_row']['fingerprint']);
+    }
+
+    /**
+     * The folder the pending list names must be the folder the manifest writes.
+     *
+     * The two are built by different queries — the list loads a handful of
+     * columns for hundreds of documents, the manifest loads one document whole
+     * — and the folder path is the key the browser matches them on. Load one
+     * column less on either side and the names drift apart: the document is
+     * written to one folder and looked for in another, so it reads "Never"
+     * however many times it is mirrored.
+     *
+     * That is precisely what adding the ship and the customer's reference to
+     * the folder name did to every purchase order that had one.
+     */
+    public function test_the_pending_list_folders_match_the_manifests(): void
+    {
+        $this->admin(['enquiries', 'invoices', 'purchase_orders']);
+
+        // A reference on the enquiry and nowhere else: the documents raised
+        // from it have to reach through the relation to find it, which is the
+        // load the manifest was missing.
+        $rfq = $this->enquiry(['customer_reference' => 'PO-XLMB5F']);
+        $customer = Customer::factory()->create(['name' => 'Seven Seas Shipping']);
+        $vendor = Vendor::factory()->create(['name' => 'Sin Chew Marine']);
+
+        $invoice = CustomerInvoice::create([
+            'invoice_number' => 'MMS-INV-2026-000327',
+            'customer_id' => $customer->id,
+            'rfq_id' => $rfq->id,
+            'currency' => 'SGD',
+            'status' => 'sent',
+            'issue_date' => '2026-03-25',
+        ]);
+
+        $po = PurchaseOrder::create([
+            'po_number' => 'MMS-PO-2026-000021',
+            'rfq_id' => $rfq->id,
+            'vendor_id' => $vendor->id,
+            'currency' => 'SGD',
+            'status' => 'issued',
+            'issued_date' => '2026-08-01',
+        ]);
+
+        $listed = collect($this->getJson('/api/portal/backup/pending')->assertOk()->json('data'))
+            ->keyBy('number');
+
+        $pairs = [
+            'MMS-QTN-2026-00023' => "enquiry/{$rfq->id}",
+            'MMS-INV-2026-000327' => "invoice/{$invoice->id}",
+            'MMS-PO-2026-000021' => "purchase-order/{$po->id}",
+        ];
+
+        foreach ($pairs as $number => $path) {
+            $manifest = $this->getJson("/api/portal/backup/{$path}")->assertOk()->json('data');
+
+            $this->assertSame(
+                $listed[$number]['folder'],
+                $manifest['folder'],
+                "{$number} is listed under one folder and written to another, so it can never read as backed up"
+            );
+
+            // The reference reached the name at all, rather than both sides
+            // agreeing on a name that quietly lost it.
+            $this->assertStringContainsString('[PO-XLMB5F]', $manifest['folder']);
+        }
     }
 
     /**

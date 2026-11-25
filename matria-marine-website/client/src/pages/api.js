@@ -26,6 +26,41 @@ api.interceptors.request.use(config => {
   return config;
 });
 
+/**
+ * Which operation's documents a portal screen is looking at.
+ *
+ * Two operations share one set of books. The buying screens — enquiries,
+ * offers, purchase orders, invoices, the accounting — are one set of
+ * components, mounted in two places: under /portal, where they show everything
+ * the company does, and under /inventory, where they show the fleet's own
+ * documents only.
+ *
+ * Which of the two is decided by where the browser is, because that is what the
+ * person is looking at. Standing in the fleet's pages you are looking at the
+ * fleet; standing in the portal you are looking at the whole business, which is
+ * what the accountant files.
+ *
+ * Attached here, once, rather than in each screen: there are a dozen of them
+ * and the one that forgot would quietly show the whole company's figures under
+ * a provisions heading.
+ */
+api.interceptors.request.use(config => {
+  if (!config.url?.startsWith('/api/portal')) return config;
+
+  // An explicit ?origin= in the address wins, for a link that wants to pin the
+  // view regardless of where it was followed from.
+  const asked = new URLSearchParams(window.location.search).get('origin');
+  const origin = (asked === 'inventory' || asked === 'procurement')
+    ? asked
+    : (window.location.pathname.startsWith('/inventory') ? 'inventory' : null);
+
+  if (origin) {
+    config.params = { origin, ...(config.params || {}) };
+  }
+
+  return config;
+});
+
 const apiUrl = (path) => `/api${path}`;
 
 export const authAPI = {

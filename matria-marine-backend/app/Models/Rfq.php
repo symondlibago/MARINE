@@ -7,10 +7,19 @@ use Illuminate\Database\Eloquent\Model;
 
 class Rfq extends Model
 {
-    use HasFactory;
+    use Concerns\StampsOrigin, HasFactory;
+
+    /**
+     * The head of the chain: an enquiry has no parent document, so its origin
+     * is whatever raised it. The bridge from a vessel's requisition says so
+     * explicitly; everything else is the chandling trade.
+     */
+    protected array $originParents = [];
 
     protected $fillable = [
+        'origin',
         'reference',
+        'requisition_id',
         'customer_id',
         'customer_reference',
         'priority',
@@ -33,6 +42,15 @@ class Rfq extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * The vessel's requisition this enquiry was raised from, where there was
+     * one. Null for the chandling trade, which is most of them.
+     */
+    public function requisition()
+    {
+        return $this->belongsTo(\App\Models\Inventory\Requisition::class, 'requisition_id');
     }
 
     public function items()

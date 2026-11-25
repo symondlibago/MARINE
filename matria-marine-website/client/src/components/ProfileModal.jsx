@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff, LayoutDashboard, UserCog } from 'lucide-react';
+import { X, User, Lock, LogOut, ChevronRight, Save, ArrowLeft, ShieldCheck, Loader2, Mail, KeyRound, Eye, EyeOff, LayoutDashboard, UserCog, Boxes } from 'lucide-react';
 import { authAPI } from '../pages/api'; 
 
 export default function ProfileModal({ isOpen, onClose, onLogout }) {
@@ -193,6 +193,16 @@ export default function ProfileModal({ isOpen, onClose, onLogout }) {
                         <div className="flex items-center gap-3">
                             <LayoutDashboard size={18} />
                             <span className="font-raleway font-semibold">Staff Portal</span>
+                        </div>
+                        <ChevronRight size={16} className="text-[#cebd88]" />
+                    </a>
+
+                    {/* Second operation: vessel provision inventory. Separate
+                        module, separate screens, same staff login. */}
+                    <a href="/inventory" className="w-full flex items-center justify-between p-4 rounded-lg bg-[#28364b] text-white hover:bg-[#3c4a63] transition-colors">
+                        <div className="flex items-center gap-3">
+                            <Boxes size={18} />
+                            <span className="font-raleway font-semibold">Inventory Management</span>
                         </div>
                         <ChevronRight size={16} className="text-[#cebd88]" />
                     </a>

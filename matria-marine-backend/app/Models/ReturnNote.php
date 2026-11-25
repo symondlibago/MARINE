@@ -6,7 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 
 class ReturnNote extends Model
 {
+    use Concerns\StampsOrigin;
+
+    /** Goods going back to the vendor they came from. */
+    protected array $originParents = [
+        'purchase_order_id' => PurchaseOrder::class,
+        'rfq_id' => Rfq::class,
+    ];
+
     protected $fillable = [
+        'origin',
         'rtn_number',
         'purchase_order_id',
         'rfq_id',

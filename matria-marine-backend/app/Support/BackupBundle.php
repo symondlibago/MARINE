@@ -4,15 +4,19 @@ namespace App\Support;
 
 use App\Http\Controllers\CreditMemoController;
 use App\Http\Controllers\CustomerInvoiceController;
+use App\Http\Controllers\Inventory\RequisitionController;
 use App\Http\Controllers\OfferController;
 use App\Http\Controllers\Payroll\PdfController as PayrollPdfController;
 use App\Http\Controllers\PurchaseOrderController;
 use App\Http\Controllers\RfqPdfController;
 use App\Models\CustomerInvoice;
+use App\Models\Inventory\Requisition;
 use App\Models\Offer;
 use App\Models\Payroll\Run;
 use App\Models\PurchaseOrder;
 use App\Models\Rfq;
+use App\Models\User;
+use App\Support\Inventory\VesselAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -52,9 +56,22 @@ class BackupBundle
         'offer' => 'OFFERS',
         'invoice' => 'INVOICES',
         'purchase_order' => 'PURCHASE ORDERS',
+        'requisition' => 'REQUISITIONS',
         'payroll_run' => 'PAYROLL',
         'payroll_employees' => 'PAYROLL',
     ];
+
+    /**
+     * Types kept apart from the rest of the backup.
+     *
+     * Payroll is every salary in the company, so Dru keeps it on its own drive
+     * rather than in the folder the whole office copies around. The browser
+     * writes these two into a second folder it was given separately, with its
+     * own _index.csv — see the client's localBackup module. Nothing here
+     * changes: the folder a bundle names is the same either way, it is only
+     * written under a different root.
+     */
+    public const PRIVATE_TYPES = ['payroll_run', 'payroll_employees'];
 
     /**
      * type => the portal page someone needs to back that document up.
@@ -74,6 +91,36 @@ class BackupBundle
     ];
 
     /**
+     * Types gated on the provision module rather than on a portal page.
+     *
+     * A vessel's requisition has no page in PortalPages — the module decides
+     * access by rank, in VesselAccess, and the fleet's paperwork belongs to the
+     * office. So the rule is asked of VesselAccess rather than a second copy of
+     * it being written out here.
+     */
+    private const OFFICE_TYPES = ['requisition'];
+
+    /**
+     * May this account back that type up?
+     *
+     * Backing a document up exposes nothing its own screen does not already
+     * show, so the right to mirror it is the right to read it. Two kinds of
+     * rule meet here — a portal page for the buying, the provision module's own
+     * ranks for a ship's requisition — and this is the one place that knows
+     * which types answer to which.
+     */
+    public static function mayBackUp(?User $user, string $type): bool
+    {
+        if (in_array($type, self::OFFICE_TYPES, true)) {
+            return VesselAccess::isOffice($user);
+        }
+
+        $page = self::pageFor($type);
+
+        return ! $page || PortalPages::canSee($user, $page);
+    }
+
+    /**
      * Types that are not filed under a year.
      *
      * The staff list is not a document from a particular month — it is the
@@ -86,6 +133,22 @@ class BackupBundle
 
     /** Longest an attachment's own filename may run. */
     private const FILE_MAX = 80;
+
+    /**
+     * The whole folder name, and the budget the parts of it share.
+     *
+     * Windows gives up at 260 characters for a complete path, and a folder here
+     * sits under a root, a type, a year and then a file of its own — so the
+     * name itself has to stay well inside that. The ship and the customer's
+     * reference are capped tightly and the party name takes whatever is left,
+     * because "BOMAR Shipmanagement GmbH & Co. KG" is the part that runs long
+     * and the part you need least to recognise the folder.
+     */
+    private const FOLDER_MAX = 120;
+
+    private const VESSEL_MAX = 26;
+
+    private const REF_MAX = 18;
 
     /**
      * @param  object  $model  an Eloquent document, or {@see BackupRoster} for
@@ -145,12 +208,23 @@ class BackupBundle
                 'items', 'customer', 'rfq:id,reference,ship_name,customer_reference,delivery_port',
             ])->findOrFail($id),
             'invoice' => CustomerInvoice::with([
-                'items', 'customer', 'rfq:id,reference,ship_name',
+                // customer_reference as well as ship_name: both are in the
+                // FOLDER NAME now, and the pending list computes that name
+                // from its own slim query. Load one less column here than it
+                // does and the two disagree — the browser then looks up a
+                // folder nobody wrote and calls the document never backed up,
+                // for ever. See the test that compares the two.
+                'items', 'customer', 'rfq:id,reference,ship_name,customer_reference',
                 'creditMemos.items',
             ])->findOrFail($id),
             'purchase_order' => PurchaseOrder::with([
                 'items', 'vendor', 'attachments', 'returnNote.items',
-                'rfq:id,reference,ship_name',
+                // Same reason as the invoice above: the folder name is built
+                // from both, so both have to be loaded.
+                'rfq:id,reference,ship_name,customer_reference',
+            ])->findOrFail($id),
+            'requisition' => Requisition::with([
+                'items', 'vessel', 'supplier', 'creator:id,name,email,phone',
             ])->findOrFail($id),
             'payroll_run' => Run::with('lines')->findOrFail($id),
             // One list, so the id is ignored — see BackupRoster.
@@ -173,6 +247,7 @@ class BackupBundle
             'offer' => $m->offer_number,
             'invoice' => $m->invoice_number,
             'purchase_order' => $m->po_number,
+            'requisition' => $m->req_number,
             // A payroll month is known by its month, not by a number.
             'payroll_run' => $m->period?->format('Y-m'),
             'payroll_employees' => 'EMPLOYEES',
@@ -189,9 +264,13 @@ class BackupBundle
             'offer' => $m->customer?->name ?: $m->customer_name,
             'invoice' => $m->customer?->name ?: $m->customer_name,
             'purchase_order' => $m->vendor?->name,
+            // The ship is the requisition's party in every sense that matters,
+            // and it is already carried by vessel(). What is useful beside it
+            // is who ended up supplying her, when that is settled.
+            'requisition' => $m->supplier?->name,
             'payroll_run' => $m->period?->format('F'),
             'payroll_employees' => 'Staff list',
-        } ?: 'Unknown');
+        } ?: ($this->type === 'requisition' ? '' : 'Unknown'));
     }
 
     /** The date the folder is filed under. */
@@ -206,6 +285,7 @@ class BackupBundle
             'offer' => null,
             'invoice' => $m->issue_date,
             'purchase_order' => $m->issued_date,
+            'requisition' => $m->req_date,
             // The month it pays, not the day it was keyed in.
             'payroll_run' => $m->period,
             'payroll_employees' => $m->updated_at,
@@ -224,13 +304,57 @@ class BackupBundle
      */
     public function enquiryReference(): ?string
     {
-        if (in_array($this->type, ['enquiry', 'offer', 'payroll_run', 'payroll_employees'], true)) {
+        if (in_array($this->type, ['enquiry', 'offer', 'requisition', 'payroll_run', 'payroll_employees'], true)) {
             return null;
         }
 
         $reference = $this->model->rfq?->reference;
 
         return $reference && $reference !== $this->number() ? $reference : null;
+    }
+
+    /**
+     * The ship the document is for, when it names one.
+     *
+     * Everything this company sells is sold against a vessel, so the ship is
+     * how somebody searching the backup folder actually recognises a job —
+     * more reliably than the customer, who has twenty ships, and far more than
+     * the number. Which is why it is in the folder name and not only inside
+     * summary.txt.
+     *
+     * A document raised out of an enquiry takes the enquiry's ship rather than
+     * carrying its own, so both are asked in turn.
+     */
+    public function vessel(): ?string
+    {
+        $m = $this->model;
+
+        return match ($this->type) {
+            'enquiry' => $m->ship_name,
+            'purchase_order' => $m->ship_name ?: $m->rfq?->ship_name,
+            'offer', 'invoice' => $m->rfq?->ship_name,
+            'requisition' => $m->vessel?->name,
+            default => null,
+        } ?: null;
+    }
+
+    /**
+     * The customer's own reference for the job, when they gave one.
+     *
+     * Their number, not ours. It is what they quote back in an email and what
+     * they file the job under at their end, so a folder carrying it can be
+     * found from their side of the correspondence.
+     */
+    public function customerReference(): ?string
+    {
+        $m = $this->model;
+
+        return match ($this->type) {
+            'enquiry' => $m->customer_reference,
+            'invoice' => $m->customer_reference ?: $m->rfq?->customer_reference,
+            'offer', 'purchase_order' => $m->rfq?->customer_reference,
+            default => null,
+        } ?: null;
     }
 
     /** Where this document's folder sits, relative to the backup root. */
@@ -242,17 +366,31 @@ class BackupBundle
             return self::FOLDERS[$this->type].'/'.self::safeName($this->number());
         }
 
+        $job = $this->enquiryReference() ? '('.$this->enquiryReference().')' : null;
+
+        // The parts that identify the folder are measured first; the party name
+        // then takes whatever budget is left, so a long company name can never
+        // push the ship and the reference off the end.
+        $tail = array_filter([
+            $this->vessel() ? '- '.Str::limit($this->vessel(), self::VESSEL_MAX, '') : null,
+            $this->customerReference() ? '['.Str::limit($this->customerReference(), self::REF_MAX, '').']' : null,
+        ]);
+
+        $fixed = mb_strlen(implode(' ', array_filter([$this->number(), $job, ...$tail])));
+        $budget = min(self::PARTY_MAX, self::FOLDER_MAX - $fixed - 1);
+
         $parts = array_filter([
             $this->number(),
-            $this->enquiryReference() ? '('.$this->enquiryReference().')' : null,
-            Str::limit($this->party(), self::PARTY_MAX, ''),
+            $job,
+            $budget > 3 ? Str::limit($this->party(), $budget, '') : null,
+            ...$tail,
         ]);
 
         return sprintf(
             '%s/%s/%s',
             self::FOLDERS[$this->type],
             $this->date()->format('Y'),
-            self::safeName(implode(' ', $parts)),
+            self::safeName(implode(' ', $parts), self::FOLDER_MAX),
         );
     }
 
@@ -341,13 +479,31 @@ class BackupBundle
             return array_values(array_filter($files));
         }
 
+        // The requisition's printer takes the request as well, because the copy
+        // it renders depends on who asked: the ship's is quantities only, the
+        // office's carries what we expect to pay. A backup is always run by the
+        // office, so this is the office's copy.
+        if ($this->type === 'requisition') {
+            return [$this->pdf($this->number().'.pdf', [RequisitionController::class, 'pdf'], [request(), $m])];
+        }
+
         // 1. The document itself.
-        $files[] = $this->pdf($this->number().'.pdf', match ($this->type) {
-            'enquiry' => [RfqPdfController::class, 'summary'],
-            'offer' => [OfferController::class, 'pdf'],
-            'invoice' => [CustomerInvoiceController::class, 'pdf'],
-            'purchase_order' => [PurchaseOrderController::class, 'pdf'],
-        });
+        //
+        // The invoice printer takes the request first, for the optional second
+        // currency column its query string can ask for. A backup asks for no
+        // such thing, so it archives the plain invoice — but the argument still
+        // has to be there, or the call dies and the folder is written without
+        // the one document it exists to keep.
+        $files[] = $this->pdf(
+            $this->number().'.pdf',
+            match ($this->type) {
+                'enquiry' => [RfqPdfController::class, 'summary'],
+                'offer' => [OfferController::class, 'pdf'],
+                'invoice' => [CustomerInvoiceController::class, 'pdf'],
+                'purchase_order' => [PurchaseOrderController::class, 'pdf'],
+            },
+            $this->type === 'invoice' ? [request(), $m] : null,
+        );
 
         if ($this->type === 'enquiry') {
             // What each vendor was asked, and what they came back with — the
@@ -570,6 +726,20 @@ class BackupBundle
             ];
         }
 
+        if ($this->type === 'requisition') {
+            // ROB and target ride along with the quantity: they are what the
+            // order was argued from, and without them a line reading "47 Kg"
+            // says nothing about why 47.
+            return [
+                ['#', 'Code', 'Description', 'Unit', 'ROB at issue', 'Target', 'Ordered', 'Unit price', 'Line total', 'Currency'],
+                $m->items->values()->map(fn ($i, $n) => [
+                    $n + 1, $i->code, $i->description, $i->unit,
+                    $i->rob_at_issue, $i->target_qty, $i->order_qty,
+                    $i->unit_price, $i->line_total, $m->currency,
+                ])->all(),
+            ];
+        }
+
         if ($this->type === 'payroll_employees') {
             return [
                 ['Code', 'Name', 'Job title', 'Status', 'CPF scheme', 'SHG fund', 'Basic salary', 'Fixed allowance', 'Started', 'Ended'],
@@ -621,6 +791,7 @@ class BackupBundle
 
         $partyLabel = match ($this->type) {
             'purchase_order' => 'Vendor',
+            'requisition' => 'Supplier',
             'payroll_run' => 'Month',
             'payroll_employees' => 'Holds',
             default => 'Customer',
@@ -633,12 +804,19 @@ class BackupBundle
             'Date' => $this->date()->format($this->type === 'payroll_run' ? 'F Y' : 'd M Y'),
             'Status' => $m->status ? ucfirst($m->status) : null,
             'Paid on' => $this->type === 'payroll_run' ? $m->payment_date?->format('d M Y') : null,
-            'Vessel' => $m->ship_name ?: $m->rfq?->ship_name,
+            // Read through the same two methods the folder name is built from,
+            // so the page inside the folder cannot disagree with the folder.
+            'Vessel' => $this->vessel(),
             'From enquiry' => $this->enquiryReference(),
-            'Their reference' => $m->customer_reference ?: $m->rfq?->customer_reference,
+            'Their reference' => $this->customerReference(),
         ], fn ($v) => $v !== null && $v !== '');
 
-        $money = $this->type === 'payroll_run'
+        $money = $this->type === 'requisition'
+            ? array_filter([
+                'Order value' => $m->total_value,
+                'Budget at issue' => $m->budget_at_issue,
+            ], fn ($v) => $v !== null && (float) $v !== 0.0)
+            : ($this->type === 'payroll_run'
             ? array_filter([
                 'Gross earnings' => $m->lines->sum('gross_earnings'),
                 'Employee CPF' => $m->lines->sum('employee_cpf'),
@@ -654,7 +832,7 @@ class BackupBundle
                 'Transport' => $m->transportation_cost ?? null,
                 'GST' => $m->tax_amount ?? null,
                 'Total' => $m->grand_total ?? null,
-            ], fn ($v) => $v !== null && (float) $v !== 0.0);
+            ], fn ($v) => $v !== null && (float) $v !== 0.0));
 
         $lines = ['MATRIA MARINE SERVICES — '.$this->number(), str_repeat('=', 60), ''];
 
@@ -735,6 +913,7 @@ class BackupBundle
         $total = match ($this->type) {
             'payroll_run' => $m->lines->sum('total_employer_cost'),
             'payroll_employees' => $m->employees->count(),
+            'requisition' => $m->total_value ?? '',
             default => $m->grand_total ?? $m->subtotal ?? '',
         };
 
@@ -743,6 +922,10 @@ class BackupBundle
             'number' => $this->number(),
             'date' => $this->date()->format('Y-m-d'),
             'party' => $this->type === 'payroll_employees' ? $m->statusLine() : $this->party(),
+            // Their own columns in the index, so _index.csv opens in Excel and
+            // sorts by ship — which is how anybody actually looks for a job.
+            'vessel' => (string) ($this->vessel() ?? ''),
+            'their_reference' => (string) ($this->customerReference() ?? ''),
             'status' => (string) ($m->status ?? ''),
             'currency' => (string) ($m->currency ?? ''),
             'total' => (string) $total,
@@ -831,6 +1014,16 @@ class BackupBundle
             '(select sum(net_salary) from payroll_run_lines where payroll_run_lines.run_id = payroll_runs.id)',
             '(select sum(total_employer_cost) from payroll_run_lines where payroll_run_lines.run_id = payroll_runs.id)',
         ]],
+        'requisition' => ['provision_requisitions', [
+            'provision_requisitions.updated_at',
+            'provision_requisitions.status',
+            'provision_requisitions.total_value',
+            'provision_requisitions.supplier_id',
+            '(select max(updated_at) from provision_requisition_items where provision_requisition_items.requisition_id = provision_requisitions.id)',
+            '(select count(*) from provision_requisition_items where provision_requisition_items.requisition_id = provision_requisitions.id)',
+            '(select sum(order_qty) from provision_requisition_items where provision_requisition_items.requisition_id = provision_requisitions.id)',
+            '(select sum(line_total) from provision_requisition_items where provision_requisition_items.requisition_id = provision_requisitions.id)',
+        ]],
     ];
 
     /**
@@ -906,5 +1099,5 @@ class BackupBundle
      * actually reached the disk. It fills backed_up_at itself — the server has
      * no idea when, or whether, a given machine took its copy.
      */
-    public const INDEX_COLUMNS = ['type', 'number', 'date', 'party', 'status', 'currency', 'total', 'folder', 'backed_up_at', 'fingerprint'];
+    public const INDEX_COLUMNS = ['type', 'number', 'date', 'party', 'vessel', 'their_reference', 'status', 'currency', 'total', 'folder', 'backed_up_at', 'fingerprint'];
 }

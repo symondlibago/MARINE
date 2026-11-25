@@ -250,10 +250,17 @@ class AccountingBooks
      * income account and must be visible in the Sales register. They are marked
      * out of scope for GST because they are not customer supplies.
      */
-    public static function sales(?Carbon $from, ?Carbon $to): Collection
+    /**
+     * @param  string|null  $origin  one operation's documents only, or null for
+     *                               the company's whole book. There is one set
+     *                               of books; this is a view of it. See
+     *                               App\Support\DocumentOrigin.
+     */
+    public static function sales(?Carbon $from, ?Carbon $to, ?string $origin = null): Collection
     {
         $invoices = CustomerInvoice::query()
             ->where('status', '!=', 'draft')
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->whereDate('issue_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('issue_date', '<=', $to))
@@ -262,6 +269,7 @@ class AccountingBooks
 
         $credits = CreditMemo::query()
             ->where('status', 'issued')
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             ->with(['customer:id,name,customer_no', 'rfq:id,reference,ship_name', 'items', 'invoice:id,exchange_rate,currency'])
             ->when($from, fn ($q) => $q->whereDate('memo_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('memo_date', '<=', $to))
@@ -269,7 +277,7 @@ class AccountingBooks
             ->map(fn (CreditMemo $c) => self::creditRow($c));
 
         return $invoices->concat($credits)
-            ->concat(self::vendorCredits($from, $to))
+            ->concat(self::vendorCredits($from, $to, $origin))
             ->sortBy([['date', 'desc'], ['number', 'desc']])
             ->values();
     }
@@ -466,9 +474,10 @@ class AccountingBooks
      * Cancelled orders are excluded by PurchaseOrder::live(); a cancelled order
      * bought nothing.
      */
-    public static function purchases(?Carbon $from, ?Carbon $to): Collection
+    public static function purchases(?Carbon $from, ?Carbon $to, ?string $origin = null): Collection
     {
         $orders = PurchaseOrder::live()
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '>=', $from)
                 ->orWhere(fn ($n) => $n->whereNull('issued_date')->whereDate('created_at', '>=', $from))))
@@ -477,7 +486,11 @@ class AccountingBooks
             ->get()
             ->map(fn (PurchaseOrder $p) => self::purchaseRow($p));
 
-        return $orders->concat(self::expenses($from, $to))
+        // Operating expenses are the company's overheads — rent, software, a
+        // courier — not documents either operation raised. Narrowed to one
+        // operation they would have to be shown in both or invented for one, so
+        // they appear only in the company's whole book.
+        return $orders->concat($origin === null ? self::expenses($from, $to) : collect())
             ->concat(self::payroll($from, $to))
             ->sortBy([['date', 'desc'], ['number', 'desc']])
             ->values();
@@ -491,11 +504,12 @@ class AccountingBooks
      * included in sales() or the GST sales boxes. The purchase register still
      * carries the net vendor charge for input-tax and payable reporting.
      */
-    public static function vendorCredits(?Carbon $from, ?Carbon $to): Collection
+    public static function vendorCredits(?Carbon $from, ?Carbon $to, ?string $origin = null): Collection
     {
         return PurchaseOrder::live()
             ->where('has_credit_note', true)
             ->where('credit_note_amount', '>', 0)
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             ->with(['vendor:id,name,vendor_no', 'rfq:id,reference,ship_name', 'items'])
             ->when($from, fn ($q) => $q->where(fn ($w) => $w->whereDate('issued_date', '>=', $from)
                 ->orWhere(fn ($n) => $n->whereNull('issued_date')->whereDate('created_at', '>=', $from))))

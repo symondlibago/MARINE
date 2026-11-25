@@ -21,7 +21,37 @@
 
 const DB_NAME = "matria_backup";
 const STORE = "handles";
-const HANDLE_KEY = "root";
+
+/**
+ * The two folders this machine can hold, each remembered under its own key.
+ *
+ * Everything the office works with goes to MAIN. Payroll goes to PAYROLL,
+ * which Dru points at a different drive, because that folder ends up holding
+ * every salary in the company and the general backup is the one that gets
+ * copied onto sticks and sync drives.
+ *
+ * PAYROLL is optional. Where it has not been set, payroll falls back to MAIN
+ * and nothing changes from how it worked before — the split is something you
+ * turn on, not something that quietly starts failing because a second folder
+ * was never chosen.
+ */
+export const MAIN = "root";
+export const PAYROLL = "payroll";
+
+/**
+ * The types that go to the payroll folder.
+ *
+ * Mirrors BackupBundle::PRIVATE_TYPES on the server, which is the definition —
+ * the pending list sends `private` on every row and the screen reads that.
+ * This copy exists for the per-document Mirror button, which is handed a type
+ * and nothing else.
+ */
+const PRIVATE_TYPES = ["payroll_run", "payroll_employees"];
+
+/** Which of the two folders a document type belongs in. */
+export function scopeFor(type) {
+  return PRIVATE_TYPES.includes(type) ? PAYROLL : MAIN;
+}
 
 /** Does this browser let a page write to a folder at all? */
 export function isSupported() {
@@ -52,13 +82,13 @@ function tx(db, mode, fn) {
   });
 }
 
-/** The folder chosen on this machine, or null if there isn't one yet. */
-export async function savedFolder() {
+/** The folder chosen on this machine for `scope`, or null if there isn't one. */
+export async function savedFolder(scope = MAIN) {
   if (!isSupported()) return null;
 
   try {
     const db = await openDb();
-    const handle = await tx(db, "readonly", (s) => s.get(HANDLE_KEY));
+    const handle = await tx(db, "readonly", (s) => s.get(scope));
     db.close();
     return handle ?? null;
   } catch {
@@ -68,24 +98,32 @@ export async function savedFolder() {
   }
 }
 
-/** Ask for the backup folder and remember it. Needs a click behind it. */
-export async function chooseFolder() {
+/** Ask for a backup folder and remember it under `scope`. Needs a click behind it. */
+export async function chooseFolder(scope = MAIN) {
   const handle = await window.showDirectoryPicker({
-    id: "matria-backup",
+    // A separate id per scope, so Chrome reopens the picker where that folder
+    // was last chosen — C:\ for the general backup, D:\ for payroll — instead
+    // of sending you back to the other drive every time.
+    id: scope === PAYROLL ? "matria-backup-payroll" : "matria-backup",
     mode: "readwrite",
     startIn: "documents",
   });
 
-  // Asked for straight away: without it the first write would fail, and the
-  // browser only grants it off the back of a gesture like this one.
-  const granted = await handle.requestPermission({ mode: "readwrite" });
-  if (granted !== "granted") {
-    throw new Error("Matria needs permission to write to that folder.");
+  // The picker itself asks for write access when it is opened in readwrite
+  // mode, so this only speaks up if it somehow came back without it. Asking
+  // again unconditionally risks a second "Allow this site to edit files?" for
+  // a permission Chrome has already given.
+  if ((await handle.queryPermission({ mode: "readwrite" })) !== "granted") {
+    const granted = await handle.requestPermission({ mode: "readwrite" });
+
+    if (granted !== "granted") {
+      throw new Error("Matria needs permission to write to that folder.");
+    }
   }
 
   try {
     const db = await openDb();
-    await tx(db, "readwrite", (s) => s.put(handle, HANDLE_KEY));
+    await tx(db, "readwrite", (s) => s.put(handle, scope));
     db.close();
   } catch {
     // Not fatal — it just means the folder has to be picked again next time.
@@ -94,11 +132,11 @@ export async function chooseFolder() {
   return handle;
 }
 
-/** Forget the folder on this machine (the files themselves are left alone). */
-export async function forgetFolder() {
+/** Forget a folder on this machine (the files themselves are left alone). */
+export async function forgetFolder(scope = MAIN) {
   try {
     const db = await openDb();
-    await tx(db, "readwrite", (s) => s.delete(HANDLE_KEY));
+    await tx(db, "readwrite", (s) => s.delete(scope));
     db.close();
   } catch {
     /* nothing to forget */

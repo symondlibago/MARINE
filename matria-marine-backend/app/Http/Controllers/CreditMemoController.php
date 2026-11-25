@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CreditMemo;
 use App\Models\CustomerInvoice;
 use App\Support\DocNumber;
+use App\Support\DocumentOrigin;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,7 @@ class CreditMemoController extends Controller
     public function index(Request $request)
     {
         $rows = CreditMemo::with(['invoice:id,invoice_number,issue_date', 'creator:id,name'])
+            ->origin(DocumentOrigin::fromRequest($request))
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
             ->when($request->query('q'), function ($q, $term) {
                 $like = '%'.$term.'%';

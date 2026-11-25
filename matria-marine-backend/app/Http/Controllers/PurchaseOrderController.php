@@ -10,6 +10,7 @@ use App\Models\SentLog;
 use App\Models\Rfq;
 use App\Models\Vendor;
 use App\Support\DocNumber;
+use App\Support\DocumentOrigin;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,9 @@ class PurchaseOrderController extends Controller
         $query = PurchaseOrder::query()
             ->with(['vendor:id,name', 'rfq:id,reference,ship_name,customer_id,customer_reference', 'rfq.customer:id,name', 'creator:id,name'])
             ->withCount('items')
+            // One operation's documents, or every one. Asking for nothing is
+            // the portal's own view: the whole of what the company does.
+            ->origin(DocumentOrigin::fromRequest($request))
             ->orderByDesc('id');
 
         if ($rfqId = $request->query('rfq_id')) {

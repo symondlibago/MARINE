@@ -7,7 +7,13 @@ use Illuminate\Support\Str;
 
 class Offer extends Model
 {
+    use Concerns\StampsOrigin;
+
+    /** Raised off an enquiry, so it is whatever the enquiry was. */
+    protected array $originParents = ['rfq_id' => Rfq::class];
+
     protected $fillable = [
+        'origin',
         'offer_number',
         // Assigned the first time a pro-forma is downloaded, then kept.
         'proforma_number',

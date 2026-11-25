@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\User;
+use App\Support\Inventory\VesselAccess;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
@@ -14,6 +15,13 @@ class AdminUserSeeder extends Seeder
         // Portal staff roles (spatie, 'web' guard).
         Role::findOrCreate('super_admin', 'web');
         Role::findOrCreate('admin', 'web');
+
+        // Vessel accounts: two per ship, added from the vessel's own settings
+        // page rather than here. The rows exist so that holding one of these
+        // roles is what keeps a crew account out of procurement and payroll,
+        // which are gated on spatie roles.
+        Role::findOrCreate(VesselAccess::MASTER, 'web');
+        Role::findOrCreate(VesselAccess::COOK, 'web');
 
         // Primary account — the Super Admin (can do everything, incl. Media + MMS).
         $admin = User::firstOrCreate(

@@ -90,6 +90,27 @@ export default function PortalLayout({ user, children }) {
           })}
         </nav>
         <div className="space-y-1 border-t border-slate-200 p-3">
+          {/* The way back into the fleet's stores. Inventory links here, and
+              without this the trip is one-way: somebody who crosses over has
+              to retype the URL to get home.
+
+              Gated on `scope` rather than a role string — the same field the
+              module itself routes on, from VesselAccess::scope. A master or a
+              cook never reaches this layout at all, so this is really about
+              the office, but the condition says what it means. */}
+          {user?.scope === "office" && (
+            <a
+              href="/inventory/vessels"
+              title={collapsed ? "Vessel provisions" : undefined}
+              className={cn(
+                "flex items-center rounded-lg px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100",
+                collapsed ? "justify-center" : "gap-2"
+              )}
+            >
+              <Ship className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Vessel provisions</span>}
+            </a>
+          )}
           {/* Payroll is a separate operation with its own screens, but the same
               staff login — the same way Inventory links back to here. Shown
               only to someone given Payroll: it holds every salary. */}

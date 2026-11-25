@@ -32,7 +32,9 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
       setIsSuccess(true); 
 
       setTimeout(() => {
-        if (onLoginSuccess) onLoginSuccess();
+        // Handed the account on: where somebody belongs after signing in
+        // depends on what kind of account it is, and the caller decides.
+        if (onLoginSuccess) onLoginSuccess(user);
         setTimeout(() => {
             setIsSuccess(false);
             setLogin('');

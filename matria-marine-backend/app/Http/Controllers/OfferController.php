@@ -10,6 +10,7 @@ use App\Models\Rfq;
 use App\Models\RfqItem;
 use App\Models\SentLog;
 use App\Support\DocNumber;
+use App\Support\DocumentOrigin;
 use App\Support\ProformaDoc;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -20,7 +21,7 @@ use Illuminate\Support\Str;
 
 class OfferController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         // The enquiry's vessel and the customer's own reference come along: those
         // are what staff recognise a job by, not our quotation number.
@@ -29,6 +30,9 @@ class OfferController extends Controller
             'customer:id,name',
             'creator:id,name',
         ])
+            // One operation's documents, or every one. Asking for nothing is
+            // the portal's own view: the whole of what the company does.
+            ->origin(DocumentOrigin::fromRequest($request))
             ->orderByDesc('id')
             ->get();
 
@@ -724,9 +728,23 @@ class OfferController extends Controller
     {
         $offer->load('customer:id,name,email');
 
-        $emails = \App\Support\Recipients::emails($offer->customer?->email);
+        // A quotation raised for one of the fleet's own ships goes to her
+        // master. The customer record standing for her is a bookkeeping
+        // artefact created from her name and carries no address — see
+        // App\Support\Inventory\RequisitionBridge — so without this a
+        // provisions quotation had nowhere to go at all.
+        $vessel = \App\Support\Inventory\OfferPrices::vesselFor($offer);
+        $emails = \App\Support\Inventory\VesselContacts::masterEmails($vessel)
+            ?: \App\Support\Recipients::emails($offer->customer?->email);
+
         if (! $emails) {
-            return response()->json(['success' => false, 'message' => 'This customer has no valid email on file.'], 422);
+            return response()->json([
+                'success' => false,
+                'message' => $vessel
+                    ? "{$vessel->name} has no master account to send this to. Add one under her Accounts, "
+                        .'or put an email on her customer record.'
+                    : 'This customer has no valid email on file.',
+            ], 422);
         }
         $email = implode(', ', $emails);
 

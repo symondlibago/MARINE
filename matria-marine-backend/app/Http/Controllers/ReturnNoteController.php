@@ -6,6 +6,7 @@ use App\Mail\ReturnNoteMail;
 use App\Models\PurchaseOrder;
 use App\Models\ReturnNote;
 use App\Models\SentLog;
+use App\Support\DocumentOrigin;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ class ReturnNoteController extends Controller
         $query = ReturnNote::query()
             ->with(['purchaseOrder:id,po_number', 'vendor:id,name'])
             ->withCount('items')
+            ->origin(DocumentOrigin::fromRequest($request))
             ->orderByDesc('id');
 
         if ($status = $request->query('status')) {

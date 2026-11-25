@@ -10,6 +10,7 @@ use App\Models\DeliveryOrder;
 use App\Models\Offer;
 use App\Models\SentLog;
 use App\Support\DocNumber;
+use App\Support\DocumentOrigin;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,14 +23,16 @@ use Illuminate\Support\Facades\Mail;
  */
 class CustomerInvoiceController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $invoices = CustomerInvoice::with([
             'rfq:id,reference',
             'rfq.purchaseOrders:id,rfq_id,po_number',
             'deliveryOrder:id,do_number,proforma_number',
             'creator:id,name',
-        ])->orderByDesc('id')->get();
+        ])
+            ->origin(DocumentOrigin::fromRequest($request))
+            ->orderByDesc('id')->get();
 
         $data = $invoices->map(fn (CustomerInvoice $inv) => [
             'id' => $inv->id,

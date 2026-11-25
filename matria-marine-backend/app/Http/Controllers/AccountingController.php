@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\Vendor;
 use App\Support\AccountingBooks;
+use App\Support\DocumentOrigin;
 use App\Support\GstCodes;
 use App\Support\OpenEntries;
 use Illuminate\Http\Request;
@@ -53,20 +54,46 @@ class AccountingController extends Controller
      */
     private array $books = [];
 
+    /**
+     * Which operation's books these are.
+     *
+     * One set of books, two views: the portal shows the whole company, which
+     * is what the accountant files, and the fleet's own pages show the
+     * provisions.
+     *
+     * Deliberately NOT remembered on the instance, unlike $books above.
+     * Laravel caches the controller on the Route object — Route::getController
+     * only builds one if it does not already have one — so where the
+     * application outlives a single request, which is every test and every
+     * Octane worker, the same instance answers the next one. A remembered
+     * origin would then serve the portal's own view of the books to the
+     * fleet's pages, or the reverse, depending on who asked first. It is two
+     * string comparisons; there is nothing to save.
+     *
+     * It is folded into the $books cache key for the same reason: those ARE
+     * remembered, and two views must never share one entry.
+     */
+    private function origin(): ?string
+    {
+        $request = request();
+
+        return DocumentOrigin::visibleTo($request->user(), DocumentOrigin::fromRequest($request));
+    }
+
     /* ------------------------------------------------------------------ */
     /*  Shared                                                            */
     /* ------------------------------------------------------------------ */
 
     private function sales(?Carbon $from, ?Carbon $to): Collection
     {
-        return $this->books['sales|'.$from?->toDateString().'|'.$to?->toDateString()]
-            ??= AccountingBooks::sales($from, $to);
+        return $this->books['sales|'.$this->origin().'|'.$from?->toDateString().'|'.$to?->toDateString()]
+            ??= AccountingBooks::sales($from, $to, $this->origin());
     }
 
     private function purchases(?Carbon $from, ?Carbon $to): Collection
     {
-        return $this->books['purchases|'.$from?->toDateString().'|'.$to?->toDateString()]
-            ??= AccountingBooks::purchases($from, $to);
+        return $this->books['purchases|'.$this->origin().'|'.$from?->toDateString().'|'.$to?->toDateString()]
+            ??= AccountingBooks::purchases($from, $to, $this->origin());
     }
 
     /** @return array{0: ?Carbon, 1: ?Carbon} */
@@ -161,6 +188,9 @@ class AccountingController extends Controller
         }
 
         return $this->ok([
+            // Which view of the books this is, so the screen can say so rather
+            // than leaving the reader to wonder whose figures these are.
+            'origin' => $this->origin(),
             'rows' => $rows->all(),
             'totals' => $this->registerTotals($rows) + [
                 'invoices' => $rows->where('kind', 'invoice')->count(),
@@ -1113,6 +1143,14 @@ class AccountingController extends Controller
      */
     private function accruedExpensesAt(Carbon $asOf): float
     {
+        // Overheads and wages are the company's, not either operation's. On the
+        // fleet's own view of the books there is nothing to accrue here — a
+        // view narrowed to the provisions that still carried the whole wage
+        // bill would not balance against the provisions' own sales.
+        if ($this->origin() !== null) {
+            return 0.0;
+        }
+
         // Through AccountingBooks rather than off the model, so these arrive
         // already converted. Read straight from OperatingExpense they are face
         // values, and a euro-denominated overhead went onto a Singapore-dollar

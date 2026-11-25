@@ -10,12 +10,19 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CreditMemo extends Model
 {
-    use Concerns\HasAccountCode;
+    use Concerns\HasAccountCode, Concerns\StampsOrigin;
+
+    /** A credit note reverses a sale, so it belongs where the sale did. */
+    protected array $originParents = [
+        'customer_invoice_id' => CustomerInvoice::class,
+        'rfq_id' => Rfq::class,
+    ];
 
     /** A credit note reverses a sale, so it is booked to the same account. */
     protected string $defaultAccountCode = Account::DEFAULT_SALES;
 
     protected $fillable = [
+        'origin',
         'account_code',
         'cm_number',
         'customer_invoice_id',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CustomerInvoice;
+use App\Models\Inventory\Requisition;
 use App\Models\Offer;
 use App\Models\Payroll\Run;
 use App\Models\PurchaseOrder;
@@ -63,12 +64,14 @@ class BackupController extends Controller
         $page = BackupBundle::pageFor($key);
         $user = request()->user();
 
-        if ($page && $user && ! PortalPages::canSee($user, $page)) {
+        if ($user && ! BackupBundle::mayBackUp($user, $key)) {
             // Same shape EnsurePageAccess returns, so the frontend handles a
             // refusal from here no differently from one from the middleware.
             abort(response()->json([
                 'success' => false,
-                'message' => "You don't have access to ".PortalPages::label($page).'. Ask a super admin to add it to your account.',
+                'message' => $page
+                    ? "You don't have access to ".PortalPages::label($page).'. Ask a super admin to add it to your account.'
+                    : 'The fleet\'s requisitions are the office\'s to back up.',
                 'page' => $page,
             ], 403));
         }
@@ -181,15 +184,21 @@ class BackupController extends Controller
         // Slim selects with just what the folder name is built from — no line
         // items, no attachments. The enquiry reference comes along because it
         // is printed in brackets on the documents that came out of a job.
+        // The ship and the customer's reference are part of the folder NAME, so
+        // they have to be loaded here too. The browser matches what this list
+        // calls a folder against what _index.csv recorded — compute a different
+        // name here and every document reads as missing forever.
         $sources = [
             'enquiry' => fn () => Rfq::with('customer:id,name')
-                ->get(['id', 'reference', 'customer_id', 'status', 'received_date', 'created_at']),
-            'offer' => fn () => Offer::with('customer:id,name')
-                ->get(['id', 'offer_number', 'customer_id', 'customer_name', 'status', 'currency', 'grand_total', 'created_at']),
-            'invoice' => fn () => CustomerInvoice::with(['customer:id,name', 'rfq:id,reference'])
-                ->get(['id', 'invoice_number', 'rfq_id', 'customer_id', 'customer_name', 'status', 'currency', 'grand_total', 'issue_date', 'created_at']),
-            'purchase_order' => fn () => PurchaseOrder::with(['vendor:id,name', 'rfq:id,reference'])
-                ->get(['id', 'po_number', 'rfq_id', 'vendor_id', 'status', 'currency', 'subtotal', 'issued_date', 'created_at']),
+                ->get(['id', 'reference', 'customer_id', 'ship_name', 'customer_reference', 'status', 'received_date', 'created_at']),
+            'offer' => fn () => Offer::with(['customer:id,name', 'rfq:id,reference,ship_name,customer_reference'])
+                ->get(['id', 'offer_number', 'rfq_id', 'customer_id', 'customer_name', 'status', 'currency', 'grand_total', 'created_at']),
+            'invoice' => fn () => CustomerInvoice::with(['customer:id,name', 'rfq:id,reference,ship_name,customer_reference'])
+                ->get(['id', 'invoice_number', 'rfq_id', 'customer_id', 'customer_name', 'customer_reference', 'status', 'currency', 'grand_total', 'issue_date', 'created_at']),
+            'purchase_order' => fn () => PurchaseOrder::with(['vendor:id,name', 'rfq:id,reference,ship_name,customer_reference'])
+                ->get(['id', 'po_number', 'rfq_id', 'vendor_id', 'ship_name', 'status', 'currency', 'subtotal', 'issued_date', 'created_at']),
+            'requisition' => fn () => Requisition::with(['vessel:id,name', 'supplier:id,name'])
+                ->get(['id', 'req_number', 'vessel_id', 'supplier_id', 'status', 'currency', 'total_value', 'req_date', 'created_at']),
             'payroll_run' => fn () => Run::query()
                 ->get(['id', 'period', 'payment_date', 'status', 'currency', 'created_at']),
             // One row, always: the staff list as it stands.
@@ -199,9 +208,7 @@ class BackupController extends Controller
         $rows = [];
 
         foreach ($sources as $type => $load) {
-            $page = BackupBundle::pageFor($type);
-
-            if ($page && ! PortalPages::canSee($user, $page)) {
+            if (! BackupBundle::mayBackUp($user, $type)) {
                 continue;
             }
 
@@ -218,9 +225,14 @@ class BackupController extends Controller
                     'id' => $model->id,
                     'number' => $bundle->number(),
                     'party' => $bundle->party(),
+                    'vessel' => $bundle->vessel(),
+                    'their_reference' => $bundle->customerReference(),
                     'date' => $bundle->date()->format('Y-m-d'),
                     'status' => (string) ($model->status ?? ''),
                     'folder' => $bundle->folder(),
+                    // Payroll is written to its own folder on its own drive, so
+                    // the screen has to know which root a row belongs to.
+                    'private' => in_array($type, BackupBundle::PRIVATE_TYPES, true),
                     'fingerprint' => $fingerprints[$model->id] ?? '',
                 ];
             }

@@ -8,12 +8,19 @@ use Illuminate\Support\Str;
 
 class PurchaseOrder extends Model
 {
-    use HasAccountCode;
+    use Concerns\StampsOrigin, HasAccountCode;
+
+    /**
+     * A purchase order answers an enquiry, where there was one. A direct
+     * purchase has no enquiry behind it and is the chandling trade's own.
+     */
+    protected array $originParents = ['rfq_id' => Rfq::class];
 
     /** What we buy to fulfil a customer job is cost of sales. */
     protected string $defaultAccountCode = Account::DEFAULT_PURCHASE;
 
     protected $fillable = [
+        'origin',
         'account_code',
         'tax_rate',
         'tax_amount',

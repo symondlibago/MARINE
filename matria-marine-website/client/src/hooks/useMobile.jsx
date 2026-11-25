@@ -3,9 +3,11 @@ import * as React from "react";
 const MOBILE_BREAKPOINT = 768;
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(
-    undefined
-  );
+  // Was `useState<boolean | undefined>(undefined)` — a TypeScript annotation in
+  // a .jsx file, which is not JavaScript. Read as plain JS it is a chain of
+  // comparisons against an undeclared `boolean`, which is why the linter found
+  // it the moment it was switched on.
+  const [isMobile, setIsMobile] = React.useState(undefined);
 
   React.useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);

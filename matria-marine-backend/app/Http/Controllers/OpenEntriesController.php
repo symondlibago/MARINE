@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\DocumentOrigin;
 use App\Support\LedgerEntries;
 use App\Support\OpenEntries;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -19,11 +20,11 @@ class OpenEntriesController extends Controller
 {
     public function index(Request $request)
     {
-        [$type, $asOf, $includeUnapplied, $includeDrafts] = $this->params($request);
+        [$type, $asOf, $includeUnapplied, $includeDrafts, $origin] = $this->params($request);
 
         return response()->json([
             'success' => true,
-            'data' => OpenEntries::build($type, $asOf, $includeUnapplied, $includeDrafts),
+            'data' => OpenEntries::build($type, $asOf, $includeUnapplied, $includeDrafts, $origin),
         ]);
     }
 
@@ -46,16 +47,17 @@ class OpenEntriesController extends Controller
                 isset($data['from']) ? Carbon::parse($data['from']) : null,
                 isset($data['to']) ? Carbon::parse($data['to']) : null,
                 $request->boolean('include_drafts'),
+                DocumentOrigin::visibleTo($request->user(), DocumentOrigin::fromRequest($request)),
             ),
         ]);
     }
 
     public function pdf(Request $request)
     {
-        [$type, $asOf, $includeUnapplied, $includeDrafts] = $this->params($request);
+        [$type, $asOf, $includeUnapplied, $includeDrafts, $origin] = $this->params($request);
         $newPagePerParty = $request->boolean('new_page_per_party');
 
-        $report = OpenEntries::build($type, $asOf, $includeUnapplied, $includeDrafts);
+        $report = OpenEntries::build($type, $asOf, $includeUnapplied, $includeDrafts, $origin);
 
         // Refuse loudly rather than time out half way through rendering. A
         // silent truncation here would read as "this is everyone", which on a
@@ -105,6 +107,10 @@ class OpenEntriesController extends Controller
             // boolean rule rejects.
             $request->has('include_unapplied') ? $request->boolean('include_unapplied') : true,
             $request->boolean('include_drafts'),
+            // One operation's book, or the company's whole one. The provisions
+            // side asks for its own; the procurement portal asks for nothing
+            // and gets everything, which is what the accountant files.
+            DocumentOrigin::visibleTo($request->user(), DocumentOrigin::fromRequest($request)),
         ];
     }
 }

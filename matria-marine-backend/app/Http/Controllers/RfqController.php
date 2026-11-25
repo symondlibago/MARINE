@@ -8,6 +8,7 @@ use App\Models\Offer;
 use App\Models\PurchaseOrderItem;
 use App\Models\SentLog;
 use App\Support\DocNumber;
+use App\Support\DocumentOrigin;
 use App\Support\FxRates;
 use App\Models\Quote;
 use App\Models\QuoteAttachment;
@@ -61,6 +62,9 @@ class RfqController extends Controller
 
         $rfqs = Rfq::query()
             ->tap($narrow)
+            // One operation's enquiries, or every one. Asking for nothing is
+            // the portal's own view: the whole of what the company does.
+            ->origin(DocumentOrigin::fromRequest($request))
             // The quotation carries the value of the job. Eager-loaded so the
             // list can show it on every row without a query per row.
             ->with([

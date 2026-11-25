@@ -39,14 +39,24 @@ class LedgerEntries
      *   party_count: int, row_count: int, truncated: bool
      * }
      */
-    public static function build(string $type, ?Carbon $from = null, ?Carbon $to = null, bool $includeDrafts = false): array
-    {
+    /**
+     * @param  string|null  $origin  one operation's documents only, or null
+     *                               for the company's whole book. See
+     *                               App\Support\DocumentOrigin.
+     */
+    public static function build(
+        string $type,
+        ?Carbon $from = null,
+        ?Carbon $to = null,
+        bool $includeDrafts = false,
+        ?string $origin = null
+    ): array {
         $isCustomer = $type === 'customer';
         $partyKey = $isCustomer ? 'customer_id' : 'vendor_id';
 
-        $documents = self::documents($isCustomer, $from, $to, $includeDrafts);
-        $credits = $isCustomer ? self::credits($from, $to) : collect();
-        $payments = self::payments($isCustomer, $from, $to);
+        $documents = self::documents($isCustomer, $from, $to, $includeDrafts, $origin);
+        $credits = $isCustomer ? self::credits($from, $to, $origin) : collect();
+        $payments = self::payments($isCustomer, $from, $to, $origin);
 
         // Balances are "as things stand now", not date-bounded: a remaining
         // amount answers what is still owed, which does not depend on the
@@ -107,11 +117,17 @@ class LedgerEntries
     /*  Loaders                                                            */
     /* ------------------------------------------------------------------ */
 
-    private static function documents(bool $isCustomer, ?Carbon $from, ?Carbon $to, bool $includeDrafts = false): Collection
-    {
+    private static function documents(
+        bool $isCustomer,
+        ?Carbon $from,
+        ?Carbon $to,
+        bool $includeDrafts = false,
+        ?string $origin = null
+    ): Collection {
         if ($isCustomer) {
             return CustomerInvoice::issued($includeDrafts)
                 ->whereNotNull('customer_id')
+                ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
                 ->when($from, fn ($q) => $q->whereDate('issue_date', '>=', $from))
                 ->when($to, fn ($q) => $q->whereDate('issue_date', '<=', $to))
                 ->with('rfq:id,reference,ship_name')
@@ -127,6 +143,7 @@ class LedgerEntries
 
         return PurchaseOrder::live()
             ->whereNotNull('vendor_id')
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             ->when($from, fn ($q) => $inRange($q, '>=', $from))
             ->when($to, fn ($q) => $inRange($q, '<=', $to))
             ->with('rfq:id,reference,ship_name')
@@ -135,21 +152,39 @@ class LedgerEntries
                 'status', 'paid_at', 'issued_date', 'expected_date', 'created_at']);
     }
 
-    private static function credits(?Carbon $from, ?Carbon $to): Collection
+    private static function credits(?Carbon $from, ?Carbon $to, ?string $origin = null): Collection
     {
         return CreditMemo::query()
             ->where('status', 'issued')
             ->whereNotNull('customer_id')
+            ->tap(fn ($q) => DocumentOrigin::apply($q, $origin))
             ->when($from, fn ($q) => $q->whereDate('memo_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('memo_date', '<=', $to))
             ->with('invoice:id,invoice_number')
             ->get(['id', 'customer_id', 'customer_invoice_id', 'cm_number', 'memo_date', 'currency', 'grand_total', 'reason']);
     }
 
-    private static function payments(bool $isCustomer, ?Carbon $from, ?Carbon $to): Collection
+    /**
+     * Money moving. A payment carries no origin of its own, because it is not
+     * a document raised by either operation — so it belongs to whichever
+     * operation's documents it was put against.
+     *
+     * An unallocated payment (money in, nothing to apply it to yet) therefore
+     * belongs to neither, and appears only in the company's whole book. It
+     * would be worse to show it twice.
+     */
+    private static function payments(bool $isCustomer, ?Carbon $from, ?Carbon $to, ?string $origin = null): Collection
     {
+        $column = $isCustomer ? 'customer_invoice_id' : 'purchase_order_id';
+        $documents = $isCustomer ? 'customer_invoices' : 'purchase_orders';
+
         return Payment::query()
             ->where('party_type', $isCustomer ? 'customer' : 'vendor')
+            ->when($origin, fn ($q) => $q->whereHas(
+                'allocations',
+                fn ($a) => $a->whereIn($column, fn ($d) => $d
+                    ->select('id')->from($documents)->where('origin', $origin))
+            ))
             ->when($from, fn ($q) => $q->whereDate('payment_date', '>=', $from))
             ->when($to, fn ($q) => $q->whereDate('payment_date', '<=', $to))
             ->with(['allocations.invoice:id,invoice_number', 'allocations.purchaseOrder:id,po_number'])

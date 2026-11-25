@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowLeft, Send, BarChart3, Trash2, Search, Pencil, UserPlus, ListChecks, FileDown, ChevronRight, Paperclip, CheckCircle2, ShieldCheck, Save } from "lucide-react";
+import { ArrowLeft, Send, BarChart3, Trash2, Search, Pencil, UserPlus, ListChecks, FileDown, ChevronRight, Paperclip, CheckCircle2, ShieldCheck, Save, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 import { rfqsAPI, vendorsAPI } from "@/pages/api";
 import Modal from "./ui/Modal";
@@ -14,6 +14,20 @@ import BackupButton from "./ui/BackupButton";
 // Offered in the quotation editor; the enquiry's own currency and whatever the
 // vendor already quoted in are merged in, so nothing existing is ever lost.
 const QUOTE_CURRENCIES = ["USD", "EUR", "SGD", "AED", "PHP", "INR", "GBP", "JPY"];
+
+/**
+ * The tick-everything controls above the two pick lists in the send dialog.
+ *
+ * Bordered buttons sitting beside their heading, not grey words in the far
+ * corner: with a list of fifty vendors on screen these are the first thing
+ * somebody reaches for, and the previous version was easy to scroll straight
+ * past. Greyed out when pressing them would change nothing.
+ */
+const pickBtn =
+  "inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold " +
+  "text-[#28364b] transition-colors hover:border-[#28364b] hover:bg-[#28364b] hover:text-white " +
+  "disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300 " +
+  "disabled:hover:border-slate-200 disabled:hover:bg-slate-50 disabled:hover:text-slate-300";
 
 const STATUS_STYLES = {
   draft: "bg-slate-100 text-slate-600",
@@ -28,7 +42,12 @@ export default function EnquiryDetail({ params }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [, setLocation] = useLocation();
-  const [sendOpen, setSendOpen] = useState(false);
+  // ?send=1 opens the vendor dialog on arrival. A vessel's requisition is
+  // turned into an enquiry by a button on the fleet's own list, and asking
+  // vendors is the next thing that happens to it — so that button lands here
+  // with this dialog already up, rather than on a page with one more click to
+  // find. The same dialog, not a second copy of it.
+  const [sendOpen, setSendOpen] = useState(() => new URLSearchParams(window.location.search).get("send") === "1");
   const [selected, setSelected] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
   const [vendorSearch, setVendorSearch] = useState("");
@@ -456,9 +475,32 @@ export default function EnquiryDetail({ params }) {
         <div className="space-y-4 p-6">
           <p className="text-xs text-slate-500">Pick vendors, then <b>Send to vendors</b> to email them a quote link — or <b>Send externally</b> to add them without emailing (for vendors you contacted elsewhere; you'll key their prices in Compare &amp; Award).</p>
           <div>
-            <div className="mb-1.5 flex items-center justify-between">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
               <label className="text-xs font-bold uppercase tracking-wider text-[#28364b]">Recipients</label>
-              <span className="text-xs text-slate-400">{selected.length} selected</span>
+              {/* Ticks the vendors currently listed, and keeps the ones already
+                  picked. The list is a server-side search capped at 50, so
+                  "select all" can only honestly mean "all of these" — dropping
+                  an off-list vendor somebody had already chosen would be a
+                  silent deselection. */}
+              <button
+                type="button"
+                onClick={() => setSelected((s) => [...new Set([...s, ...vendorResults.map((v) => v.id)])])}
+                disabled={vendorResults.length === 0}
+                title={vendorQuery ? "Tick every vendor matching this search" : "Tick every vendor shown"}
+                className={pickBtn}
+              >
+                <CheckSquare className="h-3.5 w-3.5" /> Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelected([])}
+                disabled={selected.length === 0}
+                title="Clear every selected vendor"
+                className={pickBtn}
+              >
+                <Square className="h-3.5 w-3.5" /> Clear
+              </button>
+              <span className="ml-auto text-xs font-medium text-slate-500">{selected.length} selected</span>
             </div>
             {selectedVendors.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
@@ -495,15 +537,31 @@ export default function EnquiryDetail({ params }) {
           </div>
           {items.length > 0 && (
             <div>
-              <div className="mb-1.5 flex items-center justify-between">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
                 <label className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#28364b]">
                   <ListChecks className="h-3.5 w-3.5" /> Items to send
                 </label>
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-slate-400">{selectedItems.length} of {items.length}</span>
-                  <button type="button" onClick={() => setSelectedItems(items.map((i) => i.id))} className="font-medium text-[#28364b] hover:underline">All</button>
-                  <button type="button" onClick={() => setSelectedItems([])} className="text-slate-500 hover:underline">None</button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedItems(items.map((i) => i.id))}
+                  disabled={selectedItems.length === items.length}
+                  title="Tick every item on the enquiry"
+                  className={pickBtn}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" /> Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedItems([])}
+                  disabled={selectedItems.length === 0}
+                  title="Untick every item"
+                  className={pickBtn}
+                >
+                  <Square className="h-3.5 w-3.5" /> Clear
+                </button>
+                <span className="ml-auto text-xs font-medium text-slate-500">
+                  {selectedItems.length} of {items.length}
+                </span>
               </div>
               <p className="mb-2 text-[11px] text-slate-400">
                 Untick anything these vendors don't supply — they'll only be asked to quote the ticked items. For vendors that carry
